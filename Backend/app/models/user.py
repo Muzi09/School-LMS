@@ -5,9 +5,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Index,
+    SmallInteger,
     String,
     Text,
     func,
@@ -19,7 +19,10 @@ from app.models.base import Base, AuditMixin
 from app.models.enums import UserRole
 
 if TYPE_CHECKING:
+    from app.models.admin import AdminProfile
     from app.models.school import School
+    from app.models.student import StudentProfile
+    from app.models.teacher import TeacherProfile
 
 
 class User(Base, AuditMixin):
@@ -57,11 +60,7 @@ class User(Base, AuditMixin):
     )
 
     role: Mapped[UserRole] = mapped_column(
-        SQLEnum(
-            UserRole,
-            name="user_role",
-            native_enum=True,
-        ),
+        SmallInteger,
         nullable=False,
     )
 
@@ -97,6 +96,27 @@ class User(Base, AuditMixin):
         "School",
         back_populates="users",
         foreign_keys=[school_id],
+    )
+
+    admin_profile: Mapped["AdminProfile | None"] = relationship(
+        "AdminProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    teacher_profile: Mapped["TeacherProfile | None"] = relationship(
+        "TeacherProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    student_profile: Mapped["StudentProfile | None"] = relationship(
+        "StudentProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
     )
 
     @declared_attr

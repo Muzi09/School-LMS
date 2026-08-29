@@ -1,8 +1,7 @@
-from enum import Enum
+from enum import IntEnum
 
-
-class UserRole(str, Enum):
-    SUPER_ADMIN = "super_admin"
-    ADMIN = "admin"
-    TEACHER = "teacher"
-    STUDENT = "student"
+class UserRole(IntEnum):
+    SUPER_ADMIN = 1
+    ADMIN = 2
+    TEACHER = 3
+    STUDENT = 4
