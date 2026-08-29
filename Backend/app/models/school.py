@@ -1,4 +1,3 @@
-from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -9,12 +8,9 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from app.models.base import Base, AuditMixin
-
-if TYPE_CHECKING:
-    from app.models.user import User
 
 
 class School(Base, AuditMixin):
@@ -56,13 +52,6 @@ class School(Base, AuditMixin):
         nullable=False,
         default=True,
         server_default="true",
-    )
-
-    # Relationships
-    users: Mapped[list["User"]] = relationship(
-        "User",
-        back_populates="school",
-        foreign_keys="User.school_id",
     )
 
     @declared_attr

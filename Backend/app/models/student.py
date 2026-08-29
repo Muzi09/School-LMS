@@ -2,7 +2,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, ForeignKey, Index, SmallInteger, String, Text
+from sqlalchemy import Date, ForeignKey, Index, SmallInteger, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
@@ -31,74 +31,49 @@ class StudentProfile(Base):
         nullable=False,
     )
 
-    admission_number: Mapped[str] = mapped_column(
+    middle_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    roll_no: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
     )
 
-    roll_number: Mapped[str | None] = mapped_column(
-        String(50),
-        nullable=True,
-    )
-
-    date_of_birth: Mapped[date | None] = mapped_column(
-        Date,
-        nullable=True,
-    )
-
-    gender: Mapped[Gender | None] = mapped_column(
+    gender: Mapped[Gender] = mapped_column(
         SmallInteger,
-        nullable=True,
+        nullable=False,
     )
 
-    blood_group: Mapped[str | None] = mapped_column(
-        String(10),
-        nullable=True,
-    )
-
-    admission_date: Mapped[date | None] = mapped_column(
+    date_of_birth: Mapped[date] = mapped_column(
         Date,
-        nullable=True,
-    )
-
-    guardian_name: Mapped[str] = mapped_column(
-        String(150),
         nullable=False,
     )
 
-    guardian_relation: Mapped[str | None] = mapped_column(
+    class_name: Mapped[str] = mapped_column(
         String(50),
-        nullable=True,
-    )
-
-    guardian_phone: Mapped[str] = mapped_column(
-        String(20),
         nullable=False,
     )
 
-    guardian_email: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
+    section: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
     )
 
-    emergency_contact_name: Mapped[str | None] = mapped_column(
-        String(150),
-        nullable=True,
+    house: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
     )
 
-    emergency_contact_phone: Mapped[str | None] = mapped_column(
-        String(20),
-        nullable=True,
+    father_first_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
     )
 
-    address: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )
-
-    medical_notes: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
+    father_last_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
     )
 
     # Relationships
@@ -111,15 +86,18 @@ class StudentProfile(Base):
     def __table_args__(cls):
         return (
             Index(
-                "idx_student_profiles_admission_number",
-                cls.admission_number,
+                "idx_student_profiles_roll_no",
+                cls.roll_no,
             ),
             Index(
-                "idx_student_profiles_roll_number",
-                cls.roll_number,
+                "idx_student_profiles_class_section",
+                cls.class_name,
+                cls.section,
             ),
             Index(
                 "idx_student_profiles_dob",
                 cls.date_of_birth,
             ),
         )
+
+

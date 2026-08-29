@@ -3,16 +3,16 @@ from uuid import uuid4
 
 from app.controllers.user_controller import UserController
 from app.core.database import SessionLocal
-from app.core.exceptions import ConflictException, NotFoundException
+from app.core.exceptions import ConflictException
 from app.models.enums import Gender, UserRole
 from app.models.school import School
 from app.repositories.school_repository import SchoolRepository
 from app.repositories.user_repository import UserRepository
-from app.schemas.profile import AdminProfileCreate, StudentProfileCreate, TeacherProfileCreate
+from app.schemas.profile import StaffProfileCreate, StudentProfileCreate
 from app.schemas.user import (
-    CreateAdminRequest,
+    CreatePrincipalRequest,
+    CreateStaffRequest,
     CreateStudentRequest,
-    CreateTeacherRequest,
     UserStatusUpdate,
     UserUpdate,
 )
@@ -42,75 +42,80 @@ def run_tests():
 
         suffix = uuid4().hex[:6]
 
-        print("2. Creating Admin User via Controller...")
-        admin_req = CreateAdminRequest(
+        print("2. Creating Principal User (Role 1) via Controller...")
+        principal_req = CreatePrincipalRequest(
+            first_name="Super",
+            last_name="Principal",
+            login_mobile=f"99{suffix[:8]}",
+            email=f"principal_{suffix}@testschool.edu",
+            password="SecurePassword123!",
+        )
+        principal_read = user_controller.create_principal(data=principal_req)
+        assert principal_read.role == UserRole.PRINCIPAL
+        assert principal_read.first_name == "Super"
+        assert principal_read.last_name == "Principal"
+        assert principal_read.login_mobile == f"99{suffix[:8]}"
+        assert principal_read.email == f"principal_{suffix}@testschool.edu"
+        print(f"   Principal created: {principal_read.id}, Role={principal_read.role}")
+
+        print("3. Creating Staff User (Role 2) via Controller...")
+        staff_req = CreateStaffRequest(
             first_name="Alice",
-            last_name="Administrator",
-            email=f"admin_{suffix}@testschool.edu",
-            phone="1234567890",
+            last_name="StaffMember",
+            login_mobile=f"98{suffix[:8]}",
+            email=f"staff_{suffix}@testschool.edu",
             password="SecurePassword123!",
             school_id=school.id,
-            profile=AdminProfileCreate(
-                employee_code=f"ADM-{suffix}",
-                designation="Principal",
-                department="Management",
+            profile=StaffProfileCreate(
+                roll_no=f"STF-ROL-{suffix}",
+                gender=Gender.FEMALE,
+                date_of_birth=date(1988, 4, 12),
+                father_first_name="John",
+                father_last_name="StaffMember",
             ),
         )
-        admin_read = user_controller.create_admin(data=admin_req)
-        assert admin_read.role == UserRole.ADMIN
-        assert admin_read.admin_profile is not None
-        assert admin_read.admin_profile.designation == "Principal"
-        print(f"   Admin created: {admin_read.id}, Designation: {admin_read.admin_profile.designation}")
+        staff_read = user_controller.create_staff(data=staff_req)
+        assert staff_read.role == UserRole.STAFF
+        assert staff_read.staff_profile is not None
+        assert staff_read.staff_profile.roll_no == f"STF-ROL-{suffix}"
+        assert staff_read.staff_profile.gender == Gender.FEMALE
+        assert staff_read.staff_profile.date_of_birth == date(1988, 4, 12)
+        assert staff_read.staff_profile.father_first_name == "John"
+        assert staff_read.staff_profile.father_last_name == "StaffMember"
+        print(f"   Staff created: {staff_read.id}, Roll No: {staff_read.staff_profile.roll_no}")
 
-        print("3. Creating Teacher User via Controller...")
-        teacher_req = CreateTeacherRequest(
-            first_name="Bob",
-            last_name="Teacher",
-            email=f"teacher_{suffix}@testschool.edu",
-            phone="9876543210",
-            password="SecurePassword123!",
-            school_id=school.id,
-            profile=TeacherProfileCreate(
-                employee_code=f"TCH-{suffix}",
-                designation="Senior Lecturer",
-                department="Physics",
-                qualification="M.Sc Physics, B.Ed",
-                specialization="Classical Mechanics",
-                experience_years=5,
-                joining_date=date(2022, 8, 1),
-            ),
-        )
-        teacher_read = user_controller.create_teacher(data=teacher_req)
-        assert teacher_read.role == UserRole.TEACHER
-        assert teacher_read.teacher_profile is not None
-        assert teacher_read.teacher_profile.department == "Physics"
-        print(f"   Teacher created: {teacher_read.id}, Dept: {teacher_read.teacher_profile.department}")
-
-        print("4. Creating Student User via Controller...")
+        print("4. Creating Student User (Role 3) via Controller...")
         student_req = CreateStudentRequest(
             first_name="Charlie",
             last_name="Student",
-            email=f"student_{suffix}@testschool.edu",
-            phone="5551234567",
+            login_mobile=f"96{suffix[:8]}",
             password="SecurePassword123!",
             school_id=school.id,
             profile=StudentProfileCreate(
-                admission_number=f"ADM-STU-{suffix}",
-                roll_number="101",
-                date_of_birth=date(2008, 5, 15),
+                middle_name="Alexander",
+                roll_no=f"STU-{suffix}",
                 gender=Gender.MALE,
-                blood_group="O+",
-                guardian_name="David Student",
-                guardian_relation="Father",
-                guardian_phone="5559876543",
-                guardian_email="david@example.com",
+                date_of_birth=date(2008, 5, 15),
+                class_name="Grade 10",
+                section="Section A",
+                house="Spartans",
+                father_first_name="David",
+                father_last_name="Student",
             ),
         )
         student_read = user_controller.create_student(data=student_req)
         assert student_read.role == UserRole.STUDENT
         assert student_read.student_profile is not None
-        assert student_read.student_profile.guardian_name == "David Student"
-        print(f"   Student created: {student_read.id}, Guardian: {student_read.student_profile.guardian_name}")
+        assert student_read.student_profile.middle_name == "Alexander"
+        assert student_read.student_profile.roll_no == f"STU-{suffix}"
+        assert student_read.student_profile.gender == Gender.MALE
+        assert student_read.student_profile.date_of_birth == date(2008, 5, 15)
+        assert student_read.student_profile.class_name == "Grade 10"
+        assert student_read.student_profile.section == "Section A"
+        assert student_read.student_profile.house == "Spartans"
+        assert student_read.student_profile.father_first_name == "David"
+        assert student_read.student_profile.father_last_name == "Student"
+        print(f"   Student created: {student_read.id}, Class: {student_read.student_profile.class_name}, Section: {student_read.student_profile.section}")
 
         print("5. Testing List & Search via Controller...")
         paginated_res = user_controller.list_users(school_id=school.id, search="Charlie")
@@ -141,14 +146,14 @@ def run_tests():
         assert not any(u.id == student_read.id for u in list_after_del.items)
         print("   Soft delete verified: excluded from active list")
 
-        print("9. Testing Domain Exception Handling (Duplicate Email)...")
+        print("9. Testing Conflict Handling (Duplicate Email)...")
         try:
-            user_controller.create_admin(data=admin_req)
+            user_controller.create_staff(data=staff_req)
             raise AssertionError("Should have raised ConflictException for duplicate email")
         except ConflictException as e:
             print(f"   ConflictException verified: '{e.message}'")
 
-        print("\nAll N-Tier Architecture integration tests PASSED successfully!")
+        print("\nAll 3-Role (Principal, Staff, Student) tests PASSED successfully!")
     finally:
         db.close()
 

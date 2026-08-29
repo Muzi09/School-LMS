@@ -2,11 +2,12 @@ from datetime import date
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, ForeignKey, Index, SmallInteger, String, Text
+from sqlalchemy import Date, ForeignKey, Index, SmallInteger, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.enums import Gender
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -30,46 +31,29 @@ class TeacherProfile(Base):
         nullable=False,
     )
 
-    employee_code: Mapped[str] = mapped_column(
+    roll_no: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
     )
 
-    designation: Mapped[str | None] = mapped_column(
-        String(100),
-        nullable=True,
-    )
-
-    department: Mapped[str | None] = mapped_column(
-        String(100),
-        nullable=True,
-    )
-
-    qualification: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-    )
-
-    specialization: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-    )
-
-    experience_years: Mapped[int | None] = mapped_column(
+    gender: Mapped[Gender] = mapped_column(
         SmallInteger,
-        nullable=True,
-        default=0,
-        server_default="0",
+        nullable=False,
     )
 
-    joining_date: Mapped[date | None] = mapped_column(
+    date_of_birth: Mapped[date] = mapped_column(
         Date,
-        nullable=True,
+        nullable=False,
     )
 
-    bio: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
+    father_first_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    father_last_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
     )
 
     # Relationships
@@ -82,15 +66,9 @@ class TeacherProfile(Base):
     def __table_args__(cls):
         return (
             Index(
-                "idx_teacher_profiles_employee_code",
-                cls.employee_code,
-            ),
-            Index(
-                "idx_teacher_profiles_department",
-                cls.department,
-            ),
-            Index(
-                "idx_teacher_profiles_designation",
-                cls.designation,
+                "idx_teacher_profiles_roll_no",
+                cls.roll_no,
             ),
         )
+
+

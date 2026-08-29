@@ -7,13 +7,13 @@ from alembic import context
 
 from app.core.database import settings
 from app.models import (
-    AdminProfile,
     Base,
     School,
+    StaffProfile,
     StudentProfile,
-    TeacherProfile,
     User,
 )
+
 
 config = context.config
 

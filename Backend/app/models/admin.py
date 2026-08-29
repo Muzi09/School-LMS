@@ -1,11 +1,13 @@
-from typing import Any, TYPE_CHECKING
+from datetime import date
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, Index, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy import Date, ForeignKey, Index, SmallInteger, String
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.enums import Gender
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -29,25 +31,29 @@ class AdminProfile(Base):
         nullable=False,
     )
 
-    employee_code: Mapped[str | None] = mapped_column(
+    roll_no: Mapped[str] = mapped_column(
         String(50),
-        nullable=True,
+        nullable=False,
     )
 
-    designation: Mapped[str | None] = mapped_column(
+    gender: Mapped[Gender] = mapped_column(
+        SmallInteger,
+        nullable=False,
+    )
+
+    date_of_birth: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+    )
+
+    father_first_name: Mapped[str] = mapped_column(
         String(100),
-        nullable=True,
+        nullable=False,
     )
 
-    department: Mapped[str | None] = mapped_column(
+    father_last_name: Mapped[str] = mapped_column(
         String(100),
-        nullable=True,
-    )
-
-    permissions_override: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB,
-        nullable=True,
-        default=dict,
+        nullable=False,
     )
 
     # Relationships
@@ -60,11 +66,9 @@ class AdminProfile(Base):
     def __table_args__(cls):
         return (
             Index(
-                "idx_admin_profiles_employee_code",
-                cls.employee_code,
-            ),
-            Index(
-                "idx_admin_profiles_department",
-                cls.department,
+                "idx_admin_profiles_roll_no",
+                cls.roll_no,
             ),
         )
+
+

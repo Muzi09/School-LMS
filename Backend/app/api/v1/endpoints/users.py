@@ -9,9 +9,9 @@ from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import (
-    CreateAdminRequest,
+    CreatePrincipalRequest,
+    CreateStaffRequest,
     CreateStudentRequest,
-    CreateTeacherRequest,
     UserDetailRead,
     UserStatusUpdate,
     UserUpdate,
@@ -21,33 +21,33 @@ router = APIRouter(prefix="/users", tags=["Users & Profiles"])
 
 
 @router.post(
-    "/admin",
+    "/principal",
     response_model=UserDetailRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Create School Admin",
-    description="Create a new School Admin account along with their admin profile.",
+    summary="Create Principal",
+    description="Create a new Principal account.",
 )
-def create_admin_user(
-    data: CreateAdminRequest,
+def create_principal_user(
+    data: CreatePrincipalRequest,
     controller: Annotated[UserController, Depends(get_user_controller)],
     current_user: Annotated[User | None, Depends(get_current_user_optional)] = None,
 ):
-    return controller.create_admin(data=data, current_user=current_user)
+    return controller.create_principal(data=data, current_user=current_user)
 
 
 @router.post(
-    "/teacher",
+    "/staff",
     response_model=UserDetailRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Create Teacher",
-    description="Create a new Teacher account along with their teacher profile.",
+    summary="Create Staff",
+    description="Create a new Staff account along with their staff profile.",
 )
-def create_teacher_user(
-    data: CreateTeacherRequest,
+def create_staff_user(
+    data: CreateStaffRequest,
     controller: Annotated[UserController, Depends(get_user_controller)],
     current_user: Annotated[User | None, Depends(get_current_user_optional)] = None,
 ):
-    return controller.create_teacher(data=data, current_user=current_user)
+    return controller.create_staff(data=data, current_user=current_user)
 
 
 @router.post(
@@ -69,11 +69,10 @@ def create_student_user(
     "",
     response_model=PaginatedResponse[UserDetailRead],
     summary="List Users",
-    description="Retrieve a paginated list of users with optional filtering by school, role, active status, and search query.",
+    description="Retrieve a paginated list of users with optional filtering by role, active status, and search query.",
 )
 def list_users(
     controller: Annotated[UserController, Depends(get_user_controller)],
-    school_id: Annotated[UUID | None, Query(description="Filter by School ID")] = None,
     role: Annotated[UserRole | None, Query(description="Filter by User Role")] = None,
     is_active: Annotated[bool | None, Query(description="Filter by active status")] = None,
     search: Annotated[str | None, Query(description="Search in name, email, or phone")] = None,
@@ -81,7 +80,6 @@ def list_users(
     page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 20,
 ):
     return controller.list_users(
-        school_id=school_id,
         role=role,
         is_active=is_active,
         search=search,

@@ -4,7 +4,6 @@ from uuid import UUID
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.controllers.user_controller import UserController
 from app.core.database import get_db
 from app.models.enums import UserRole
 from app.models.user import User
@@ -33,19 +32,9 @@ def get_user_repository(
 # ---------------------------------------------------------
 def get_user_service(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
-    school_repo: Annotated[SchoolRepository, Depends(get_school_repository)],
     db: Annotated[Session, Depends(get_db)],
 ) -> UserService:
-    return UserService(user_repo=user_repo, school_repo=school_repo, db=db)
-
-
-# ---------------------------------------------------------
-# Controller Providers
-# ---------------------------------------------------------
-def get_user_controller(
-    user_service: Annotated[UserService, Depends(get_user_service)],
-) -> UserController:
-    return UserController(user_service=user_service)
+    return UserService(user_repo=user_repo, db=db)
 
 
 # ---------------------------------------------------------
@@ -53,7 +42,8 @@ def get_user_controller(
 # ---------------------------------------------------------
 def get_current_user_optional(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
-    x_user_id: Annotated[UUID | None, Header(description="Authenticated User ID header for development/context")] = None,
+    x_user_id: Annotated[UUID | None, Header(
+        description="Authenticated User ID header for development/context")] = None,
 ) -> User | None:
     """
     Resolve current user context.
@@ -102,5 +92,5 @@ class RoleChecker:
 
 
 # Convenience role dependencies
-require_super_admin = RoleChecker([UserRole.SUPER_ADMIN])
-require_admin_or_super_admin = RoleChecker([UserRole.SUPER_ADMIN, UserRole.ADMIN])
+require_principal = RoleChecker([UserRole.PRINCIPAL])
+require_staff_or_principal = RoleChecker([UserRole.PRINCIPAL, UserRole.STAFF])

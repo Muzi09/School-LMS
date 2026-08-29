@@ -1,4 +1,3 @@
-from app.models.admin import AdminProfile
 from app.models.base import (
     AuditMixin,
     Base,
@@ -8,8 +7,8 @@ from app.models.base import (
 )
 from app.models.enums import Gender, UserRole
 from app.models.school import School
+from app.models.staff import StaffProfile
 from app.models.student import StudentProfile
-from app.models.teacher import TeacherProfile
 from app.models.user import User
 
 __all__ = [
@@ -21,10 +20,10 @@ __all__ = [
 
     "UserRole",
     "Gender",
-    
+
     "School",
     "User",
-    "AdminProfile",
-    "TeacherProfile",
+    "StaffProfile",
     "StudentProfile",
 ]
+

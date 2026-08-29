@@ -1,5 +1,4 @@
 from datetime import date
-from typing import Any
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -7,63 +6,29 @@ from app.models.enums import Gender
 
 
 # ----------------------------------------------------
-# Admin Profile Schemas
+# Staff Profile Schemas (Replaces Admin & Teacher)
 # ----------------------------------------------------
-class AdminProfileBase(BaseModel):
-    employee_code: str | None = Field(default=None, max_length=50)
-    designation: str | None = Field(default=None, max_length=100)
-    department: str | None = Field(default=None, max_length=100)
-    permissions_override: dict[str, Any] | None = Field(default_factory=dict)
+class StaffProfileBase(BaseModel):
+    roll_no: str = Field(..., min_length=1, max_length=50, description="Roll number / Employee Identifier")
+    gender: Gender = Field(..., description="Gender (1=Male, 2=Female, 3=Other)")
+    date_of_birth: date = Field(..., description="Date of birth")
+    father_first_name: str = Field(..., min_length=1, max_length=100, description="Father's first name")
+    father_last_name: str = Field(..., min_length=1, max_length=100, description="Father's last name")
 
 
-class AdminProfileCreate(AdminProfileBase):
+class StaffProfileCreate(StaffProfileBase):
     pass
 
 
-class AdminProfileUpdate(BaseModel):
-    employee_code: str | None = Field(default=None, max_length=50)
-    designation: str | None = Field(default=None, max_length=100)
-    department: str | None = Field(default=None, max_length=100)
-    permissions_override: dict[str, Any] | None = None
+class StaffProfileUpdate(BaseModel):
+    roll_no: str | None = Field(default=None, min_length=1, max_length=50)
+    gender: Gender | None = None
+    date_of_birth: date | None = None
+    father_first_name: str | None = Field(default=None, min_length=1, max_length=100)
+    father_last_name: str | None = Field(default=None, min_length=1, max_length=100)
 
 
-class AdminProfileRead(AdminProfileBase):
-    id: UUID
-    user_id: UUID
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# ----------------------------------------------------
-# Teacher Profile Schemas
-# ----------------------------------------------------
-class TeacherProfileBase(BaseModel):
-    employee_code: str = Field(..., max_length=50)
-    designation: str | None = Field(default=None, max_length=100)
-    department: str | None = Field(default=None, max_length=100)
-    qualification: str | None = Field(default=None, max_length=255)
-    specialization: str | None = Field(default=None, max_length=255)
-    experience_years: int | None = Field(default=0, ge=0)
-    joining_date: date | None = None
-    bio: str | None = None
-
-
-class TeacherProfileCreate(TeacherProfileBase):
-    pass
-
-
-class TeacherProfileUpdate(BaseModel):
-    employee_code: str | None = Field(default=None, max_length=50)
-    designation: str | None = Field(default=None, max_length=100)
-    department: str | None = Field(default=None, max_length=100)
-    qualification: str | None = Field(default=None, max_length=255)
-    specialization: str | None = Field(default=None, max_length=255)
-    experience_years: int | None = Field(default=None, ge=0)
-    joining_date: date | None = None
-    bio: str | None = None
-
-
-class TeacherProfileRead(TeacherProfileBase):
+class StaffProfileRead(StaffProfileBase):
     id: UUID
     user_id: UUID
 
@@ -74,20 +39,15 @@ class TeacherProfileRead(TeacherProfileBase):
 # Student Profile Schemas
 # ----------------------------------------------------
 class StudentProfileBase(BaseModel):
-    admission_number: str = Field(..., max_length=50)
-    roll_number: str | None = Field(default=None, max_length=50)
-    date_of_birth: date | None = None
-    gender: Gender | None = None
-    blood_group: str | None = Field(default=None, max_length=10)
-    admission_date: date | None = None
-    guardian_name: str = Field(..., max_length=150)
-    guardian_relation: str | None = Field(default=None, max_length=50)
-    guardian_phone: str = Field(..., max_length=20)
-    guardian_email: str | None = Field(default=None, max_length=255)
-    emergency_contact_name: str | None = Field(default=None, max_length=150)
-    emergency_contact_phone: str | None = Field(default=None, max_length=20)
-    address: str | None = None
-    medical_notes: str | None = None
+    middle_name: str = Field(..., min_length=1, max_length=100, description="Middle name")
+    roll_no: str = Field(..., min_length=1, max_length=50, description="Roll number")
+    gender: Gender = Field(..., description="Gender (1=Male, 2=Female, 3=Other)")
+    date_of_birth: date = Field(..., description="Date of birth")
+    class_name: str = Field(..., min_length=1, max_length=50, description="Class / Grade")
+    section: str = Field(..., min_length=1, max_length=50, description="Section")
+    house: str = Field(..., min_length=1, max_length=50, description="House")
+    father_first_name: str = Field(..., min_length=1, max_length=100, description="Father's first name")
+    father_last_name: str = Field(..., min_length=1, max_length=100, description="Father's last name")
 
 
 class StudentProfileCreate(StudentProfileBase):
@@ -95,20 +55,15 @@ class StudentProfileCreate(StudentProfileBase):
 
 
 class StudentProfileUpdate(BaseModel):
-    admission_number: str | None = Field(default=None, max_length=50)
-    roll_number: str | None = Field(default=None, max_length=50)
-    date_of_birth: date | None = None
+    middle_name: str | None = Field(default=None, min_length=1, max_length=100)
+    roll_no: str | None = Field(default=None, min_length=1, max_length=50)
     gender: Gender | None = None
-    blood_group: str | None = Field(default=None, max_length=10)
-    admission_date: date | None = None
-    guardian_name: str | None = Field(default=None, max_length=150)
-    guardian_relation: str | None = Field(default=None, max_length=50)
-    guardian_phone: str | None = Field(default=None, max_length=20)
-    guardian_email: str | None = Field(default=None, max_length=255)
-    emergency_contact_name: str | None = Field(default=None, max_length=150)
-    emergency_contact_phone: str | None = Field(default=None, max_length=20)
-    address: str | None = None
-    medical_notes: str | None = None
+    date_of_birth: date | None = None
+    class_name: str | None = Field(default=None, min_length=1, max_length=50)
+    section: str | None = Field(default=None, min_length=1, max_length=50)
+    house: str | None = Field(default=None, min_length=1, max_length=50)
+    father_first_name: str | None = Field(default=None, min_length=1, max_length=100)
+    father_last_name: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class StudentProfileRead(StudentProfileBase):

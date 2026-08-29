@@ -4,9 +4,9 @@ from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import (
-    CreateAdminRequest,
+    CreatePrincipalRequest,
+    CreateStaffRequest,
     CreateStudentRequest,
-    CreateTeacherRequest,
     UserDetailRead,
     UserStatusUpdate,
     UserUpdate,
@@ -23,24 +23,24 @@ class UserController:
     def __init__(self, user_service: UserService):
         self.user_service = user_service
 
-    def create_admin(
+    def create_principal(
         self,
-        data: CreateAdminRequest,
+        data: CreatePrincipalRequest,
         current_user: User | None = None,
     ) -> UserDetailRead:
-        """Handle School Admin creation."""
+        """Handle Principal creation."""
         created_by_id = current_user.id if current_user else None
-        user = self.user_service.create_admin(data=data, created_by_id=created_by_id)
+        user = self.user_service.create_principal(data=data, created_by_id=created_by_id)
         return UserDetailRead.model_validate(user)
 
-    def create_teacher(
+    def create_staff(
         self,
-        data: CreateTeacherRequest,
+        data: CreateStaffRequest,
         current_user: User | None = None,
     ) -> UserDetailRead:
-        """Handle Teacher creation."""
+        """Handle Staff creation."""
         created_by_id = current_user.id if current_user else None
-        user = self.user_service.create_teacher(data=data, created_by_id=created_by_id)
+        user = self.user_service.create_staff(data=data, created_by_id=created_by_id)
         return UserDetailRead.model_validate(user)
 
     def create_student(
@@ -60,7 +60,6 @@ class UserController:
 
     def list_users(
         self,
-        school_id: UUID | None = None,
         role: UserRole | None = None,
         is_active: bool | None = None,
         search: str | None = None,
@@ -69,7 +68,6 @@ class UserController:
     ) -> PaginatedResponse[UserDetailRead]:
         """Retrieve paginated and filtered list of users."""
         items, total = self.user_service.list_users(
-            school_id=school_id,
             role=role,
             is_active=is_active,
             search=search,
