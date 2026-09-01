@@ -72,6 +72,10 @@ class UserRead(UserBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
+    deleted_at: datetime | None = None
+    deleted_by: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -10,10 +10,12 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { useStudentsList, useUpdateStudentStatus } from "@/hooks/useStudents"
+import { PageHeader } from "@/components/common/PageHeader"
 import { DataTable } from "@/components/common/DataTable"
 import { StudentFormModal } from "./StudentFormModal"
 import { StudentDetailsModal } from "./StudentDetailsModal"
 import { StudentDeleteDialog } from "./StudentDeleteDialog"
+import { formatDateTime } from "@/lib/utils"
 
 export function StudentList() {
   const [globalFilter, setGlobalFilter] = useState("")
@@ -78,10 +80,10 @@ export function StudentList() {
                 {s.first_name?.[0]}{s.last_name?.[0]}
               </div>
               <div>
-                <span className="font-semibold text-foreground text-xs block">
+                <span className="font-semibold text-foreground text-sm block">
                   {s.first_name} {profile.middle_name ? `${profile.middle_name} ` : ""}{s.last_name}
                 </span>
-                <span className="text-[11px] text-muted-foreground block truncate max-w-[180px]">
+                <span className="text-xs text-muted-foreground block truncate max-w-[180px]">
                   {s.email || "No email"}
                 </span>
               </div>
@@ -93,7 +95,7 @@ export function StudentList() {
         accessorKey: "student_profile.roll_no",
         header: "Roll No",
         Cell: ({ cell }) => (
-          <span className="font-mono text-foreground font-medium text-xs">
+          <span className="font-mono text-foreground font-medium text-sm">
             {cell.getValue() || "—"}
           </span>
         ),
@@ -105,20 +107,20 @@ export function StudentList() {
           const p = row.student_profile || {}
           return p.class_name ? `${p.class_name} • ${p.section || ""}` : "—"
         },
-        Cell: ({ cell }) => <span className="text-foreground text-xs">{cell.getValue()}</span>,
+        Cell: ({ cell }) => <span className="text-foreground text-sm">{cell.getValue()}</span>,
       },
       {
         accessorKey: "student_profile.house",
         header: "House",
         Cell: ({ cell }) => (
-          <span className="text-muted-foreground text-xs">{cell.getValue() || "—"}</span>
+          <span className="text-foreground text-sm">{cell.getValue() || "—"}</span>
         ),
       },
       {
         accessorKey: "login_mobile",
         header: "Login Mobile",
         Cell: ({ cell }) => (
-          <span className="font-mono text-foreground text-xs">
+          <span className="font-mono text-foreground text-sm">
             {cell.getValue()}
           </span>
         ),
@@ -130,7 +132,7 @@ export function StudentList() {
           const p = row.student_profile || {}
           return p.father_first_name ? `${p.father_first_name} ${p.father_last_name || ""}` : "—"
         },
-        Cell: ({ cell }) => <span className="text-foreground text-xs">{cell.getValue()}</span>,
+        Cell: ({ cell }) => <span className="text-foreground text-sm">{cell.getValue()}</span>,
       },
       {
         accessorKey: "is_active",
@@ -140,7 +142,7 @@ export function StudentList() {
           return (
             <button
               onClick={() => handleToggleStatus(s)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
                 s.is_active
                   ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
                   : "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20"
@@ -152,50 +154,83 @@ export function StudentList() {
           )
         },
       },
+      // Mixin Audit Columns (hidden by default)
+      {
+        accessorKey: "created_at",
+        header: "Created At",
+        Cell: ({ cell }) => (
+          <span className="font-mono text-foreground text-sm">
+            {formatDateTime(cell.getValue())}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "updated_at",
+        header: "Updated At",
+        Cell: ({ cell }) => (
+          <span className="font-mono text-foreground text-sm">
+            {formatDateTime(cell.getValue())}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "created_by",
+        header: "Created By",
+        Cell: ({ cell }) => (
+          <span className="font-mono text-foreground text-sm">
+            {cell.getValue() ? String(cell.getValue()).slice(0, 8) + "..." : "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "updated_by",
+        header: "Updated By",
+        Cell: ({ cell }) => (
+          <span className="font-mono text-foreground text-sm">
+            {cell.getValue() ? String(cell.getValue()).slice(0, 8) + "..." : "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "deleted_at",
+        header: "Deleted At",
+        Cell: ({ cell }) => (
+          <span className="font-mono text-foreground text-sm">
+            {formatDateTime(cell.getValue())}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "deleted_by",
+        header: "Deleted By",
+        Cell: ({ cell }) => (
+          <span className="font-mono text-foreground text-sm">
+            {cell.getValue() ? String(cell.getValue()).slice(0, 8) + "..." : "—"}
+          </span>
+        ),
+      },
     ],
     []
   )
 
   return (
     <div className="space-y-6 animate-in fade-in-0 duration-200">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-5 rounded-2xl border border-border/80 shadow-xs">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <GraduationCap className="size-5 text-primary" />
-            <span>Manage Students</span>
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Register students, manage academic placement, class sections, and guardian contact profiles.
-          </p>
-        </div>
+      {/* Common Page Header */}
+      <PageHeader
+        icon={GraduationCap}
+        title="Manage Students"
+        description="Register students, manage academic placement, class sections, and guardian contact profiles."
+        onRefresh={() => refetch()}
+        isRefreshing={isFetching}
+        onCreate={() => {
+          setEditingStudent(null)
+          setIsFormOpen(true)
+        }}
+        createLabel="Create Student"
+        createIcon={UserPlus}
+      />
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="gap-1.5 text-xs"
-          >
-            <RefreshCw className={`size-3.5 ${isFetching ? "animate-spin" : ""}`} />
-            <span>Refresh</span>
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditingStudent(null)
-              setIsFormOpen(true)
-            }}
-            className="gap-1.5 text-xs shadow-xs"
-          >
-            <UserPlus className="size-4" />
-            <span>Create Student</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* MRT Data Table */}
+      {/* TanStack Data Table */}
       <DataTable
         columns={columns}
         data={studentsList}
@@ -206,6 +241,16 @@ export function StudentList() {
         errorMessage={error?.message}
         manualPagination
         manualFiltering
+        initialState={{
+          columnVisibility: {
+            created_at: false,
+            updated_at: false,
+            created_by: false,
+            updated_by: false,
+            deleted_at: false,
+            deleted_by: false,
+          },
+        }}
         state={{
           pagination,
           globalFilter,
@@ -216,39 +261,42 @@ export function StudentList() {
         renderRowActions={({ row }) => {
           const s = row.original
           return (
-            <div className="flex items-center justify-end gap-1">
+            <div className="flex items-center justify-end gap-1.5">
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
                 title="View Student Details"
                 onClick={() => {
                   setViewingStudent(s)
                   setIsDetailsOpen(true)
                 }}
+                className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
               >
-                <Eye className="size-3.5 text-muted-foreground hover:text-foreground" />
+                <Eye className="size-4" />
               </Button>
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
                 title="Edit Student"
                 onClick={() => {
                   setEditingStudent(s)
                   setIsFormOpen(true)
                 }}
+                className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
               >
-                <Edit2 className="size-3.5 text-muted-foreground hover:text-foreground" />
+                <Edit2 className="size-4" />
               </Button>
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
                 title="Delete Student"
                 onClick={() => {
                   setDeletingStudent(s)
                   setIsDeleteOpen(true)
                 }}
+                className="size-8 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
               >
-                <Trash2 className="size-3.5 text-destructive/80 hover:text-destructive" />
+                <Trash2 className="size-4" />
               </Button>
             </div>
           )

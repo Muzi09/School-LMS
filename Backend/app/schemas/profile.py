@@ -39,7 +39,7 @@ class StaffProfileRead(StaffProfileBase):
 # Student Profile Schemas
 # ----------------------------------------------------
 class StudentProfileBase(BaseModel):
-    middle_name: str = Field(..., min_length=1, max_length=100, description="Middle name")
+    middle_name: str | None = Field(default=None, max_length=100, description="Middle name")
     roll_no: str = Field(..., min_length=1, max_length=50, description="Roll number")
     gender: Gender = Field(..., description="Gender (1=Male, 2=Female, 3=Other)")
     date_of_birth: date = Field(..., description="Date of birth")
@@ -55,7 +55,7 @@ class StudentProfileCreate(StudentProfileBase):
 
 
 class StudentProfileUpdate(BaseModel):
-    middle_name: str | None = Field(default=None, min_length=1, max_length=100)
+    middle_name: str | None = Field(default=None, max_length=100)
     roll_no: str | None = Field(default=None, min_length=1, max_length=50)
     gender: Gender | None = None
     date_of_birth: date | None = None

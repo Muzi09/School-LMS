@@ -1,4 +1,5 @@
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -56,7 +57,9 @@ export function DatePicker({
   ...props
 }) {
   const [isOpen, setIsOpen] = React.useState(false)
-  const containerRef = React.useRef(null)
+  const triggerRef = React.useRef(null)
+  const popoverRef = React.useRef(null)
+  const [coords, setCoords] = React.useState(null)
 
   const parsed = React.useMemo(() => parseDateString(value), [value])
 
@@ -76,12 +79,63 @@ export function DatePicker({
     }
   }, [value])
 
-  // Close when clicking outside
-  React.useEffect(() => {
+  // Calculate popover positioning relative to trigger
+  const calculatePosition = React.useCallback(() => {
+    if (!triggerRef.current) return null
+    const rect = triggerRef.current.getBoundingClientRect()
+    const popoverWidth = 288 // 18rem / 72
+    const popoverHeight = 320
+
+    let left = rect.left
+    if (left + popoverWidth > window.innerWidth - 12) {
+      left = Math.max(12, window.innerWidth - popoverWidth - 12)
+    }
+
+    let top = rect.bottom + 6
+    // If not enough room below, open above
+    if (top + popoverHeight > window.innerHeight - 12 && rect.top > popoverHeight + 12) {
+      top = rect.top - popoverHeight - 6
+    }
+
+    return { top, left }
+  }, [])
+
+  const handleToggleOpen = () => {
+    if (disabled) return
+    if (!isOpen) {
+      const pos = calculatePosition()
+      if (pos) {
+        setCoords(pos)
+      }
+      setIsOpen(true)
+    } else {
+      setIsOpen(false)
+    }
+  }
+
+  // Position updates and event listeners when open
+  React.useLayoutEffect(() => {
     if (!isOpen) return
 
+    const pos = calculatePosition()
+    if (pos) {
+      setCoords(pos)
+    }
+
+    const handleScrollOrResize = () => {
+      const updatedPos = calculatePosition()
+      if (updatedPos) {
+        setCoords(updatedPos)
+      }
+    }
+
     const handleClickOutside = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target) &&
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target)
+      ) {
         setIsOpen(false)
       }
     }
@@ -92,14 +146,20 @@ export function DatePicker({
       }
     }
 
+    window.addEventListener("scroll", handleScrollOrResize, true)
+    window.addEventListener("resize", handleScrollOrResize)
     document.addEventListener("mousedown", handleClickOutside)
     document.addEventListener("keydown", handleKeyDown)
+
     return () => {
+      window.removeEventListener("scroll", handleScrollOrResize, true)
+      window.removeEventListener("resize", handleScrollOrResize)
       document.removeEventListener("mousedown", handleClickOutside)
       document.removeEventListener("keydown", handleKeyDown)
     }
-  }, [isOpen])
+  }, [isOpen, calculatePosition])
 
+  // Calendar calculations
   const daysInMonth = React.useMemo(() => {
     return new Date(viewYear, viewMonth + 1, 0).getDate()
   }, [viewYear, viewMonth])
@@ -112,9 +172,9 @@ export function DatePicker({
     e.stopPropagation()
     if (viewMonth === 0) {
       setViewMonth(11)
-      setViewYear((y) => y - 1)
+      setViewYear((prev) => prev - 1)
     } else {
-      setViewMonth((m) => m - 1)
+      setViewMonth((prev) => prev - 1)
     }
   }
 
@@ -122,9 +182,9 @@ export function DatePicker({
     e.stopPropagation()
     if (viewMonth === 11) {
       setViewMonth(0)
-      setViewYear((y) => y + 1)
+      setViewYear((prev) => prev + 1)
     } else {
-      setViewMonth((m) => m + 1)
+      setViewMonth((prev) => prev + 1)
     }
   }
 
@@ -158,7 +218,7 @@ export function DatePicker({
   }, [minYear, maxYear])
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div className="relative w-full">
       {/* Hidden native input for form submissions */}
       <input
         type="hidden"
@@ -170,154 +230,168 @@ export function DatePicker({
 
       {/* Trigger Button */}
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setIsOpen((prev) => !prev)}
+        onClick={handleToggleOpen}
         className={cn(
-          "h-8 w-full min-w-0 rounded-2xl border border-transparent bg-input/50 px-2.5 py-1 text-xs transition-[color,box-shadow] duration-200 outline-none flex items-center justify-between gap-2 text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 text-left cursor-pointer",
+          "h-10 w-full min-w-0 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm transition-[color,box-shadow] duration-200 outline-none flex items-center justify-between gap-2 text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 text-left cursor-pointer",
           !value && "text-muted-foreground",
           className
         )}
         {...props}
       >
-        <div className="flex items-center gap-2 truncate">
-          <CalendarIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <div className="flex items-center gap-2.5 truncate">
+          <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate">{value ? formatDateDisplay(value) : "Select date"}</span>
         </div>
 
         {value && !disabled && (
           <span
             onClick={handleClear}
-            className="p-0.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             title="Clear date"
           >
-            <X className="size-3" />
+            <X className="size-3.5" />
           </span>
         )}
       </button>
 
-      {/* Popover Calendar */}
-      {isOpen && (
-        <div className="absolute top-full left-0 z-50 mt-1 w-64 rounded-2xl border border-border bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-foreground/5 animate-in fade-in-0 zoom-in-95 duration-150">
-          {/* Header Controls */}
-          <div className="flex items-center justify-between gap-1 mb-2">
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-              title="Previous Month"
-            >
-              <ChevronLeft className="size-4" />
-            </button>
-
-            <div className="flex items-center gap-1">
-              {/* Month Select */}
-              <select
-                value={viewMonth}
-                onChange={(e) => setViewMonth(parseInt(e.target.value, 10))}
-                className="h-6 rounded-md bg-transparent px-1 text-xs font-semibold text-foreground focus:outline-none focus:bg-muted cursor-pointer"
-              >
-                {MONTHS.map((m, idx) => (
-                  <option key={m} value={idx} className="bg-popover text-popover-foreground">
-                    {m.slice(0, 3)}
-                  </option>
-                ))}
-              </select>
-
-              {/* Year Select */}
-              <select
-                value={viewYear}
-                onChange={(e) => setViewYear(parseInt(e.target.value, 10))}
-                className="h-6 rounded-md bg-transparent px-1 text-xs font-semibold text-foreground focus:outline-none focus:bg-muted cursor-pointer"
-              >
-                {yearOptions.map((y) => (
-                  <option key={y} value={y} className="bg-popover text-popover-foreground">
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-              title="Next Month"
-            >
-              <ChevronRight className="size-4" />
-            </button>
-          </div>
-
-          {/* Days of Week Header */}
-          <div className="grid grid-cols-7 gap-1 text-center mb-1">
-            {DAYS_OF_WEEK.map((d) => (
-              <span key={d} className="text-[10px] font-medium text-muted-foreground py-0.5">
-                {d}
-              </span>
-            ))}
-          </div>
-
-          {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {/* Empty slots for offset */}
-            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-              <span key={`empty-${i}`} className="size-7" />
-            ))}
-
-            {/* Days of Month */}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const dayNum = i + 1
-              const isSelected =
-                parsed &&
-                parsed.year === viewYear &&
-                parsed.month === viewMonth &&
-                parsed.day === dayNum
-              const isToday =
-                today.year === viewYear &&
-                today.month === viewMonth &&
-                today.day === dayNum
-
-              return (
-                <button
-                  key={dayNum}
-                  type="button"
-                  onClick={() => handleSelectDate(dayNum)}
-                  className={cn(
-                    "size-7 rounded-xl text-xs font-medium flex items-center justify-center transition-colors cursor-pointer",
-                    isSelected
-                      ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                      : isToday
-                      ? "bg-accent text-accent-foreground font-semibold border border-primary/40 hover:bg-primary/20"
-                      : "text-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  {dayNum}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Quick Action Footer */}
-          <div className="mt-2.5 pt-2 border-t border-border flex items-center justify-between text-[11px]">
-            <button
-              type="button"
-              onClick={handleSelectToday}
-              className="font-medium text-primary hover:underline cursor-pointer"
-            >
-              Today
-            </button>
-            {value && (
+      {/* Popover Calendar rendered into Body via React Portal */}
+      {isOpen &&
+        coords &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            style={{
+              position: "fixed",
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              zIndex: 9999,
+            }}
+            className="w-72 rounded-2xl border border-border bg-popover p-3.5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 duration-150 select-none"
+          >
+            {/* Header Controls */}
+            <div className="flex items-center justify-between gap-1 mb-2.5">
               <button
                 type="button"
-                onClick={handleClear}
-                className="font-medium text-muted-foreground hover:text-destructive cursor-pointer"
+                onClick={handlePrevMonth}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                title="Previous Month"
               >
-                Clear
+                <ChevronLeft className="size-4" />
               </button>
-            )}
-          </div>
-        </div>
-      )}
+
+              <div className="flex items-center gap-1.5">
+                {/* Month Select */}
+                <select
+                  value={viewMonth}
+                  onChange={(e) => setViewMonth(parseInt(e.target.value, 10))}
+                  className="h-7 rounded-lg bg-muted/60 px-2 text-xs font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+                >
+                  {MONTHS.map((m, idx) => (
+                    <option key={m} value={idx} className="bg-popover text-popover-foreground">
+                      {m.slice(0, 3)}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Year Select */}
+                <select
+                  value={viewYear}
+                  onChange={(e) => setViewYear(parseInt(e.target.value, 10))}
+                  className="h-7 rounded-lg bg-muted/60 px-2 text-xs font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y} className="bg-popover text-popover-foreground">
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                title="Next Month"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+
+            {/* Days of Week Header */}
+            <div className="grid grid-cols-7 gap-1 text-center mb-1.5">
+              {DAYS_OF_WEEK.map((d) => (
+                <span key={d} className="text-[11px] font-semibold text-muted-foreground py-0.5">
+                  {d}
+                </span>
+              ))}
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {/* Empty slots for offset */}
+              {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                <span key={`empty-${i}`} className="size-8" />
+              ))}
+
+              {/* Days of Month */}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const dayNum = i + 1
+                const isSelected =
+                  parsed &&
+                  parsed.year === viewYear &&
+                  parsed.month === viewMonth &&
+                  parsed.day === dayNum
+                const isToday =
+                  today.year === viewYear &&
+                  today.month === viewMonth &&
+                  today.day === dayNum
+
+                return (
+                  <button
+                    key={dayNum}
+                    type="button"
+                    onClick={() => handleSelectDate(dayNum)}
+                    className={cn(
+                      "size-8 rounded-xl text-xs font-medium flex items-center justify-center transition-colors cursor-pointer",
+                      isSelected
+                        ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                        : isToday
+                        ? "bg-accent text-accent-foreground font-semibold border border-primary/40 hover:bg-primary/20"
+                        : "text-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {dayNum}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Quick Action Footer */}
+            <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between text-xs">
+              <button
+                type="button"
+                onClick={handleSelectToday}
+                className="font-medium text-primary hover:underline cursor-pointer"
+              >
+                Today
+              </button>
+              {value && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="font-medium text-muted-foreground hover:text-destructive cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

@@ -31,9 +31,9 @@ class StudentProfile(Base):
         nullable=False,
     )
 
-    middle_name: Mapped[str] = mapped_column(
+    middle_name: Mapped[str | None] = mapped_column(
         String(100),
-        nullable=False,
+        nullable=True,
     )
 
     roll_no: Mapped[str] = mapped_column(
