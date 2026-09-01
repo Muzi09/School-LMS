@@ -1,0 +1,448 @@
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, List
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.api.deps import require_super_admin
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.security import (
+    encrypt_smtp_password,
+    generate_onboarding_token,
+    hash_password,
+)
+from app.models.enums import UserRole
+from app.models.onboarding_token import PrincipalOnboardingToken
+from app.models.school import School
+from app.models.smtp_configuration import SmtpConfiguration
+from app.models.user import User
+from app.schemas.auth import AuthUserResponse
+from app.schemas.smtp import SaveSmtpConfigRequest, SmtpConfigResponse
+from app.schemas.super_admin import (
+    CreatePrincipalRequest,
+    CreateSalesPersonRequest,
+    CreateSuperAdminRequest,
+    PrincipalListItem,
+    SuperAdminDashboardStats,
+)
+from app.services.email_service import send_principal_invitation_email
+
+router = APIRouter(prefix="/super-admin", tags=["Super Admin"])
+
+
+@router.get("/dashboard", response_model=SuperAdminDashboardStats)
+def get_super_admin_dashboard(
+    current_user: Annotated[User, Depends(require_super_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    High-level platform statistics for Super Admin dashboard.
+    """
+    total_schools = db.query(School).filter(School.deleted_at.is_(None)).count()
+    total_active_schools = db.query(School).filter(School.deleted_at.is_(None), School.is_active.is_(True), School.setup_completed.is_(True)).count()
+    total_pending_setups = db.query(User).filter(
+        User.role == UserRole.PRINCIPAL,
+        User.deleted_at.is_(None),
+        User.school_setup_completed.is_(False),
+    ).count()
+
+    total_principals = db.query(User).filter(
+        User.role == UserRole.PRINCIPAL,
+        User.deleted_at.is_(None),
+    ).count()
+
+    total_sales_persons = db.query(User).filter(
+        User.role == UserRole.SALES_PERSON,
+        User.deleted_at.is_(None),
+    ).count()
+
+    return SuperAdminDashboardStats(
+        total_schools=total_schools,
+        total_principals=total_principals,
+        total_active_schools=total_active_schools,
+        total_pending_setups=total_pending_setups,
+        total_sales_persons=total_sales_persons,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SMTP Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/smtp", response_model=SmtpConfigResponse)
+def get_smtp_configuration(
+    current_user: Annotated[User, Depends(require_super_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Retrieve the authenticated Super Admin's SMTP configuration.
+    Returns safe fields only — never exposes the stored password.
+    """
+    smtp_config = (
+        db.query(SmtpConfiguration)
+        .filter(
+            SmtpConfiguration.super_admin_id == current_user.id,
+            SmtpConfiguration.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not smtp_config:
+        return SmtpConfigResponse(is_configured=False)
+
+    return SmtpConfigResponse(
+        is_configured=bool(smtp_config.smtp_host and smtp_config.from_email),
+        smtp_host=smtp_config.smtp_host,
+        smtp_port=smtp_config.smtp_port,
+        smtp_username=smtp_config.smtp_username,
+        from_email=smtp_config.from_email,
+        from_name=smtp_config.from_name,
+        security=smtp_config.security,
+        is_active=smtp_config.is_active,
+        is_password_set=bool(smtp_config.smtp_password_encrypted),
+        created_at=smtp_config.created_at,
+        updated_at=smtp_config.updated_at,
+    )
+
+
+@router.post("/smtp", response_model=SmtpConfigResponse)
+def save_smtp_configuration(
+    payload: SaveSmtpConfigRequest,
+    current_user: Annotated[User, Depends(require_super_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Create or update the authenticated Super Admin's SMTP configuration.
+    Encrypts password securely at rest and saves per-Super-Admin settings.
+    """
+    smtp_config = (
+        db.query(SmtpConfiguration)
+        .filter(
+            SmtpConfiguration.super_admin_id == current_user.id,
+            SmtpConfiguration.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if smtp_config:
+        # Updating existing config
+        smtp_config.smtp_host = payload.smtp_host.strip()
+        smtp_config.smtp_port = payload.smtp_port
+        smtp_config.smtp_username = payload.smtp_username.strip()
+        smtp_config.from_email = str(payload.from_email).strip().lower()
+        smtp_config.from_name = payload.from_name.strip()
+        smtp_config.security = payload.security.upper()
+        smtp_config.is_active = payload.is_active
+        smtp_config.updated_by = current_user.id
+
+        if payload.smtp_password and payload.smtp_password.strip():
+            smtp_config.smtp_password_encrypted = encrypt_smtp_password(payload.smtp_password.strip())
+    else:
+        # Creating new config
+        if not payload.smtp_password or not payload.smtp_password.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SMTP password is required for initial configuration.",
+            )
+
+        encrypted_pwd = encrypt_smtp_password(payload.smtp_password.strip())
+        smtp_config = SmtpConfiguration(
+            super_admin_id=current_user.id,
+            smtp_host=payload.smtp_host.strip(),
+            smtp_port=payload.smtp_port,
+            smtp_username=payload.smtp_username.strip(),
+            smtp_password_encrypted=encrypted_pwd,
+            from_email=str(payload.from_email).strip().lower(),
+            from_name=payload.from_name.strip(),
+            security=payload.security.upper(),
+            is_active=payload.is_active,
+            created_by=current_user.id,
+        )
+        db.add(smtp_config)
+
+    db.commit()
+    db.refresh(smtp_config)
+
+    return SmtpConfigResponse(
+        is_configured=True,
+        smtp_host=smtp_config.smtp_host,
+        smtp_port=smtp_config.smtp_port,
+        smtp_username=smtp_config.smtp_username,
+        from_email=smtp_config.from_email,
+        from_name=smtp_config.from_name,
+        security=smtp_config.security,
+        is_active=smtp_config.is_active,
+        is_password_set=bool(smtp_config.smtp_password_encrypted),
+        created_at=smtp_config.created_at,
+        updated_at=smtp_config.updated_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Principals Management Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/principals", response_model=List[PrincipalListItem])
+def list_principals(
+    current_user: Annotated[User, Depends(require_super_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    List all principals and their school onboarding status.
+    """
+    principals = (
+        db.query(User)
+        .filter(
+            User.role == UserRole.PRINCIPAL,
+            User.deleted_at.is_(None),
+        )
+        .order_by(User.created_at.desc())
+        .all()
+    )
+
+    result: List[PrincipalListItem] = []
+    for p in principals:
+        school_name = None
+        school_code = None
+        if p.school_id:
+            school = db.query(School).filter(School.id == p.school_id, School.deleted_at.is_(None)).first()
+            if school:
+                school_name = school.name
+                school_code = school.code
+
+        result.append(
+            PrincipalListItem(
+                id=p.id,
+                first_name=p.first_name,
+                last_name=p.last_name,
+                email=p.email,
+                login_mobile=p.login_mobile,
+                role=p.role,
+                is_active=p.is_active,
+                school_setup_completed=p.school_setup_completed,
+                school_id=p.school_id,
+                school_name=school_name,
+                school_code=school_code,
+                created_at=p.created_at,
+            )
+        )
+
+    return result
+
+
+@router.post("/principals", response_model=PrincipalListItem, status_code=status.HTTP_201_CREATED)
+def create_principal(
+    payload: CreatePrincipalRequest,
+    current_user: Annotated[User, Depends(require_super_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Create a new Principal account, generate single-use onboarding token,
+    and trigger the invitation email with setup wizard link.
+
+    CRITICAL RESTRICTION: The authenticated Super Admin MUST have active SMTP
+    configured before creating or inviting Principals.
+    """
+    # 0. Check Super Admin SMTP Configuration Pre-requisite
+    smtp_config = (
+        db.query(SmtpConfiguration)
+        .filter(
+            SmtpConfiguration.super_admin_id == current_user.id,
+            SmtpConfiguration.is_active.is_(True),
+            SmtpConfiguration.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not smtp_config or not smtp_config.smtp_host or not smtp_config.smtp_password_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SMTP configuration is required before creating a Principal. Please configure SMTP settings first.",
+        )
+
+    email_clean = payload.email.strip().lower()
+    mobile_clean = payload.login_mobile.strip()
+
+    # Uniqueness checks
+    existing_email = db.query(User).filter(
+        func.lower(User.email) == email_clean,
+        User.deleted_at.is_(None),
+    ).first()
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this email address already exists.",
+        )
+
+    existing_mobile = db.query(User).filter(
+        User.login_mobile == mobile_clean,
+        User.deleted_at.is_(None),
+    ).first()
+    if existing_mobile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this mobile number already exists.",
+        )
+
+    # 1. Create Principal without password or PIN (will be created during setup)
+    principal = User(
+        first_name=payload.first_name.strip(),
+        last_name=payload.last_name.strip(),
+        email=email_clean,
+        login_mobile=mobile_clean,
+        password_hash=None,
+        pin_hash=None,
+        role=UserRole.PRINCIPAL,
+        is_active=True,
+        school_setup_completed=False,
+        created_by=current_user.id,
+    )
+    db.add(principal)
+    db.flush()
+
+    # 2. Generate secure onboarding token
+    raw_token, token_hash = generate_onboarding_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.ONBOARDING_TOKEN_EXPIRE_HOURS)
+
+    token_record = PrincipalOnboardingToken(
+        user_id=principal.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+    db.add(token_record)
+    db.commit()
+    db.refresh(principal)
+
+    # 3. Trigger email using authenticated Super Admin's dynamic SMTP configuration
+    full_name = f"{principal.first_name} {principal.last_name}"
+    send_principal_invitation_email(
+        principal_name=full_name,
+        principal_email=principal.email,
+        raw_token=raw_token,
+        smtp_config=smtp_config,
+    )
+
+    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
+
+    return PrincipalListItem(
+        id=principal.id,
+        first_name=principal.first_name,
+        last_name=principal.last_name,
+        email=principal.email,
+        login_mobile=principal.login_mobile,
+        role=principal.role,
+        is_active=principal.is_active,
+        school_setup_completed=principal.school_setup_completed,
+        school_id=None,
+        school_name=None,
+        school_code=None,
+        created_at=principal.created_at,
+        onboarding_url=onboarding_url,
+    )
+
+
+@router.get("/users", response_model=List[AuthUserResponse])
+def list_platform_users(
+    current_user: Annotated[User, Depends(require_super_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    List all platform-level users (Super Admins and Sales Persons).
+    """
+    users = (
+        db.query(User)
+        .filter(
+            User.role.in_([UserRole.SUPER_ADMIN, UserRole.SALES_PERSON]),
+            User.deleted_at.is_(None),
+        )
+        .order_by(User.created_at.desc())
+        .all()
+    )
+
+    return [
+        AuthUserResponse(
+            id=u.id,
+            first_name=u.first_name,
+            last_name=u.last_name,
+            email=u.email,
+            login_mobile=u.login_mobile,
+            role=u.role,
+            is_active=u.is_active,
+            school_setup_completed=u.school_setup_completed,
+            school_id=None,
+            school_name=None,
+        )
+        for u in users
+    ]
+
+
+@router.post("/users", response_model=AuthUserResponse, status_code=status.HTTP_201_CREATED)
+def create_platform_user(
+    payload: CreateSuperAdminRequest | CreateSalesPersonRequest,
+    target_role: UserRole,
+    current_user: Annotated[User, Depends(require_super_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Create an active Super Admin or Sales Person account.
+    """
+    if target_role not in (UserRole.SUPER_ADMIN, UserRole.SALES_PERSON):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid role for platform user creation. Must be SUPER_ADMIN or SALES_PERSON.",
+        )
+
+    email_clean = payload.email.strip().lower()
+    mobile_clean = payload.login_mobile.strip()
+
+    existing_email = db.query(User).filter(
+        func.lower(User.email) == email_clean,
+        User.deleted_at.is_(None),
+    ).first()
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this email address already exists.",
+        )
+
+    existing_mobile = db.query(User).filter(
+        User.login_mobile == mobile_clean,
+        User.deleted_at.is_(None),
+    ).first()
+    if existing_mobile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this mobile number already exists.",
+        )
+
+    user = User(
+        first_name=payload.first_name.strip(),
+        last_name=payload.last_name.strip(),
+        email=email_clean,
+        login_mobile=mobile_clean,
+        password_hash=hash_password(payload.password),
+        role=target_role,
+        is_active=True,
+        school_setup_completed=True,
+        created_by=current_user.id,
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return AuthUserResponse(
+        id=user.id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        email=user.email,
+        login_mobile=user.login_mobile,
+        role=user.role,
+        is_active=user.is_active,
+        school_setup_completed=user.school_setup_completed,
+        school_id=None,
+        school_name=None,
+    )

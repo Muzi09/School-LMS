@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING, List
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -8,9 +9,15 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import Mapped, declared_attr, mapped_column
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from app.models.base import Base, AuditMixin
+
+if TYPE_CHECKING:
+    from app.models.house import House
+    from app.models.school_class import SchoolClass
+    from app.models.section import Section
+    from app.models.user import User
 
 
 class School(Base, AuditMixin):
@@ -54,6 +61,48 @@ class School(Base, AuditMixin):
         server_default="true",
     )
 
+    setup_completed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+    primary_color: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+    )
+
+    emblem_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    # Relationships
+    classes: Mapped[List["SchoolClass"]] = relationship(
+        "SchoolClass",
+        back_populates="school",
+        cascade="all, delete-orphan",
+    )
+
+    sections: Mapped[List["Section"]] = relationship(
+        "Section",
+        back_populates="school",
+        cascade="all, delete-orphan",
+    )
+
+    houses: Mapped[List["House"]] = relationship(
+        "House",
+        back_populates="school",
+        cascade="all, delete-orphan",
+    )
+
+    users: Mapped[List["User"]] = relationship(
+        "User",
+        back_populates="school",
+        foreign_keys="User.school_id",
+    )
+
     @declared_attr
     def __table_args__(cls):
         return (
@@ -67,5 +116,9 @@ class School(Base, AuditMixin):
                 "idx_schools_active",
                 cls.is_active,
                 postgresql_where=cls.deleted_at.is_(None),
+            ),
+            Index(
+                "idx_schools_setup_completed",
+                cls.setup_completed,
             ),
         )

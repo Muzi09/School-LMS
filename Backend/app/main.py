@@ -27,6 +27,9 @@ async def app_exception_handler(request: Request, exc: AppException):
     )
 
 
+import os
+from fastapi.staticfiles import StaticFiles
+
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
@@ -35,6 +38,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Ensure and mount uploads directory
+os.makedirs("uploads/emblems", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Mount API Routers
 app.include_router(api_router, prefix="/api")

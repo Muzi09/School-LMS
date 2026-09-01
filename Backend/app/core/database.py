@@ -1,16 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from pydantic_settings import BaseSettings
 
-
-class Settings(BaseSettings):
-    DATABASE_URL: str
-
-    class Config:
-        env_file = ".env"
-
-
-settings = Settings()
+from app.core.config import settings
 
 engine = create_engine(
     settings.DATABASE_URL,

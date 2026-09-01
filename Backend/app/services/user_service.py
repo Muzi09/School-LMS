@@ -47,6 +47,7 @@ class UserService:
         self,
         data: CreateStaffRequest,
         created_by_id: UUID | None = None,
+        school_id: UUID | None = None,
     ) -> User:
         """Create a Staff user with StaffProfile atomically."""
         self.verify_email_available(data.email)
@@ -55,6 +56,7 @@ class UserService:
         try:
             # 1. Create User Account
             user = User(
+                school_id=school_id,
                 first_name=data.first_name,
                 last_name=data.last_name,
                 email=data.email,
@@ -62,6 +64,7 @@ class UserService:
                 password_hash=hash_password(data.password),
                 role=UserRole.STAFF,
                 is_active=True,
+                school_setup_completed=True,
                 created_by=created_by_id,
                 updated_by=created_by_id,
             )
@@ -148,6 +151,7 @@ class UserService:
         self,
         data: CreateStudentRequest,
         created_by_id: UUID | None = None,
+        school_id: UUID | None = None,
     ) -> User:
         """Create a Student user with StudentProfile atomically."""
         if data.email:
@@ -157,6 +161,7 @@ class UserService:
         try:
             # 1. Create User Account
             user = User(
+                school_id=school_id,
                 first_name=data.first_name,
                 last_name=data.last_name,
                 email=data.email,
@@ -164,6 +169,7 @@ class UserService:
                 password_hash=hash_password(data.password),
                 role=UserRole.STUDENT,
                 is_active=True,
+                school_setup_completed=True,
                 created_by=created_by_id,
                 updated_by=created_by_id,
             )

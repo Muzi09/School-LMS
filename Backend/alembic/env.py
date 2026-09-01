@@ -8,7 +8,11 @@ from alembic import context
 from app.core.database import settings
 from app.models import (
     Base,
+    House,
+    PrincipalOnboardingToken,
     School,
+    SchoolClass,
+    Section,
     StaffProfile,
     StudentProfile,
     User,

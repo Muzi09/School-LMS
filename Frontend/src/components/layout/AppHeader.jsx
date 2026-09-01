@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Clock,
   Sparkles,
+  LogOut,
 } from "lucide-react"
 
 import { SidebarTrigger } from "@/components/ui/sidebar"
@@ -37,10 +38,12 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { useTheme } from "@/context/ThemeContext"
+import { useAuth } from "@/context/AuthContext"
 import { getRouteMeta } from "@/constants/nav-items"
 
 export function AppHeader() {
   const location = useLocation()
+  const { user, logout } = useAuth()
   const { resolvedTheme, toggleTheme } = useTheme()
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -215,18 +218,50 @@ export function AppHeader() {
 
         <Separator orientation="vertical" className="hidden sm:block h-5 mx-1" />
 
-        {/* User Mini Badge / Avatar */}
-        <Link to="/settings" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
-          <Avatar className="size-8 rounded-full ring-2 ring-primary/20">
-            <AvatarImage
-              src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80"
-              alt="Dr. Eleanor Vance"
-            />
-            <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
-              EV
-            </AvatarFallback>
-          </Avatar>
-        </Link>
+        {/* User Profile & Logout */}
+        <DropdownMenuTrigger>
+          <button
+            type="button"
+            className="flex items-center gap-2 p-1 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+          >
+            <Avatar className="size-8 rounded-full ring-2 ring-primary/20">
+              <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
+                {user?.first_name?.[0] || "U"}{user?.last_name?.[0] || ""}
+              </AvatarFallback>
+            </Avatar>
+            <div className="hidden lg:block text-left">
+              <p className="text-xs font-semibold text-foreground leading-tight">
+                {user ? `${user.first_name} ${user.last_name}` : "User"}
+              </p>
+              <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">
+                {user?.school_name || (user?.role === 1 ? "Principal" : "Staff")}
+              </p>
+            </div>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenu className="w-56 p-1.5" placement="bottom end">
+          <div className="px-2 py-1.5 border-b border-border mb-1">
+            <p className="text-xs font-semibold text-foreground">
+              {user?.first_name} {user?.last_name}
+            </p>
+            <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
+            {user?.school_name && (
+              <p className="text-[10px] font-medium text-primary mt-0.5">{user.school_name}</p>
+            )}
+          </div>
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              onClick={() => {
+                logout()
+                window.location.href = "/principal/login"
+              }}
+              className="cursor-pointer gap-2 text-xs text-destructive hover:text-destructive focus:text-destructive"
+            >
+              <LogOut className="size-4" />
+              <span>Sign Out</span>
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenu>
       </div>
     </header>
   )

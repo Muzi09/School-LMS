@@ -36,18 +36,20 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { sidebarNavGroups } from "@/constants/nav-items"
+import { useAuth } from "@/context/AuthContext"
 
 export function AppSidebar({ ...props }) {
   const location = useLocation()
   const { state } = useSidebar()
+  const { user, logout } = useAuth()
   const isCollapsed = state === "collapsed"
 
   const currentUser = {
-    name: "Dr. Eleanor Vance",
-    email: "e.vance@school-lms.edu",
-    role: "Head of Academics",
+    name: user ? `${user.first_name} ${user.last_name}` : "School Admin",
+    email: user?.email || "admin@school-lms.edu",
+    role: user?.role === 1 ? "Principal" : user?.role === 2 ? "Staff" : "School Admin",
     avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-    initials: "EV",
+    initials: user ? `${user.first_name?.[0] || ""}${user.last_name?.[0] || ""}` : "SA",
   }
 
   const isRouteActive = (url) => {
@@ -57,18 +59,35 @@ export function AppSidebar({ ...props }) {
     return location.pathname.startsWith(url)
   }
 
+  const emblemUrl = user?.school_emblem_url
+    ? user.school_emblem_url.startsWith("http")
+      ? user.school_emblem_url
+      : `http://localhost:8000${user.school_emblem_url}`
+    : null
+
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar" {...props}>
       {/* Sidebar Header */}
       <SidebarHeader className="p-4 border-b border-sidebar-border/60">
         <Link to="/" className="flex items-center gap-2.5 w-full group-data-[collapsible=icon]:justify-center">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/25">
-            <Sparkles className="size-4" />
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/25 overflow-hidden">
+            {emblemUrl ? (
+              <img
+                src={emblemUrl}
+                alt={user?.school_name || "School Emblem"}
+                className="size-full object-contain p-0.5"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none"
+                }}
+              />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
           </div>
           {!isCollapsed && (
             <div className="flex flex-col overflow-hidden text-left">
               <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
-                Apex Academy
+                {user?.school_name || "Apex Academy"}
               </span>
               <span className="truncate text-[11px] text-muted-foreground">
                 LMS Enterprise v2.4
@@ -97,18 +116,32 @@ export function AppSidebar({ ...props }) {
                         isActive={active}
                         tooltip={item.title}
                         className={cn(
-                          "w-full group-data-[collapsible=icon]:justify-center",
-                          active ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground" : ""
+                          "w-full group-data-[collapsible=icon]:justify-center transition-all",
+                          active
+                            ? "bg-primary/15 text-primary border border-primary/20 font-semibold shadow-xs hover:bg-primary/20 hover:text-primary"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                         )}
                       >
                         <Link
                           to={item.url}
-                          className="flex size-full items-center gap-2 group-data-[collapsible=icon]:justify-center"
+                          className="flex size-full items-center gap-2.5 group-data-[collapsible=icon]:justify-center"
                         >
-                          <item.icon className="size-4 shrink-0" />
+                          <item.icon
+                            className={cn(
+                              "size-4 shrink-0 transition-colors",
+                              active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                            )}
+                          />
                           {!isCollapsed && <span>{item.title}</span>}
                           {item.badge && !isCollapsed && (
-                            <SidebarMenuBadge className="bg-primary/10 text-primary border border-primary/20 text-[10px] px-1.5 py-0.5 ml-auto">
+                            <SidebarMenuBadge
+                              className={cn(
+                                "text-[10px] px-1.5 py-0.5 ml-auto font-bold",
+                                active
+                                  ? "bg-primary/20 text-primary border border-primary/30"
+                                  : "bg-muted text-muted-foreground"
+                              )}
+                            >
                               {item.badge}
                             </SidebarMenuBadge>
                           )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState } from "react"
 import { useFormik } from "formik"
 import {
   X,
@@ -9,10 +9,12 @@ import {
   Loader2,
 } from "lucide-react"
 
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { useCreateStudent, useUpdateStudent } from "@/hooks/useStudents"
+import { schoolConfigService } from "@/api/schoolConfigService"
 import { getStudentValidationSchema } from "./studentValidation"
 import { cn } from "@/lib/utils"
 
@@ -45,6 +47,18 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
     }
   }, [student])
 
+  const { data: schoolClasses = [] } = useQuery({
+    queryKey: ["schoolClasses"],
+    queryFn: schoolConfigService.getClasses,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: schoolHouses = [] } = useQuery({
+    queryKey: ["schoolHouses"],
+    queryFn: schoolConfigService.getHouses,
+    staleTime: 5 * 60 * 1000,
+  })
+
   const formik = useFormik({
     initialValues,
     validationSchema,
@@ -74,10 +88,12 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
           if (values.password.trim()) {
             updatePayload.password = values.password.trim()
           }
-
-          await updateStudentMutation.mutateAsync({ studentId: student.id, data: updatePayload })
+          await updateStudentMutation.mutateAsync({
+            id: student.id,
+            data: updatePayload,
+          })
         } else {
-          const payload = {
+          const createPayload = {
             first_name: values.first_name.trim(),
             last_name: values.last_name.trim(),
             login_mobile: values.login_mobile.trim(),
@@ -95,61 +111,38 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               father_last_name: values.father_last_name.trim(),
             },
           }
-
-          await createStudentMutation.mutateAsync(payload)
+          await createStudentMutation.mutateAsync(createPayload)
         }
-
         onClose()
       } catch (err) {
-        setServerError(err.message || "An error occurred while saving student.")
+        setServerError(err?.message || "Operation failed. Please try again.")
       }
     },
   })
 
-  useEffect(() => {
-    if (isOpen) {
-      setServerError("")
-      formik.resetForm()
-    }
-  }, [isOpen])
-
   if (!isOpen) return null
 
-  const isPending = createStudentMutation.isPending || updateStudentMutation.isPending || formik.isSubmitting
-  const error = serverError || createStudentMutation.error?.message || updateStudentMutation.error?.message
-
-  // Restriction helper for mobile numbers (digits only)
-  const handlePhoneChange = (e) => {
-    const numeric = e.target.value.replace(/\D/g, "").slice(0, 15)
-    formik.setFieldValue("login_mobile", numeric)
-  }
-
-  const handlePhoneKeyDown = (e) => {
-    const allowedKeys = ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"]
-    if (
-      !/[0-9]/.test(e.key) &&
-      !allowedKeys.includes(e.key) &&
-      !(e.ctrlKey || e.metaKey)
-    ) {
-      e.preventDefault()
-    }
-  }
+  const isPending = createStudentMutation.isPending || updateStudentMutation.isPending
+  const currentClassObj = schoolClasses.find((c) => c.name === formik.values.class_name)
+  const availableSections = currentClassObj?.sections || []
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
       <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-border/70 bg-muted/30">
-          <div>
-            <h3 className="text-lg sm:text-xl font-bold text-foreground flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0">
-                <GraduationCap className="size-5" />
-              </div>
-              <span>{isEdit ? `Edit Student: ${student.first_name} ${student.last_name}` : "Register New Student"}</span>
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              {isEdit ? "Update student enrollment and personal profile details." : "Fill in student and guardian details to enroll a new student."}
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="size-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+              <GraduationCap className="size-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-foreground tracking-tight">
+                {isEdit ? "Edit Student Profile" : "Register New Student"}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isEdit ? "Update personal and academic records" : "Add a new student to your school roster"}
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -161,368 +154,449 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={formik.handleSubmit} noValidate className="flex-1 overflow-y-auto p-6 sm:p-7 space-y-6">
-          {error && (
-            <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive text-sm flex items-center gap-2.5">
-              <AlertCircle className="size-4.5 shrink-0" />
-              <span>{error}</span>
+        {/* Form */}
+        <form onSubmit={formik.handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-6 sm:p-7 space-y-6">
+            {serverError && (
+              <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2.5">
+                <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                <span className="leading-tight">{serverError}</span>
+              </div>
+            )}
+
+            {/* Account & Security Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                <Lock className="size-4 text-primary" />
+                <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Account & Security
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    First Name
+                  </label>
+                  <Input
+                    id="first_name"
+                    name="first_name"
+                    maxLength={50}
+                    value={formik.values.first_name}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5",
+                      formik.touched.first_name && formik.errors.first_name && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.first_name && formik.errors.first_name && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.first_name}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="middle_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Middle Name <span className="text-muted-foreground font-normal text-xs">(Optional)</span>
+                  </label>
+                  <Input
+                    id="middle_name"
+                    name="middle_name"
+                    maxLength={50}
+                    value={formik.values.middle_name}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5",
+                      formik.touched.middle_name && formik.errors.middle_name && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.middle_name && formik.errors.middle_name && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.middle_name}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Last Name
+                  </label>
+                  <Input
+                    id="last_name"
+                    name="last_name"
+                    maxLength={50}
+                    value={formik.values.last_name}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5",
+                      formik.touched.last_name && formik.errors.last_name && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.last_name && formik.errors.last_name && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.last_name}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Login Mobile
+                  </label>
+                  <Input
+                    id="login_mobile"
+                    name="login_mobile"
+                    maxLength={20}
+                    value={formik.values.login_mobile}
+                    onChange={(e) => {
+                      const onlyNumbers = e.target.value.replace(/\D/g, "")
+                      formik.setFieldValue("login_mobile", onlyNumbers)
+                    }}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5 font-mono",
+                      formik.touched.login_mobile && formik.errors.login_mobile && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.login_mobile && formik.errors.login_mobile && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.login_mobile}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Email Address
+                  </label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formik.values.email}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5",
+                      formik.touched.email && formik.errors.email && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.email && formik.errors.email && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.email}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="password" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    {isEdit ? "New Password" : "Password"}
+                  </label>
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    placeholder={isEdit ? "Leave blank to keep current" : "••••••••"}
+                    value={formik.values.password}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5",
+                      formik.touched.password && formik.errors.password && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.password && formik.errors.password && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.password}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
-          )}
 
-          {/* Account Details */}
-          <div className="space-y-3.5">
-            <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 border-b border-border/60 pb-2">
-              <Lock className="size-4 text-primary" />
-              <span>1. Student Account & Credentials</span>
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  First Name
-                </label>
-                <Input
-                  id="first_name"
-                  name="first_name"
-                  maxLength={50}
-                  value={formik.values.first_name}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.first_name && formik.errors.first_name && "border-destructive/80 ring-1 ring-destructive/30"
-                  )}
-                />
-                {formik.touched.first_name && formik.errors.first_name && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.first_name}
-                  </p>
-                )}
+            {/* Academic Profile Details */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                <Layers className="size-4 text-primary" />
+                <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Academic & Personal Profile
+                </h4>
               </div>
 
-              <div>
-                <label htmlFor="middle_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Middle Name
-                </label>
-                <Input
-                  id="middle_name"
-                  name="middle_name"
-                  maxLength={50}
-                  value={formik.values.middle_name}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.middle_name && formik.errors.middle_name && "border-destructive/80 ring-1 ring-destructive/30"
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Roll Number
+                  </label>
+                  <Input
+                    id="roll_no"
+                    name="roll_no"
+                    maxLength={50}
+                    value={formik.values.roll_no}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5 font-mono",
+                      formik.touched.roll_no && formik.errors.roll_no && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.roll_no && formik.errors.roll_no && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.roll_no}
+                    </p>
                   )}
-                />
-                {formik.touched.middle_name && formik.errors.middle_name && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.middle_name}
-                  </p>
-                )}
-              </div>
+                </div>
 
-              <div>
-                <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Last Name
-                </label>
-                <Input
-                  id="last_name"
-                  name="last_name"
-                  maxLength={50}
-                  value={formik.values.last_name}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.last_name && formik.errors.last_name && "border-destructive/80 ring-1 ring-destructive/30"
+                <div>
+                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Gender
+                  </label>
+                  <select
+                    id="gender"
+                    name="gender"
+                    value={formik.values.gender}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
+                      formik.touched.gender && formik.errors.gender && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  >
+                    <option value={1} className="bg-popover text-popover-foreground">Male</option>
+                    <option value={2} className="bg-popover text-popover-foreground">Female</option>
+                    <option value={3} className="bg-popover text-popover-foreground">Other</option>
+                  </select>
+                  {formik.touched.gender && formik.errors.gender && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.gender}
+                    </p>
                   )}
-                />
-                {formik.touched.last_name && formik.errors.last_name && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.last_name}
-                  </p>
-                )}
-              </div>
-            </div>
+                </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Login Mobile
-                </label>
-                <Input
-                  id="login_mobile"
-                  name="login_mobile"
-                  maxLength={15}
-                  inputMode="numeric"
-                  value={formik.values.login_mobile}
-                  onChange={handlePhoneChange}
-                  onKeyDown={handlePhoneKeyDown}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm font-mono rounded-xl px-3.5",
-                    formik.touched.login_mobile && formik.errors.login_mobile && "border-destructive/80 ring-1 ring-destructive/30"
+                <div>
+                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Date of Birth
+                  </label>
+                  <DatePicker
+                    id="date_of_birth"
+                    name="date_of_birth"
+                    value={formik.values.date_of_birth}
+                    onChange={(dateStr) => {
+                      formik.setFieldValue("date_of_birth", dateStr)
+                      formik.setFieldTouched("date_of_birth", true, true)
+                    }}
+                    className={cn(
+                      formik.touched.date_of_birth && formik.errors.date_of_birth && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.date_of_birth && formik.errors.date_of_birth && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.date_of_birth}
+                    </p>
                   )}
-                />
-                {formik.touched.login_mobile && formik.errors.login_mobile && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.login_mobile}
-                  </p>
-                )}
-              </div>
+                </div>
 
-              <div>
-                <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Email Address
-                </label>
-                <Input
-                  type="email"
-                  id="email"
-                  name="email"
-                  maxLength={100}
-                  value={formik.values.email}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.email && formik.errors.email && "border-destructive/80 ring-1 ring-destructive/30"
+                {/* Class / Grade (Dynamic from School Config) */}
+                <div>
+                  <label htmlFor="class_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Class / Grade
+                  </label>
+                  {schoolClasses.length > 0 ? (
+                    <select
+                      id="class_name"
+                      name="class_name"
+                      value={formik.values.class_name}
+                      onChange={(e) => {
+                        formik.setFieldValue("class_name", e.target.value)
+                        const cls = schoolClasses.find((c) => c.name === e.target.value)
+                        if (cls?.sections?.length > 0) {
+                          formik.setFieldValue("section", cls.sections[0].name)
+                        }
+                      }}
+                      onBlur={formik.handleBlur}
+                      className={cn(
+                        "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
+                        formik.touched.class_name && formik.errors.class_name && "border-destructive/80 ring-1 ring-destructive/30"
+                      )}
+                    >
+                      <option value="" disabled className="bg-popover text-muted-foreground">Select Class</option>
+                      {schoolClasses.map((c) => (
+                        <option key={c.id} value={c.name} className="bg-popover text-popover-foreground">
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      id="class_name"
+                      name="class_name"
+                      maxLength={50}
+                      placeholder="e.g. Class 1"
+                      value={formik.values.class_name}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      className={cn(
+                        "h-10 text-sm rounded-xl px-3.5",
+                        formik.touched.class_name && formik.errors.class_name && "border-destructive/80 ring-1 ring-destructive/30"
+                      )}
+                    />
                   )}
-                />
-                {formik.touched.email && formik.errors.email && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.email}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="password" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  {isEdit ? "New Password" : "Password"}
-                </label>
-                <Input
-                  type="password"
-                  id="password"
-                  name="password"
-                  maxLength={100}
-                  value={formik.values.password}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.password && formik.errors.password && "border-destructive/80 ring-1 ring-destructive/30"
+                  {formik.touched.class_name && formik.errors.class_name && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.class_name}
+                    </p>
                   )}
-                />
-                {formik.touched.password && formik.errors.password && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.password}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
+                </div>
 
-          {/* Academic & Personal Details */}
-          <div className="space-y-3.5">
-            <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 border-b border-border/60 pb-2">
-              <Layers className="size-4 text-primary" />
-              <span>2. Academic & Guardian Information</span>
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Roll No
-                </label>
-                <Input
-                  id="roll_no"
-                  name="roll_no"
-                  maxLength={50}
-                  value={formik.values.roll_no}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm font-mono rounded-xl px-3.5",
-                    formik.touched.roll_no && formik.errors.roll_no && "border-destructive/80 ring-1 ring-destructive/30"
+                {/* Section (Dynamic from Selected Class) */}
+                <div>
+                  <label htmlFor="section" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Section
+                  </label>
+                  {availableSections.length > 0 ? (
+                    <select
+                      id="section"
+                      name="section"
+                      value={formik.values.section}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      className={cn(
+                        "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
+                        formik.touched.section && formik.errors.section && "border-destructive/80 ring-1 ring-destructive/30"
+                      )}
+                    >
+                      <option value="" disabled className="bg-popover text-muted-foreground">Select Section</option>
+                      {availableSections.map((s) => (
+                        <option key={s.id} value={s.name} className="bg-popover text-popover-foreground">
+                          Section {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      id="section"
+                      name="section"
+                      maxLength={50}
+                      placeholder="e.g. A"
+                      value={formik.values.section}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      className={cn(
+                        "h-10 text-sm rounded-xl px-3.5",
+                        formik.touched.section && formik.errors.section && "border-destructive/80 ring-1 ring-destructive/30"
+                      )}
+                    />
                   )}
-                />
-                {formik.touched.roll_no && formik.errors.roll_no && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.roll_no}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Gender
-                </label>
-                <select
-                  id="gender"
-                  name="gender"
-                  value={formik.values.gender}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
-                    formik.touched.gender && formik.errors.gender && "border-destructive/80 ring-1 ring-destructive/30"
+                  {formik.touched.section && formik.errors.section && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.section}
+                    </p>
                   )}
-                >
-                  <option value={1} className="bg-popover text-popover-foreground">Male</option>
-                  <option value={2} className="bg-popover text-popover-foreground">Female</option>
-                  <option value={3} className="bg-popover text-popover-foreground">Other</option>
-                </select>
-                {formik.touched.gender && formik.errors.gender && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.gender}
-                  </p>
-                )}
-              </div>
+                </div>
 
-              <div>
-                <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Date of Birth
-                </label>
-                <DatePicker
-                  id="date_of_birth"
-                  name="date_of_birth"
-                  value={formik.values.date_of_birth}
-                  onChange={(dateStr) => {
-                    formik.setFieldValue("date_of_birth", dateStr)
-                    formik.setFieldTouched("date_of_birth", true, true)
-                  }}
-                  className={cn(
-                    formik.touched.date_of_birth && formik.errors.date_of_birth && "border-destructive/80 ring-1 ring-destructive/30"
+                {/* House (Dynamic from School Config) */}
+                <div>
+                  <label htmlFor="house" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    House
+                  </label>
+                  {schoolHouses.length > 0 ? (
+                    <select
+                      id="house"
+                      name="house"
+                      value={formik.values.house}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      className={cn(
+                        "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
+                        formik.touched.house && formik.errors.house && "border-destructive/80 ring-1 ring-destructive/30"
+                      )}
+                    >
+                      <option value="" disabled className="bg-popover text-muted-foreground">Select House</option>
+                      {schoolHouses.map((h) => (
+                        <option key={h.id} value={h.name} className="bg-popover text-popover-foreground">
+                          {h.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      id="house"
+                      name="house"
+                      maxLength={50}
+                      placeholder="e.g. Red House"
+                      value={formik.values.house}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      className={cn(
+                        "h-10 text-sm rounded-xl px-3.5",
+                        formik.touched.house && formik.errors.house && "border-destructive/80 ring-1 ring-destructive/30"
+                      )}
+                    />
                   )}
-                />
-                {formik.touched.date_of_birth && formik.errors.date_of_birth && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.date_of_birth}
-                  </p>
-                )}
-              </div>
+                  {formik.touched.house && formik.errors.house && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.house}
+                    </p>
+                  )}
+                </div>
 
-              <div>
-                <label htmlFor="class_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Class / Grade
-                </label>
-                <Input
-                  id="class_name"
-                  name="class_name"
-                  maxLength={50}
-                  value={formik.values.class_name}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.class_name && formik.errors.class_name && "border-destructive/80 ring-1 ring-destructive/30"
+                <div>
+                  <label htmlFor="father_first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Father First Name
+                  </label>
+                  <Input
+                    id="father_first_name"
+                    name="father_first_name"
+                    maxLength={50}
+                    value={formik.values.father_first_name}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5",
+                      formik.touched.father_first_name && formik.errors.father_first_name && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.father_first_name && formik.errors.father_first_name && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.father_first_name}
+                    </p>
                   )}
-                />
-                {formik.touched.class_name && formik.errors.class_name && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.class_name}
-                  </p>
-                )}
-              </div>
+                </div>
 
-              <div>
-                <label htmlFor="section" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Section
-                </label>
-                <Input
-                  id="section"
-                  name="section"
-                  maxLength={50}
-                  value={formik.values.section}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.section && formik.errors.section && "border-destructive/80 ring-1 ring-destructive/30"
+                <div>
+                  <label htmlFor="father_last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                    Father Last Name
+                  </label>
+                  <Input
+                    id="father_last_name"
+                    name="father_last_name"
+                    maxLength={50}
+                    value={formik.values.father_last_name}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5",
+                      formik.touched.father_last_name && formik.errors.father_last_name && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  {formik.touched.father_last_name && formik.errors.father_last_name && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.father_last_name}
+                    </p>
                   )}
-                />
-                {formik.touched.section && formik.errors.section && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.section}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="house" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  House
-                </label>
-                <Input
-                  id="house"
-                  name="house"
-                  maxLength={50}
-                  value={formik.values.house}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.house && formik.errors.house && "border-destructive/80 ring-1 ring-destructive/30"
-                  )}
-                />
-                {formik.touched.house && formik.errors.house && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.house}
-                  </p>
-                )}
-              </div>
-
-              <div className="sm:col-span-1.5">
-                <label htmlFor="father_first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Father First Name
-                </label>
-                <Input
-                  id="father_first_name"
-                  name="father_first_name"
-                  maxLength={50}
-                  value={formik.values.father_first_name}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.father_first_name && formik.errors.father_first_name && "border-destructive/80 ring-1 ring-destructive/30"
-                  )}
-                />
-                {formik.touched.father_first_name && formik.errors.father_first_name && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.father_first_name}
-                  </p>
-                )}
-              </div>
-
-              <div className="sm:col-span-1.5">
-                <label htmlFor="father_last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                  Father Last Name
-                </label>
-                <Input
-                  id="father_last_name"
-                  name="father_last_name"
-                  maxLength={50}
-                  value={formik.values.father_last_name}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  className={cn(
-                    "h-10 text-sm rounded-xl px-3.5",
-                    formik.touched.father_last_name && formik.errors.father_last_name && "border-destructive/80 ring-1 ring-destructive/30"
-                  )}
-                />
-                {formik.touched.father_last_name && formik.errors.father_last_name && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                    {formik.errors.father_last_name}
-                  </p>
-                )}
+                </div>
               </div>
             </div>
           </div>
 
           {/* Footer Actions */}
-          <div className="pt-5 border-t border-border flex items-center justify-end gap-3">
+          <div className="px-6 py-4 border-t border-border/70 bg-muted/20 flex items-center justify-end gap-3">
             <Button
               type="button"
               variant="outline"
@@ -537,7 +611,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               type="submit"
               size="default"
               disabled={isPending}
-              className="h-10 px-5 text-sm font-medium rounded-xl gap-2 shadow-xs"
+              className="h-10 px-5 text-sm font-medium rounded-xl gap-2 shadow-xs cursor-pointer"
             >
               {isPending && <Loader2 className="size-4 animate-spin" />}
               <span>{isEdit ? "Save Changes" : "Register Student"}</span>
@@ -548,5 +622,3 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
     </div>
   )
 }
-
-export default StudentFormModal

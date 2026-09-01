@@ -8,6 +8,18 @@ export const apiClient = axios.create({
   timeout: 15000,
 })
 
+// Request interceptor to inject Authorization Bearer token
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("school_lms_auth_token")
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 // Response interceptor to unwrap data and normalize API errors
 apiClient.interceptors.response.use(
   (response) => response.data,

@@ -26,7 +26,8 @@ def create_student(
     current_user: Annotated[User | None, Depends(get_current_user_optional)] = None,
 ):
     created_by_id = current_user.id if current_user else None
-    user = service.create_student(data=data, created_by_id=created_by_id)
+    school_id = current_user.school_id if current_user else None
+    user = service.create_student(data=data, created_by_id=created_by_id, school_id=school_id)
     return StudentDetailRead.model_validate(user)
 
 
