@@ -118,14 +118,18 @@ class RoleChecker:
 
 
 # Convenience role dependencies
-require_super_admin = RoleChecker([UserRole.SUPER_ADMIN])
+require_admin = RoleChecker([UserRole.ADMIN])
 require_principal = RoleChecker([UserRole.PRINCIPAL], require_setup_completed=True)
-require_principal_or_super_admin = RoleChecker([UserRole.SUPER_ADMIN, UserRole.PRINCIPAL])
+require_principal_or_admin = RoleChecker([UserRole.ADMIN, UserRole.PRINCIPAL])
 require_staff_or_principal = RoleChecker([UserRole.PRINCIPAL, UserRole.STAFF], require_setup_completed=True)
 require_any_authenticated = RoleChecker([
-    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
     UserRole.PRINCIPAL,
     UserRole.STAFF,
     UserRole.STUDENT,
     UserRole.SALES_PERSON,
 ])
+
+# Backward compatibility aliases
+require_super_admin = require_admin
+require_principal_or_super_admin = require_principal_or_admin

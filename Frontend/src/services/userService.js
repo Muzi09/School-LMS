@@ -27,16 +27,7 @@ export async function fetchUserById(userId) {
 }
 
 export async function createSuperAdmin(data) {
-  const res = await fetch(`${API_BASE}/users/super-admin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || errorData.message || "Failed to create Super Admin");
-  }
-  return res.json();
+  return createAdmin(data);
 }
 
 export async function createAdmin(data) {

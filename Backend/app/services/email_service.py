@@ -1,8 +1,10 @@
 import logging
 import smtplib
+import socket
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from app.core.config import settings
 from app.core.security import decrypt_smtp_password
@@ -13,6 +15,66 @@ if TYPE_CHECKING:
 logger = logging.getLogger("app.services.email")
 
 
+def test_smtp_connection(
+    smtp_host: str,
+    smtp_port: int,
+    smtp_username: str,
+    smtp_password: str,
+    security: str = "TLS",
+) -> Tuple[bool, Optional[str]]:
+    """
+    Test connectivity and authentication with the given SMTP credentials.
+    Returns (True, None) on success or (False, error_message) on failure.
+    """
+    try:
+        sec = (security or "TLS").upper()
+        host_clean = smtp_host.strip()
+        user_clean = smtp_username.strip().lower() if ("gmail" in host_clean.lower() or "google" in host_clean.lower()) else smtp_username.strip()
+        pwd_clean = smtp_password.strip() if smtp_password else ""
+        if "gmail" in host_clean.lower() or "google" in host_clean.lower():
+            pwd_clean = pwd_clean.replace(" ", "")
+
+        if sec == "SSL" or smtp_port == 465:
+            context = ssl.create_default_context()
+            server = smtplib.SMTP_SSL(host_clean, smtp_port, timeout=12, context=context)
+            with server:
+                server.ehlo()
+                if user_clean and pwd_clean:
+                    server.login(user_clean, pwd_clean)
+        else:
+            server = smtplib.SMTP(host_clean, smtp_port, timeout=12)
+            with server:
+                server.ehlo()
+                if sec == "TLS":
+                    context = ssl.create_default_context()
+                    server.starttls(context=context)
+                    server.ehlo()
+                if user_clean and pwd_clean:
+                    server.login(user_clean, pwd_clean)
+
+        return True, None
+
+    except smtplib.SMTPAuthenticationError as e:
+        is_gmail = "gmail" in smtp_host.lower() or "google" in smtp_host.lower()
+        if is_gmail:
+            msg = (
+                "1. Ensure you enter your logged in email App password.\n"
+                "2. Gmail REQUIRES a 16-character Google App Password with spaces removed (not your normal login password)."
+            )
+        else:
+            msg = f"SMTP Authentication Failed: Username or password rejected by {smtp_host} ({e.smtp_error.decode() if isinstance(e.smtp_error, bytes) else e.smtp_error})"
+        return False, msg
+
+    except (socket.timeout, TimeoutError):
+        return False, f"Connection to SMTP server {smtp_host}:{smtp_port} timed out after 12 seconds."
+
+    except ssl.SSLError as e:
+        return False, f"SSL/TLS negotiation failed with {smtp_host}:{smtp_port}. Please verify port and security mode (Port 465 for SSL, Port 587 for TLS): {e}"
+
+    except Exception as e:
+        return False, f"SMTP Connection Error ({smtp_host}:{smtp_port}): {str(e)}"
+
+
 def send_principal_invitation_email(
     principal_name: str,
     principal_email: str,
@@ -21,12 +83,13 @@ def send_principal_invitation_email(
 ) -> bool:
     """
     Send an onboarding invitation email to the newly created Principal
-    using the authenticated Super Admin's dynamic SMTP configuration.
-    Contains the single-use setup link where they will configure the school
-    and create their own Password & PIN.
+    using the authenticated Admin's dynamic SMTP configuration.
+    Raises Exception with detailed reason if sending fails.
     """
-    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
+    if not smtp_config or not smtp_config.is_active or not smtp_config.smtp_host:
+        raise ValueError("Active SMTP configuration is required to send principal invitation emails.")
 
+    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
     subject = "Welcome to School LMS — Complete Your School Setup"
 
     text_content = f"""
@@ -49,7 +112,7 @@ Note: This invitation link is secure, single-use, and valid for {settings.ONBOAR
 If you have any questions, please contact the platform administration.
 
 Best regards,
-{smtp_config.from_name if smtp_config else "School LMS Platform Team"}
+{smtp_config.from_name}
 """
 
     html_content = f"""
@@ -104,55 +167,82 @@ Best regards,
       <p style="font-size: 13px; color: #64748b;">This secure setup link is valid for {settings.ONBOARDING_TOKEN_EXPIRE_HOURS} hours and can only be used once.</p>
     </div>
     <div class="footer">
-      &copy; {smtp_config.from_name if smtp_config else "School LMS Platform"}. All rights reserved.
+      &copy; {smtp_config.from_name}. All rights reserved.
     </div>
   </div>
 </body>
 </html>
 """
 
-    # If Super Admin has active SMTP configured, attempt dynamic SMTP transmission
-    if smtp_config and smtp_config.is_active and smtp_config.smtp_host:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = f"{smtp_config.from_name} <{smtp_config.from_email}>"
-            msg["To"] = principal_email
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{smtp_config.from_name} <{smtp_config.from_email}>"
+    msg["To"] = principal_email
 
-            msg.attach(MIMEText(text_content, "plain"))
-            msg.attach(MIMEText(html_content, "html"))
+    msg.attach(MIMEText(text_content, "plain"))
+    msg.attach(MIMEText(html_content, "html"))
 
-            plain_pwd = decrypt_smtp_password(smtp_config.smtp_password_encrypted)
-            security_mode = (smtp_config.security or "TLS").upper()
+    plain_pwd = decrypt_smtp_password(smtp_config.smtp_password_encrypted)
+    security_mode = (smtp_config.security or "TLS").upper()
+    host_clean = smtp_config.smtp_host.strip()
+    user_clean = smtp_config.smtp_username.strip().lower() if ("gmail" in host_clean.lower() or "google" in host_clean.lower()) else smtp_config.smtp_username.strip()
+    if "gmail" in host_clean.lower() or "google" in host_clean.lower() and plain_pwd:
+        plain_pwd = plain_pwd.replace(" ", "")
 
-            if security_mode == "SSL":
-                server = smtplib.SMTP_SSL(smtp_config.smtp_host, smtp_config.smtp_port, timeout=15)
-                with server:
-                    if smtp_config.smtp_username and plain_pwd:
-                        server.login(smtp_config.smtp_username, plain_pwd)
-                    server.send_message(msg)
-            else:
-                server = smtplib.SMTP(smtp_config.smtp_host, smtp_config.smtp_port, timeout=15)
-                with server:
-                    if security_mode == "TLS":
-                        server.starttls()
-                    if smtp_config.smtp_username and plain_pwd:
-                        server.login(smtp_config.smtp_username, plain_pwd)
-                    server.send_message(msg)
+    try:
+        if security_mode == "SSL" or smtp_config.smtp_port == 465:
+            context = ssl.create_default_context()
+            server = smtplib.SMTP_SSL(host_clean, smtp_config.smtp_port, timeout=15, context=context)
+            with server:
+                server.ehlo()
+                if user_clean and plain_pwd:
+                    server.login(user_clean, plain_pwd)
+                server.send_message(msg)
+        else:
+            server = smtplib.SMTP(host_clean, smtp_config.smtp_port, timeout=15)
+            with server:
+                server.ehlo()
+                if security_mode == "TLS":
+                    context = ssl.create_default_context()
+                    server.starttls(context=context)
+                    server.ehlo()
+                if user_clean and plain_pwd:
+                    server.login(user_clean, plain_pwd)
+                server.send_message(msg)
 
-            logger.info(f"Successfully sent invitation email to {principal_email} using SMTP host {smtp_config.smtp_host}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to send email via Super Admin SMTP: {e}. Falling back to console log.")
+        logger.info(f"Successfully sent invitation email to {principal_email} using SMTP host {smtp_config.smtp_host}")
+        return True
 
-    # In development / fallback, log the setup URL cleanly
-    print("\n" + "=" * 80)
-    print(f"[EMAIL] Invitation to: {principal_email}")
-    print(f"[EMAIL] Principal:     {principal_name}")
-    print(f"[EMAIL] Setup URL:     {onboarding_url}")
-    if smtp_config:
-        print(f"[EMAIL] From:          {smtp_config.from_name} <{smtp_config.from_email}>")
-        print(f"[EMAIL] Via SMTP Host: {smtp_config.smtp_host}:{smtp_config.smtp_port} ({smtp_config.security})")
-    print("=" * 80 + "\n")
-    logger.info(f"Generated onboarding link for {principal_email}: {onboarding_url}")
-    return True
+    except smtplib.SMTPAuthenticationError as e:
+        is_gmail = "gmail" in host_clean.lower() or "google" in host_clean.lower()
+        if is_gmail:
+            err_msg = (
+                "SMTP Authentication Failed: Gmail rejected the credentials.\n\n"
+                "1. Make sure your 'SMTP Username' is your full Gmail address (e.g. user@gmail.com).\n"
+                "2. Gmail requires a 16-character Google App Password (not your standard Google account password).\n"
+                "Create one at https://myaccount.google.com/apppasswords"
+            )
+        else:
+            err_msg = f"SMTP Authentication Failed: {e.smtp_error.decode() if isinstance(e.smtp_error, bytes) else e.smtp_error}"
+        logger.error(f"Email send error: {err_msg}")
+        raise ValueError(err_msg)
+
+    except smtplib.SMTPRecipientsRefused as e:
+        err_msg = f"The SMTP server refused the recipient address '{principal_email}'."
+        logger.error(f"Email send error: {err_msg}")
+        raise ValueError(err_msg)
+
+    except (socket.timeout, TimeoutError):
+        err_msg = f"Connection to SMTP server {host_clean}:{smtp_config.smtp_port} timed out."
+        logger.error(f"Email send error: {err_msg}")
+        raise ValueError(err_msg)
+
+    except ssl.SSLError as e:
+        err_msg = f"SSL/TLS error connecting to {host_clean}:{smtp_config.smtp_port}: {e}"
+        logger.error(f"Email send error: {err_msg}")
+        raise ValueError(err_msg)
+
+    except Exception as e:
+        err_msg = f"Failed to send email via SMTP ({host_clean}:{smtp_config.smtp_port}): {str(e)}"
+        logger.error(f"Email send error: {err_msg}")
+        raise ValueError(err_msg)

@@ -1,13 +1,10 @@
-# Backward compatibility router for legacy /super-admin requests
-from app.api.v1.endpoints.admin import router as admin_router
-
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin, require_super_admin
+from app.api.deps import require_admin
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import (
@@ -40,14 +37,17 @@ from app.services.email_service import (
     test_smtp_connection,
 )
 
-router = APIRouter(prefix="/super-admin", tags=["Super Admin (Legacy Alias)"])
+router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 @router.get("/dashboard", response_model=AdminDashboardStats)
-def get_super_admin_dashboard(
+def get_admin_dashboard(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    """
+    High-level platform statistics for Admin dashboard.
+    """
     total_schools = db.query(School).filter(School.deleted_at.is_(None)).count()
     total_active_schools = db.query(School).filter(
         School.deleted_at.is_(None),
@@ -79,11 +79,20 @@ def get_super_admin_dashboard(
     )
 
 
+# ---------------------------------------------------------------------------
+# SMTP Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+
 @router.get("/smtp", response_model=SmtpConfigResponse)
 def get_smtp_configuration(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    """
+    Retrieve the authenticated Admin's SMTP configuration.
+    Returns safe fields only — never exposes the stored password.
+    """
     smtp_config = (
         db.query(SmtpConfiguration)
         .filter(
@@ -120,11 +129,16 @@ def get_smtp_configuration(
 
 
 @router.post("/smtp", response_model=SmtpConfigResponse)
-def save_super_admin_smtp_configuration(
+def save_smtp_configuration(
     payload: SaveSmtpConfigRequest,
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    """
+    Create or update the authenticated Admin's SMTP configuration.
+    Encrypts password securely at rest and saves per-Admin settings.
+    Keeps SMTP Username and From Email Address identical.
+    """
     smtp_config = (
         db.query(SmtpConfiguration)
         .filter(
@@ -138,6 +152,7 @@ def save_super_admin_smtp_configuration(
     username_clean = payload.smtp_username.strip().lower() if payload.smtp_username else email_clean
 
     if smtp_config:
+        # Updating existing config
         smtp_config.smtp_host = payload.smtp_host.strip()
         smtp_config.smtp_port = payload.smtp_port
         smtp_config.smtp_username = username_clean
@@ -150,6 +165,7 @@ def save_super_admin_smtp_configuration(
         if payload.smtp_password and payload.smtp_password.strip():
             smtp_config.smtp_password_encrypted = encrypt_smtp_password(payload.smtp_password.strip())
     else:
+        # Creating new config
         if not payload.smtp_password or not payload.smtp_password.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -198,13 +214,17 @@ def save_super_admin_smtp_configuration(
 
 
 @router.post("/smtp/test", response_model=TestSmtpConfigResponse)
-def test_super_admin_smtp_configuration_endpoint(
+def test_smtp_configuration_endpoint(
     payload: TestSmtpConfigRequest,
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    """
+    Test SMTP connection and authentication with provided parameters or stored password.
+    """
     password_to_test = payload.smtp_password
     if not password_to_test or not password_to_test.strip():
+        # Retrieve stored password if available
         smtp_config = (
             db.query(SmtpConfiguration)
             .filter(
@@ -241,8 +261,13 @@ def test_super_admin_smtp_configuration_endpoint(
 
     return TestSmtpConfigResponse(
         success=True,
-        message="SMTP connection and authentication test succeeded! Emails will trigger properly.",
+        message="SMTP connection test succeeded! Emails will trigger properly. You can save the configuration now",
     )
+
+
+# ---------------------------------------------------------------------------
+# Principals Management Endpoints
+# ---------------------------------------------------------------------------
 
 
 @router.get("/principals", response_model=List[PrincipalListItem])
@@ -250,6 +275,9 @@ def list_principals(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    """
+    List all principals and their school onboarding status.
+    """
     principals = (
         db.query(User)
         .filter(
@@ -296,6 +324,14 @@ def create_principal(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    """
+    Create a new Principal account, generate single-use onboarding token,
+    and trigger the invitation email with setup wizard link.
+
+    CRITICAL RESTRICTION: The authenticated Admin MUST have active SMTP
+    configured before creating or inviting Principals.
+    """
+    # 0. Check Admin SMTP Configuration Pre-requisite
     smtp_config = (
         db.query(SmtpConfiguration)
         .filter(
@@ -315,6 +351,7 @@ def create_principal(
     email_clean = payload.email.strip().lower()
     mobile_clean = payload.login_mobile.strip()
 
+    # Uniqueness checks
     existing_email = db.query(User).filter(
         func.lower(User.email) == email_clean,
         User.deleted_at.is_(None),
@@ -335,6 +372,7 @@ def create_principal(
             detail="A user with this mobile number already exists.",
         )
 
+    # 1. Create Principal without password or PIN (will be created during setup)
     principal = User(
         first_name=payload.first_name.strip(),
         last_name=payload.last_name.strip(),
@@ -350,6 +388,7 @@ def create_principal(
     db.add(principal)
     db.flush()
 
+    # 2. Generate secure onboarding token
     raw_token, token_hash = generate_onboarding_token()
     expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.ONBOARDING_TOKEN_EXPIRE_HOURS)
 
@@ -361,6 +400,7 @@ def create_principal(
     db.add(token_record)
     db.flush()
 
+    # 3. Trigger email using authenticated Admin's dynamic SMTP configuration
     full_name = f"{principal.first_name} {principal.last_name}"
     try:
         send_principal_invitation_email(
@@ -398,11 +438,19 @@ def create_principal(
     )
 
 
+# ---------------------------------------------------------------------------
+# Platform Users Management Endpoints
+# ---------------------------------------------------------------------------
+
+
 @router.get("/users", response_model=List[AuthUserResponse])
 def list_platform_users(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    """
+    List all platform-level users (Admins and Sales Persons).
+    """
     users = (
         db.query(User)
         .filter(
@@ -437,6 +485,9 @@ def create_platform_user(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    """
+    Create an active Admin or Sales Person account.
+    """
     if target_role not in (UserRole.ADMIN, UserRole.SALES_PERSON):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

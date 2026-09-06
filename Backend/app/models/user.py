@@ -118,8 +118,8 @@ class User(Base, AuditMixin):
 
     smtp_configuration: Mapped["SmtpConfiguration | None"] = relationship(
         "SmtpConfiguration",
-        back_populates="super_admin",
-        foreign_keys="[SmtpConfiguration.super_admin_id]",
+        back_populates="admin",
+        foreign_keys="[SmtpConfiguration.admin_id]",
         uselist=False,
         cascade="all, delete-orphan",
     )

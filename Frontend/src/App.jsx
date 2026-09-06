@@ -7,19 +7,19 @@ import { queryClient } from "@/lib/queryClient"
 
 // Layouts & Route Guards
 import { AppLayout } from "@/components/layout/AppLayout"
-import { SuperAdminLayout } from "@/components/layout/SuperAdminLayout"
+import { AdminLayout } from "@/components/layout/AdminLayout"
 import {
-  SuperAdminRoute,
+  AdminRoute,
   PrincipalRoute,
-  SuperAdminLoginRoute,
+  AdminLoginRoute,
   PrincipalLoginRoute,
 } from "@/components/auth/ProtectedRoute"
 
-// Super Admin Pages
-import { SuperAdminLogin } from "@/pages/super-admin/SuperAdminLogin"
-import { SuperAdminDashboard } from "@/pages/super-admin/SuperAdminDashboard"
-import { PrincipalsManagement } from "@/pages/super-admin/PrincipalsManagement"
-import { PlatformUsersManagement } from "@/pages/super-admin/PlatformUsersManagement"
+// Admin Pages
+import { AdminLogin } from "@/pages/admin/AdminLogin"
+import { AdminDashboard } from "@/pages/admin/AdminDashboard"
+import { PrincipalsManagement } from "@/pages/admin/PrincipalsManagement"
+import { PlatformUsersManagement } from "@/pages/admin/PlatformUsersManagement"
 
 // Principal & Onboarding Pages
 import { PrincipalLogin } from "@/pages/principal/PrincipalLogin"
@@ -36,9 +36,9 @@ export function App() {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
-              {/* Super Admin Login (Only redirects if already Super Admin) */}
-              <Route element={<SuperAdminLoginRoute />}>
-                <Route path="/super-admin/login" element={<SuperAdminLogin />} />
+              {/* Admin Login (Only redirects if already Admin) */}
+              <Route element={<AdminLoginRoute />}>
+                <Route path="/admin/login" element={<AdminLogin />} />
               </Route>
 
               {/* Principal Login (Only redirects if already School Principal/Staff) */}
@@ -49,15 +49,22 @@ export function App() {
               {/* Principal School Setup Onboarding Wizard */}
               <Route path="/principal/setup-school" element={<SchoolSetupWizard />} />
 
-              {/* Super Admin Protected Portal */}
-              <Route element={<SuperAdminRoute />}>
-                <Route element={<SuperAdminLayout />}>
-                  <Route path="/super-admin/dashboard" element={<SuperAdminDashboard />} />
-                  <Route path="/super-admin/principals" element={<PrincipalsManagement />} />
-                  <Route path="/super-admin/users" element={<PlatformUsersManagement />} />
-                  <Route path="/super-admin" element={<Navigate to="/super-admin/dashboard" replace />} />
+              {/* Admin Protected Portal */}
+              <Route element={<AdminRoute />}>
+                <Route element={<AdminLayout />}>
+                  <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                  <Route path="/admin/principals" element={<PrincipalsManagement />} />
+                  <Route path="/admin/users" element={<PlatformUsersManagement />} />
+                  <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
                 </Route>
               </Route>
+
+              {/* Legacy Super Admin URL Redirections */}
+              <Route path="/super-admin/login" element={<Navigate to="/admin/login" replace />} />
+              <Route path="/super-admin/dashboard" element={<Navigate to="/admin/dashboard" replace />} />
+              <Route path="/super-admin/principals" element={<Navigate to="/admin/principals" replace />} />
+              <Route path="/super-admin/users" element={<Navigate to="/admin/users" replace />} />
+              <Route path="/super-admin/*" element={<Navigate to="/admin/dashboard" replace />} />
 
               {/* Principal & Staff Protected School Application */}
               <Route element={<PrincipalRoute />}>

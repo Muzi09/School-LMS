@@ -2,8 +2,8 @@ import React from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
 
-export function SuperAdminRoute() {
-  const { isAuthenticated, isSuperAdmin, isLoading } = useAuth()
+export function AdminRoute() {
+  const { isAuthenticated, isAdmin, isLoading } = useAuth()
   const location = useLocation()
 
   if (isLoading) {
@@ -14,15 +14,15 @@ export function SuperAdminRoute() {
     )
   }
 
-  if (!isAuthenticated || !isSuperAdmin) {
-    return <Navigate to="/super-admin/login" state={{ from: location }} replace />
+  if (!isAuthenticated || !isAdmin) {
+    return <Navigate to="/admin/login" state={{ from: location }} replace />
   }
 
   return <Outlet />
 }
 
 export function PrincipalRoute() {
-  const { isAuthenticated, user, isSuperAdmin, isLoading } = useAuth()
+  const { isAuthenticated, user, isAdmin, isLoading } = useAuth()
   const location = useLocation()
 
   if (isLoading) {
@@ -33,8 +33,8 @@ export function PrincipalRoute() {
     )
   }
 
-  // If Super Admin is logged in, do not let them access school application routes directly
-  if (!isAuthenticated || isSuperAdmin) {
+  // If Admin is logged in, do not let them access school application routes directly
+  if (!isAuthenticated || isAdmin) {
     return <Navigate to="/principal/login" state={{ from: location }} replace />
   }
 
@@ -46,8 +46,8 @@ export function PrincipalRoute() {
   return <Outlet />
 }
 
-export function SuperAdminLoginRoute() {
-  const { isAuthenticated, isSuperAdmin, isLoading } = useAuth()
+export function AdminLoginRoute() {
+  const { isAuthenticated, isAdmin, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -57,15 +57,15 @@ export function SuperAdminLoginRoute() {
     )
   }
 
-  if (isAuthenticated && isSuperAdmin) {
-    return <Navigate to="/super-admin/dashboard" replace />
+  if (isAuthenticated && isAdmin) {
+    return <Navigate to="/admin/dashboard" replace />
   }
 
   return <Outlet />
 }
 
 export function PrincipalLoginRoute() {
-  const { isAuthenticated, user, isSuperAdmin, isLoading } = useAuth()
+  const { isAuthenticated, user, isAdmin, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -76,8 +76,8 @@ export function PrincipalLoginRoute() {
   }
 
   // Only redirect if authenticated as a School User (Principal, Staff, etc.).
-  // If authenticated as Super Admin, allow them to view and log in to the Principal portal without conflict.
-  if (isAuthenticated && !isSuperAdmin) {
+  // If authenticated as Admin, allow them to view and log in to the Principal portal without conflict.
+  if (isAuthenticated && !isAdmin) {
     if (user?.role === 1 && !user?.school_setup_completed) {
       return <Navigate to="/principal/setup-school" replace />
     }
@@ -86,3 +86,7 @@ export function PrincipalLoginRoute() {
 
   return <Outlet />
 }
+
+// Backward compatibility aliases
+export const SuperAdminRoute = AdminRoute
+export const SuperAdminLoginRoute = AdminLoginRoute

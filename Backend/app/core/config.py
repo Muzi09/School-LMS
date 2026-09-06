@@ -23,11 +23,18 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "School LMS Platform"
     SMTP_USE_TLS: bool = True
 
-    # Super Admin Default Seed Credentials
+    # Admin Default Seed Credentials
+    ADMIN_DEFAULT_EMAIL: str = "admin@platform.com"
+    ADMIN_DEFAULT_PASSWORD: str = "Admin@123"
+    ADMIN_DEFAULT_FIRST_NAME: str = "Admin"
+    ADMIN_DEFAULT_LAST_NAME: str = "User"
+    ADMIN_DEFAULT_MOBILE: str = "9999999999"
+
+    # Backward compatibility settings
     SUPER_ADMIN_DEFAULT_EMAIL: str = "admin@platform.com"
-    SUPER_ADMIN_DEFAULT_PASSWORD: str = "SuperAdmin@123"
-    SUPER_ADMIN_DEFAULT_FIRST_NAME: str = "Super"
-    SUPER_ADMIN_DEFAULT_LAST_NAME: str = "Admin"
+    SUPER_ADMIN_DEFAULT_PASSWORD: str = "Admin@123"
+    SUPER_ADMIN_DEFAULT_FIRST_NAME: str = "Admin"
+    SUPER_ADMIN_DEFAULT_LAST_NAME: str = "User"
     SUPER_ADMIN_DEFAULT_MOBILE: str = "9999999999"
 
     model_config = SettingsConfigDict(

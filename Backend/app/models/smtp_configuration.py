@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 class SmtpConfiguration(Base, AuditMixin):
     """
-    Per-Super-Admin SMTP email server configuration.
+    Per-Admin SMTP email server configuration.
     Stores host, credentials (encrypted password), ports, and sender info.
     """
     __tablename__ = "smtp_configurations"
@@ -23,7 +23,7 @@ class SmtpConfiguration(Base, AuditMixin):
         default=uuid.uuid4,
     )
 
-    super_admin_id: Mapped[uuid.UUID] = mapped_column(
+    admin_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
@@ -76,12 +76,25 @@ class SmtpConfiguration(Base, AuditMixin):
     )
 
     # Relationships
-    super_admin: Mapped["User"] = relationship(
+    admin: Mapped["User"] = relationship(
         "User",
         back_populates="smtp_configuration",
-        foreign_keys=[super_admin_id],
+        foreign_keys=[admin_id],
     )
 
     __table_args__ = (
-        UniqueConstraint("super_admin_id", name="uq_smtp_super_admin_id"),
+        UniqueConstraint("admin_id", name="uq_smtp_admin_id"),
     )
+
+    # Backward compatibility alias
+    @property
+    def super_admin_id(self):
+        return self.admin_id
+
+    @super_admin_id.setter
+    def super_admin_id(self, val):
+        self.admin_id = val
+
+    @property
+    def super_admin(self):
+        return self.admin

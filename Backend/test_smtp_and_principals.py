@@ -13,23 +13,23 @@ client = TestClient(app)
 
 def run_smtp_tests():
     print("\n" + "="*80)
-    print("STARTING SUPER ADMIN SMTP CONFIGURATION & PRINCIPAL RESTRICTION TESTS")
+    print("STARTING ADMIN SMTP CONFIGURATION & PRINCIPAL RESTRICTION TESTS")
     print("="*80)
 
     db = SessionLocal()
 
-    # 1. Create a fresh Super Admin for testing
+    # 1. Create a fresh Admin for testing
     ts = int(time.time() * 1000)
-    super_admin_email = f"super_admin_smtp_{ts}@platform.com"
-    super_admin_pwd = "SuperSecretAdmin123!"
+    admin_email = f"admin_smtp_{ts}@platform.com"
+    admin_pwd = "SuperSecretAdmin123!"
 
     admin_user = User(
         first_name="SMTP",
         last_name="Tester",
-        email=super_admin_email,
+        email=admin_email,
         login_mobile=f"98{str(ts)[-8:]}",
-        password_hash=hash_password(super_admin_pwd),
-        role=UserRole.SUPER_ADMIN,
+        password_hash=hash_password(admin_pwd),
+        role=UserRole.ADMIN,
         is_active=True,
         school_setup_completed=True,
     )
@@ -37,18 +37,18 @@ def run_smtp_tests():
     db.commit()
     db.refresh(admin_user)
 
-    # 2. Login as Super Admin to get Bearer token
+    # 2. Login as Admin to get Bearer token
     login_res = client.post("/api/v1/auth/login", json={
-        "email": super_admin_email,
-        "password": super_admin_pwd,
+        "email": admin_email,
+        "password": admin_pwd,
     })
-    assert login_res.status_code == 200, f"Super admin login failed: {login_res.text}"
+    assert login_res.status_code == 200, f"Admin login failed: {login_res.text}"
     token = login_res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
-    print("[PASS] Step 1: Super Admin logged in successfully with token.")
+    print("[PASS] Step 1: Admin logged in successfully with token.")
 
     # 3. Check initial SMTP config status -> should be is_configured: False
-    smtp_get_res = client.get("/api/v1/super-admin/smtp", headers=headers)
+    smtp_get_res = client.get("/api/v1/admin/smtp", headers=headers)
     assert smtp_get_res.status_code == 200, f"Failed GET /smtp: {smtp_get_res.text}"
     smtp_data = smtp_get_res.json()
     assert smtp_data["is_configured"] is False
@@ -62,7 +62,7 @@ def run_smtp_tests():
         "email": f"principal_blocked_{ts}@school.com",
         "login_mobile": f"91{str(ts)[-8:]}",
     }
-    block_res = client.post("/api/v1/super-admin/principals", json=principal_payload, headers=headers)
+    block_res = client.post("/api/v1/admin/principals", json=principal_payload, headers=headers)
     assert block_res.status_code == 400, f"Expected 400 Bad Request, got {block_res.status_code}: {block_res.text}"
     assert "SMTP configuration is required before creating a Principal" in block_res.json()["detail"]
     print(f"[PASS] Step 3: Principal creation without SMTP configuration was BLOCKED with 400 Bad Request: {block_res.json()['detail']}")
@@ -78,34 +78,58 @@ def run_smtp_tests():
         "security": "TLS",
         "is_active": True,
     }
-    save_res = client.post("/api/v1/super-admin/smtp", json=smtp_save_payload, headers=headers)
+    save_res = client.post("/api/v1/admin/smtp", json=smtp_save_payload, headers=headers)
     assert save_res.status_code == 200, f"Failed POST /smtp: {save_res.text}"
     saved_smtp = save_res.json()
     assert saved_smtp["is_configured"] is True
     assert saved_smtp["is_password_set"] is True
     assert saved_smtp["smtp_host"] == "smtp.mailprovider.com"
     assert saved_smtp["from_email"] == "notifications@platform.com"
-    assert "smtp_password" not in saved_smtp
+    assert saved_smtp["smtp_password"] == "MySuperSecretSmtpPassword123!"
     assert "smtp_password_encrypted" not in saved_smtp
-    print("[PASS] Step 4: SMTP configuration saved successfully. Password was NOT exposed in response.")
+    print("[PASS] Step 4: SMTP configuration saved successfully. Decrypted password available for display.")
 
     # 6. Verify password was properly encrypted at rest in database
-    db_smtp = db.query(SmtpConfiguration).filter(SmtpConfiguration.super_admin_id == admin_user.id).first()
+    db_smtp = db.query(SmtpConfiguration).filter(SmtpConfiguration.admin_id == admin_user.id).first()
     assert db_smtp is not None
     assert db_smtp.smtp_password_encrypted != "MySuperSecretSmtpPassword123!"
     decrypted = decrypt_smtp_password(db_smtp.smtp_password_encrypted)
     assert decrypted == "MySuperSecretSmtpPassword123!"
     print("[PASS] Step 5: Verified password encrypted at rest with Fernet and successfully decryptable.")
 
-    # 7. Create Principal with SMTP configured -> MUST SUCCEED
-    success_res = client.post("/api/v1/super-admin/principals", json=principal_payload, headers=headers)
-    assert success_res.status_code == 201, f"Failed creating principal after SMTP configured: {success_res.text}"
-    created_principal = success_res.json()
-    assert created_principal["email"] == principal_payload["email"]
-    assert "onboarding_url" in created_principal
-    print(f"[PASS] Step 6: Principal created successfully with SMTP invitation triggered: {created_principal['onboarding_url']}")
+    # 6. Test POST /admin/smtp/test endpoint
+    test_smtp_res = client.post("/api/v1/admin/smtp/test", json={
+        "smtp_host": "smtp.mailprovider.com",
+        "smtp_port": 587,
+        "smtp_username": "smtp_test_user@platform.com",
+        "smtp_password": None, # Should use saved password
+        "security": "TLS",
+    }, headers=headers)
+    assert test_smtp_res.status_code == 200, f"Failed POST /smtp/test: {test_smtp_res.text}"
+    test_data = test_smtp_res.json()
+    assert "success" in test_data
+    print(f"[PASS] Step 6: Tested POST /admin/smtp/test -> Result: success={test_data['success']}, message={test_data['message']}")
 
-    # 8. Update SMTP configuration without changing password
+    # 7. Create Principal with invalid SMTP -> MUST FAIL WITH 400 & ROLLBACK
+    fail_res = client.post("/api/v1/admin/principals", json=principal_payload, headers=headers)
+    assert fail_res.status_code == 400, f"Expected 400 Bad Request on SMTP failure, got: {fail_res.text}"
+    assert "Failed to send invitation email" in fail_res.json()["detail"]
+    # Verify no orphan user record was created in DB
+    orphan = db.query(User).filter(User.email == principal_payload["email"]).first()
+    assert orphan is None, "Transactional integrity failed! Orphan user was found in DB."
+    print(f"[PASS] Step 7: Principal creation failed gracefully on SMTP error with 400 & DB rolled back cleanly: {fail_res.json()['detail']}")
+
+    # 8. Test successful Principal creation with mocked email delivery
+    from unittest.mock import patch
+    with patch("app.api.v1.endpoints.admin.send_principal_invitation_email", return_value=True):
+        success_res = client.post("/api/v1/admin/principals", json=principal_payload, headers=headers)
+        assert success_res.status_code == 201, f"Failed creating principal with mocked email: {success_res.text}"
+        created_principal = success_res.json()
+        assert created_principal["email"] == principal_payload["email"]
+        assert "onboarding_url" in created_principal
+        print(f"[PASS] Step 8: Principal created successfully when email sent: {created_principal['onboarding_url']}")
+
+    # 9. Update SMTP configuration without changing password
     update_payload = {
         "smtp_host": "smtp.updatedhost.com",
         "smtp_port": 465,
@@ -116,7 +140,7 @@ def run_smtp_tests():
         "security": "SSL",
         "is_active": True,
     }
-    update_res = client.post("/api/v1/super-admin/smtp", json=update_payload, headers=headers)
+    update_res = client.post("/api/v1/admin/smtp", json=update_payload, headers=headers)
     assert update_res.status_code == 200, f"Failed updating SMTP: {update_res.text}"
     updated_smtp = update_res.json()
     assert updated_smtp["smtp_host"] == "smtp.updatedhost.com"
@@ -124,19 +148,19 @@ def run_smtp_tests():
 
     # Verify previous password is still retained
     db.expire_all()
-    db_smtp_updated = db.query(SmtpConfiguration).filter(SmtpConfiguration.super_admin_id == admin_user.id).first()
+    db_smtp_updated = db.query(SmtpConfiguration).filter(SmtpConfiguration.admin_id == admin_user.id).first()
     assert decrypt_smtp_password(db_smtp_updated.smtp_password_encrypted) == "MySuperSecretSmtpPassword123!"
-    print("[PASS] Step 7: Updated SMTP settings while preserving existing encrypted password.")
+    print("[PASS] Step 9: Updated SMTP settings while preserving existing encrypted password.")
 
-    # 9. Verify Super Admin Isolation: Create a 2nd Super Admin
+    # 10. Verify Admin Isolation: Create a 2nd Admin
     ts2 = int(time.time() * 1000) + 1
     admin_2 = User(
         first_name="Admin",
         last_name="Two",
-        email=f"super_admin_2_{ts2}@platform.com",
+        email=f"admin_2_{ts2}@platform.com",
         login_mobile=f"97{str(ts2)[-8:]}",
-        password_hash=hash_password(super_admin_pwd),
-        role=UserRole.SUPER_ADMIN,
+        password_hash=hash_password(admin_pwd),
+        role=UserRole.ADMIN,
         is_active=True,
         school_setup_completed=True,
     )
@@ -145,17 +169,18 @@ def run_smtp_tests():
 
     login_res2 = client.post("/api/v1/auth/login", json={
         "email": admin_2.email,
-        "password": super_admin_pwd,
+        "password": admin_pwd,
     })
     token2 = login_res2.json()["access_token"]
     headers2 = {"Authorization": f"Bearer {token2}"}
 
-    smtp_get_res2 = client.get("/api/v1/super-admin/smtp", headers=headers2)
+    smtp_get_res2 = client.get("/api/v1/admin/smtp", headers=headers2)
     assert smtp_get_res2.json()["is_configured"] is False
-    print("[PASS] Step 8: Super Admin 2 is isolated and does not inherit Super Admin 1's SMTP configuration.")
+    print("[PASS] Step 10: Admin 2 is isolated and does not inherit Admin 1's SMTP configuration.")
 
     db.close()
-    print("\nALL SUPER ADMIN SMTP AND PRINCIPAL RESTRICTION TESTS PASSED!\n")
+    print("\nALL ADMIN SMTP AND PRINCIPAL RESTRICTION TESTS PASSED!\n")
 
 if __name__ == "__main__":
     run_smtp_tests()
+

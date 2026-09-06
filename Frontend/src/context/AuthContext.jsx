@@ -96,7 +96,8 @@ export function AuthProvider({ children }) {
     resetSchoolTheme()
   }, [setAuthSession])
 
-  const isSuperAdmin = user?.role === 0
+  const isAdmin = user?.role === 0
+  const isSuperAdmin = isAdmin
   const isPrincipal = user?.role === 1
   const isStaff = user?.role === 2
 
@@ -105,6 +106,7 @@ export function AuthProvider({ children }) {
     user,
     role: user?.role,
     isAuthenticated: !!token && !!user,
+    isAdmin,
     isSuperAdmin,
     isPrincipal,
     isStaff,

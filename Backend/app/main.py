@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.v1.router import api_router
+from app.core.config import settings
 from app.core.database import engine
 from app.core.exceptions import AppException
 
@@ -33,7 +34,11 @@ from fastapi.staticfiles import StaticFiles
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        settings.FRONTEND_URL,
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -26,6 +26,14 @@ class UserBase(BaseModel):
 # ----------------------------------------------------
 # User Creation Schemas per Role
 # ----------------------------------------------------
+class CreatePrincipalRequest(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+    login_mobile: str = Field(..., min_length=5, max_length=20)
+    email: EmailStr = Field(..., description="Mandatory email for Principal")
+    password: str | None = Field(default=None, min_length=8, description="Plaintext password to be hashed")
+
+
 class CreateStaffRequest(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)

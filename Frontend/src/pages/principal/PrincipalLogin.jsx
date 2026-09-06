@@ -49,7 +49,7 @@ export function PrincipalLogin() {
     if (res.user.role === 1 && !res.user.school_setup_completed) {
       navigate("/principal/setup-school", { replace: true })
     } else if (res.user.role === 0) {
-      navigate("/super-admin/dashboard", { replace: true })
+      navigate("/admin/dashboard", { replace: true })
     } else {
       const from = location.state?.from?.pathname || "/staff"
       navigate(from, { replace: true })
@@ -307,9 +307,9 @@ export function PrincipalLogin() {
 
         <div className="mt-8 pt-6 border-t border-border text-center">
           <p className="text-xs text-muted-foreground">
-            Platform Super Admin?{" "}
-            <a href="/super-admin/login" className="text-amber-600 dark:text-amber-400 font-semibold hover:underline">
-              Access Super Admin Portal
+            Platform Admin?{" "}
+            <a href="/admin/login" className="text-amber-600 dark:text-amber-400 font-semibold hover:underline">
+              Access Admin Portal
             </a>
           </p>
         </div>

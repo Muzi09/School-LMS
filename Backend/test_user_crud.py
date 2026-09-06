@@ -25,7 +25,7 @@ def run_tests():
         # Initialize N-Tier Layer stack
         school_repo = SchoolRepository(db=db)
         user_repo = UserRepository(db=db)
-        user_service = UserService(user_repo=user_repo, school_repo=school_repo, db=db)
+        user_service = UserService(user_repo=user_repo, db=db)
         user_controller = UserController(user_service=user_service)
 
         print("1. Checking/Creating test school via Repository...")

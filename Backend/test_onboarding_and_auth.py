@@ -11,6 +11,7 @@ from app.models.onboarding_token import PrincipalOnboardingToken
 from app.models.school import School
 from app.models.school_class import SchoolClass
 from app.models.section import Section
+from app.models.smtp_configuration import SmtpConfiguration
 from app.models.user import User
 
 client = TestClient(app)
@@ -19,57 +20,81 @@ client = TestClient(app)
 def test_complete_onboarding_and_auth_flow():
     db = SessionLocal()
     try:
-        # 1. Ensure Super Admin exists
-        super_admin = db.query(User).filter(
-            func.lower(User.email) == settings.SUPER_ADMIN_DEFAULT_EMAIL.lower(),
+        # 1. Ensure Admin exists
+        admin = db.query(User).filter(
+            func.lower(User.email) == settings.ADMIN_DEFAULT_EMAIL.lower(),
             User.deleted_at.is_(None),
         ).first()
-        if not super_admin:
-            super_admin = User(
-                first_name="Super",
-                last_name="Admin",
-                email=settings.SUPER_ADMIN_DEFAULT_EMAIL.lower(),
+        if not admin:
+            admin = User(
+                first_name="Admin",
+                last_name="User",
+                email=settings.ADMIN_DEFAULT_EMAIL.lower(),
                 login_mobile="9999999999",
-                password_hash=hash_password(settings.SUPER_ADMIN_DEFAULT_PASSWORD),
-                role=UserRole.SUPER_ADMIN,
+                password_hash=hash_password(settings.ADMIN_DEFAULT_PASSWORD),
+                role=UserRole.ADMIN,
                 is_active=True,
                 school_setup_completed=True,
             )
-            db.add(super_admin)
+            db.add(admin)
             db.commit()
+            db.refresh(admin)
+        else:
+            admin.password_hash = hash_password(settings.ADMIN_DEFAULT_PASSWORD)
+            admin.role = UserRole.ADMIN
+            db.commit()
+            db.refresh(admin)
 
-        # 2. Test Super Admin Login
+        # 2. Test Admin Login
         login_res = client.post(
             "/api/v1/auth/login",
             json={
-                "email": settings.SUPER_ADMIN_DEFAULT_EMAIL,
-                "password": settings.SUPER_ADMIN_DEFAULT_PASSWORD,
+                "email": settings.ADMIN_DEFAULT_EMAIL,
+                "password": settings.ADMIN_DEFAULT_PASSWORD,
             },
         )
         assert login_res.status_code == 200, f"Login failed: {login_res.text}"
-        super_token = login_res.json()["access_token"]
-        auth_headers = {"Authorization": f"Bearer {super_token}"}
+        admin_token = login_res.json()["access_token"]
+        auth_headers = {"Authorization": f"Bearer {admin_token}"}
 
-        # 3. Super Admin Dashboard Stats
-        dash_res = client.get("/api/v1/super-admin/dashboard", headers=auth_headers)
+        # Ensure Admin has SMTP configured for principal invites
+        client.post(
+            "/api/v1/admin/smtp",
+            headers=auth_headers,
+            json={
+                "smtp_host": "smtp.platform-test.com",
+                "smtp_port": 587,
+                "smtp_username": "smtp_test@platform.com",
+                "smtp_password": "TestPassword123!",
+                "from_email": "admin@platform.com",
+                "from_name": "School LMS Platform",
+                "security": "TLS",
+                "is_active": True,
+            }
+        )
+
+        # 3. Admin Dashboard Stats
+        dash_res = client.get("/api/v1/admin/dashboard", headers=auth_headers)
         assert dash_res.status_code == 200
         stats = dash_res.json()
         assert "total_schools" in stats
         assert "total_principals" in stats
 
-        # 4. Super Admin Creates Principal
+        # 4. Admin Creates Principal
+        from unittest.mock import patch
         test_email = f"principal_test_{int(datetime_now_ts())}@school.com"
         test_mobile = f"98{int(datetime_now_ts()) % 100000000:08d}"
-        create_p_res = client.post(
-            "/api/v1/super-admin/principals",
-            headers=auth_headers,
-            json={
-                "first_name": "Arthur",
-                "last_name": "Pendelton",
-                "email": test_email,
-                "login_mobile": test_mobile,
-            },
-        )
+        with patch("app.api.v1.endpoints.admin.send_principal_invitation_email", return_value=True):
+            create_p_res = client.post(
+                "/api/v1/admin/principals",
+                headers=auth_headers,
+                json={
+                    "first_name": "Arthur",
+                    "last_name": "Pendelton",
+                    "email": test_email,
+                    "login_mobile": test_mobile,
+                },
+            )
         assert create_p_res.status_code == 201, f"Create principal failed: {create_p_res.text}"
         p_data = create_p_res.json()
         assert p_data["email"] == test_email
