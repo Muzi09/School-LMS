@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import { useSearchParams, useNavigate, Link } from "react-router-dom"
 import {
   Building2,
@@ -27,6 +28,19 @@ import {
   Mail,
   Phone,
   Edit3,
+  X,
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Copy,
+  Grid,
+  List as ListIcon,
+  CheckSquare,
+  Square,
+  Bookmark,
+  Award,
+  Compass,
+  Pipette,
 } from "lucide-react"
 import { authService } from "@/api/authService"
 import { useAuth } from "@/context/AuthContext"
@@ -73,25 +87,129 @@ const INDIAN_STATES = [
   "West Bengal",
 ]
 
-const HOUSE_COLOR_OPTIONS = [
-  { label: "Red", value: "#ef4444" },
-  { label: "Blue", value: "#3b82f6" },
-  { label: "Green", value: "#10b981" },
-  { label: "Yellow", value: "#f59e0b" },
-  { label: "Purple", value: "#a855f7" },
-  { label: "Orange", value: "#f97316" },
+const THEME_COLOR_PRESETS = [
+  { label: "Default", value: "#FFFFFF" },
+  { label: "Royal Blue", value: "#2563EB" },
+  { label: "Emerald Green", value: "#059669" },
+  { label: "Crimson Red", value: "#DC2626" },
+  { label: "Amethyst Purple", value: "#7C3AED" },
+  { label: "Indigo Slate", value: "#4F46E5" },
+  { label: "Teal Cyan", value: "#0D9488" },
+  { label: "Amber Gold", value: "#D97706" },
 ]
 
-const THEME_COLOR_PRESETS = [
-  { label: "Default", value: "#ffffff" },
-  { label: "Royal Blue", value: "#2563eb" },
-  { label: "Emerald Green", value: "#059669" },
-  { label: "Crimson Red", value: "#dc2626" },
-  { label: "Amethyst Purple", value: "#7c3aed" },
-  { label: "Indigo Slate", value: "#4f46e5" },
-  { label: "Teal Cyan", value: "#0d9488" },
-  { label: "Amber Gold", value: "#d97706" },
+const CURATED_HOUSE_PALETTE = [
+  { name: "Red", hex: "#EF4444" },
+  { name: "Blue", hex: "#3B82F6" },
+  { name: "Green", hex: "#10B981" },
+  { name: "Yellow", hex: "#F59E0B" },
+  { name: "Orange", hex: "#F97316" },
+  { name: "Purple", hex: "#8B5CF6" },
+  { name: "Pink", hex: "#EC4899" },
+  { name: "Maroon", hex: "#991B1B" },
+  { name: "Navy", hex: "#1E3A8A" },
+  { name: "Cyan", hex: "#06B6D4" },
+  { name: "Slate", hex: "#64748B" },
 ]
+
+const INITIAL_DEFAULT_CLASSES = [
+  "Nursery",
+  "LKG",
+  "UKG",
+  "Class 1",
+  "Class 2",
+  "Class 3",
+  "Class 4",
+  "Class 5",
+  "Class 6",
+  "Class 7",
+  "Class 8",
+  "Class 9",
+  "Class 10",
+  "Class 11",
+  "Class 12",
+]
+
+const INITIAL_DEFAULT_SECTIONS = [
+  "Section A",
+  "Section B",
+  "Section C",
+]
+
+const INITIAL_DEFAULT_SUBJECTS = [
+  "English",
+  "Mathematics",
+  "Science",
+  "Social Science",
+  "Hindi",
+  "Computer Science",
+  "Environmental Studies",
+  "Art & Craft",
+  "Physical Education",
+]
+
+const INITIAL_DEFAULT_WINGS = [
+  { id: "pre-primary", name: "Pre-Primary", classes: ["Nursery", "LKG", "UKG"] },
+  { id: "primary", name: "Primary", classes: ["Class 1", "Class 2", "Class 3", "Class 4", "Class 5"] },
+  { id: "middle", name: "Middle", classes: ["Class 6", "Class 7", "Class 8"] },
+  { id: "secondary", name: "Secondary", classes: ["Class 9", "Class 10"] },
+  { id: "senior-secondary", name: "Senior Secondary", classes: ["Class 11", "Class 12"] },
+]
+
+const INITIAL_DEFAULT_HOUSES = [
+  { name: "Red House", color: "#EF4444", emblem_url: "" },
+  { name: "Blue House", color: "#3B82F6", emblem_url: "" },
+  { name: "Green House", color: "#10B981", emblem_url: "" },
+  { name: "Yellow House", color: "#F59E0B", emblem_url: "" },
+]
+
+const getInitialWingsForClasses = (classList = INITIAL_DEFAULT_CLASSES) => {
+  const wings = [
+    { id: "pre-primary", name: "Pre-Primary", classes: [] },
+    { id: "primary", name: "Primary", classes: [] },
+    { id: "middle", name: "Middle", classes: [] },
+    { id: "secondary", name: "Secondary", classes: [] },
+    { id: "senior-secondary", name: "Senior Secondary", classes: [] },
+  ]
+
+  classList.forEach((c) => {
+    const lower = c.toLowerCase().trim()
+    if (
+      lower.includes("nursery") ||
+      lower.includes("lkg") ||
+      lower.includes("ukg") ||
+      lower.includes("kg") ||
+      lower.includes("play") ||
+      lower.includes("pre")
+    ) {
+      wings[0].classes.push(c)
+    } else if (
+      /^(class\s*|grade\s*)?(1|2|3|4|5)(st|nd|rd|th)?$/i.test(lower) ||
+      /^[1-5]$/.test(lower)
+    ) {
+      wings[1].classes.push(c)
+    } else if (
+      /^(class\s*|grade\s*)?(6|7|8)(th)?$/i.test(lower) ||
+      /^[6-8]$/.test(lower)
+    ) {
+      wings[2].classes.push(c)
+    } else if (
+      /^(class\s*|grade\s*)?(9|10)(th)?$/i.test(lower) ||
+      /^(9|10)$/.test(lower)
+    ) {
+      wings[3].classes.push(c)
+    } else if (
+      /^(class\s*|grade\s*)?(11|12)(th)?$/i.test(lower) ||
+      /^(11|12)$/.test(lower)
+    ) {
+      wings[4].classes.push(c)
+    } else {
+      wings[1].classes.push(c)
+    }
+  })
+
+  return wings.filter((w) => w.classes.length > 0)
+}
 
 export function SchoolSetupWizard() {
   const [searchParams] = useSearchParams()
@@ -99,6 +217,7 @@ export function SchoolSetupWizard() {
   const { logout } = useAuth()
   const token = searchParams.get("token") || ""
   const emblemInputRef = useRef(null)
+  const houseEmblemInputRef = useRef(null)
 
   // Validation / Loading States
   const [isValidating, setIsValidating] = useState(true)
@@ -109,59 +228,287 @@ export function SchoolSetupWizard() {
   const [submitError, setSubmitError] = useState(null)
   const [setupSuccess, setSetupSuccess] = useState(false)
   const [countdown, setCountdown] = useState(7)
+  const [lastSavedTime, setLastSavedTime] = useState(null)
 
   // Step 1: School Identity & Profile
-  // Top: Emblem
   const [emblemPreviewUrl, setEmblemPreviewUrl] = useState("")
   const [emblemUploadedUrl, setEmblemUploadedUrl] = useState("")
   const [isUploadingEmblem, setIsUploadingEmblem] = useState(false)
   const [emblemUploadError, setEmblemUploadError] = useState(null)
 
-  // Middle: School Details
   const [schoolName, setSchoolName] = useState("")
-  const [schoolCode, setSchoolCode] = useState("") // Affiliation Code (Numeric only)
+  const [schoolCode, setSchoolCode] = useState("")
   const [schoolEmail, setSchoolEmail] = useState("")
   const [schoolPhone, setSchoolPhone] = useState("")
 
-  // Middle: Indian Standard Address Fields
   const [addressStreet, setAddressStreet] = useState("")
   const [addressLandmark, setAddressLandmark] = useState("")
   const [addressCity, setAddressCity] = useState("")
   const [addressState, setAddressState] = useState("Delhi")
   const [addressPincode, setAddressPincode] = useState("")
 
-  // Bottom: Theme Color
-  const [primaryColor, setPrimaryColor] = useState("#FFFFFF") // Empty = default theme
+  const [primaryColor, setPrimaryColor] = useState("#FFFFFF")
 
   // Step 2: Classes
-  const [classes, setClasses] = useState([
-    { name: "Class 1", order_index: 1, sections: ["A", "B"] },
-    { name: "Class 2", order_index: 2, sections: ["A", "B"] },
-    { name: "Class 3", order_index: 3, sections: ["A", "B"] },
-    { name: "Class 4", order_index: 4, sections: ["A", "B"] },
-    { name: "Class 5", order_index: 5, sections: ["A", "B"] },
-  ])
+  const [classesList, setClassesList] = useState(INITIAL_DEFAULT_CLASSES)
+  const [editingClassIdx, setEditingClassIdx] = useState(null)
+  const [editingClassName, setEditingClassName] = useState("")
+  const [isAddingClass, setIsAddingClass] = useState(false)
   const [newClassName, setNewClassName] = useState("")
+  const [newClassPosition, setNewClassPosition] = useState("end") // "end", "start", "after", "before"
+  const [targetClassAnchor, setTargetClassAnchor] = useState(INITIAL_DEFAULT_CLASSES[0] || "")
 
-  // Step 3: Sections are managed within classes array
+  // Live Drag-and-Drop state with real-time physical displacement
+  const [classDragState, setClassDragState] = useState({
+    isDragging: false,
+    dragIndex: null,
+    targetIndex: null,
+    startY: 0,
+    currentY: 0,
+    itemHeight: 52,
+    cardWidth: 0,
+    cardHeight: 0,
+    cardLeft: 0,
+    cardTop: 0,
+  })
+  const classDragRef = useRef({
+    isDragging: false,
+    dragIndex: null,
+    targetIndex: null,
+    startY: 0,
+    currentY: 0,
+    itemHeight: 52,
+    cardWidth: 0,
+    cardHeight: 0,
+    cardLeft: 0,
+    cardTop: 0,
+  })
+  const classesContainerRef = useRef(null)
 
-  // Step 4: Houses
-  const [houses, setHouses] = useState([
-    { name: "Red House", color: "#ef4444" },
-    { name: "Blue House", color: "#3b82f6" },
-    { name: "Green House", color: "#10b981" },
-    { name: "Yellow House", color: "#f59e0b" },
-  ])
-  const [newHouseName, setNewHouseName] = useState("")
-  const [newHouseColor, setNewHouseColor] = useState("#ef4444")
+  // Step 3: Sections (Per-Class Management & Horizontal Drag-and-Drop)
+  const [classSectionMap, setClassSectionMap] = useState(() => {
+    const map = {}
+    INITIAL_DEFAULT_CLASSES.forEach((c) => {
+      map[c] = [...INITIAL_DEFAULT_SECTIONS]
+    })
+    return map
+  })
+  const [editingSectionState, setEditingSectionState] = useState(null) // { className, index } | null
+  const [editingSectionNameVal, setEditingSectionNameVal] = useState("")
+  const [addingSectionForClass, setAddingSectionForClass] = useState(null) // className | null
+  const [newSectionForClassName, setNewSectionForClassName] = useState("")
 
-  // Step 5: Credentials
+  // Section Drag and Drop State (2D multi-row aware)
+  const [sectionDragState, setSectionDragState] = useState({
+    isDragging: false,
+    className: null,
+    dragIndex: null,
+    targetIndex: null,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+    slotRects: [],
+    cardWidth: 0,
+    cardHeight: 0,
+    cardLeft: 0,
+    cardTop: 0,
+  })
+  const sectionDragRef = useRef({
+    isDragging: false,
+    className: null,
+    dragIndex: null,
+    targetIndex: null,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+    slotRects: [],
+    cardWidth: 0,
+    cardHeight: 0,
+    cardLeft: 0,
+    cardTop: 0,
+  })
+
+  // Step 4: Subjects
+  const [subjectLibrary, setSubjectLibrary] = useState(INITIAL_DEFAULT_SUBJECTS)
+  const [newSubjectName, setNewSubjectName] = useState("")
+  const [editingSubjectIdx, setEditingSubjectIdx] = useState(null)
+  const [editingSubjectName, setEditingSubjectName] = useState("")
+  // classSubjectMap: { [className]: ["English", "Mathematics", ...] }
+  const [classSubjectMap, setClassSubjectMap] = useState(() => {
+    const map = {}
+    INITIAL_DEFAULT_CLASSES.forEach((c) => {
+      if (["Nursery", "LKG", "UKG"].includes(c)) {
+        map[c] = ["English", "Hindi", "Mathematics", "Art & Craft", "Environmental Studies"]
+      } else if (["Class 1", "Class 2", "Class 3", "Class 4", "Class 5"].includes(c)) {
+        map[c] = ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer Science", "Art & Craft", "Physical Education"]
+      } else if (["Class 6", "Class 7", "Class 8", "Class 9", "Class 10"].includes(c)) {
+        map[c] = ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer Science", "Physical Education"]
+      } else {
+        map[c] = ["English", "Mathematics", "Science", "Computer Science", "Physical Education"]
+      }
+    })
+    return map
+  })
+  // Group assignment state
+  const [selectedGroupTarget, setSelectedGroupTarget] = useState("Class 1 – 5")
+  const [manualSelectedClasses, setManualSelectedClasses] = useState([])
+  const [selectedSubjectsForAssign, setSelectedSubjectsForAssign] = useState(INITIAL_DEFAULT_SUBJECTS)
+  const [assignFeedback, setAssignFeedback] = useState(null)
+  // Copy subject shortcut
+  const [copySourceClass, setCopySourceClass] = useState("Class 6")
+  const [copyTargetClasses, setCopyTargetClasses] = useState([])
+  const [showSubjectMatrix, setShowSubjectMatrix] = useState(false)
+
+  // Step 5: Wings
+  const [useWings, setUseWings] = useState(true)
+  const [wingsList, setWingsList] = useState(() => getInitialWingsForClasses(INITIAL_DEFAULT_CLASSES))
+  const [editingWingIdx, setEditingWingIdx] = useState(null)
+  const [editingWingNameVal, setEditingWingNameVal] = useState("")
+  const [isAddingCustomWing, setIsAddingCustomWing] = useState(false)
+  const [newCustomWingName, setNewCustomWingName] = useState("")
+  const [draggedClassData, setDraggedClassData] = useState(null)
+  const [dragOverArea, setDragOverArea] = useState(null)
+
+  // Step 6: Houses (Optional, Max 4)
+  const [useHouses, setUseHouses] = useState(true)
+  const [housesList, setHousesList] = useState(INITIAL_DEFAULT_HOUSES)
+  const [editingHouseIdx, setEditingHouseIdx] = useState(null)
+  const [houseFormName, setHouseFormName] = useState("")
+  const [houseFormColor, setHouseFormColor] = useState("#EF4444")
+  const [houseFormEmblem, setHouseFormEmblem] = useState("")
+  const [isUploadingHouseEmblem, setIsUploadingHouseEmblem] = useState(false)
+  const [houseEmblemError, setHouseEmblemError] = useState(null)
+  const [isAddingHouse, setIsAddingHouse] = useState(false)
+
+  // Step 7: Password & PIN
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [pin, setPin] = useState("")
   const [confirmPin, setConfirmPin] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showPin, setShowPin] = useState(false)
+
+  // Sync wingsList with classesList: prune deleted classes & remove wings that have become empty
+  useEffect(() => {
+    setWingsList((prev) => {
+      const updated = prev.map((w) => ({
+        ...w,
+        classes: (w.classes || []).filter((c) => classesList.includes(c)),
+      }))
+      return updated.filter((w) => w.classes.length > 0)
+    })
+  }, [classesList])
+
+  const unassignedClasses = classesList.filter(
+    (c) => !wingsList.some((w) => w.classes && w.classes.includes(c))
+  )
+
+  // 1. LocalStorage Draft Key
+  const draftStorageKey = token ? `school_lms_onboarding_draft_${token.slice(0, 16)}` : null
+
+  // Restore draft from LocalStorage on mount
+  useEffect(() => {
+    if (!draftStorageKey) return
+    try {
+      const saved = localStorage.getItem(draftStorageKey)
+      if (saved) {
+        const data = JSON.parse(saved)
+        if (data.schoolName) setSchoolName(data.schoolName)
+        if (data.schoolCode) setSchoolCode(data.schoolCode)
+        if (data.addressStreet) setAddressStreet(data.addressStreet)
+        if (data.addressLandmark) setAddressLandmark(data.addressLandmark)
+        if (data.addressCity) setAddressCity(data.addressCity)
+        if (data.addressState) setAddressState(data.addressState)
+        if (data.addressPincode) setAddressPincode(data.addressPincode)
+        if (data.primaryColor) setPrimaryColor(data.primaryColor)
+        if (data.emblemUploadedUrl) {
+          setEmblemUploadedUrl(data.emblemUploadedUrl)
+          setEmblemPreviewUrl(data.emblemUploadedUrl)
+        }
+        if (Array.isArray(data.classesList) && data.classesList.length > 0) setClassesList(data.classesList)
+        if (data.classSectionMap) setClassSectionMap(data.classSectionMap)
+        if (Array.isArray(data.subjectLibrary) && data.subjectLibrary.length > 0) setSubjectLibrary(data.subjectLibrary)
+        if (data.classSubjectMap) setClassSubjectMap(data.classSubjectMap)
+        if (typeof data.useWings === "boolean") setUseWings(data.useWings)
+        if (Array.isArray(data.wingsList) && data.wingsList.length > 0) {
+          const loadedWings = data.wingsList.map((w, idx) => {
+            if (Array.isArray(w.classes)) {
+              return { id: w.id || `wing-${idx}`, name: w.name, classes: w.classes }
+            }
+            return {
+              id: `wing-${idx}`,
+              name: w.name,
+              classes: [],
+            }
+          })
+          setWingsList(loadedWings)
+        } else if (Array.isArray(data.classesList) && data.classesList.length > 0) {
+          setWingsList(getInitialWingsForClasses(data.classesList))
+        }
+        if (typeof data.useHouses === "boolean") setUseHouses(data.useHouses)
+        if (Array.isArray(data.housesList)) setHousesList(data.housesList)
+      }
+    } catch (e) {
+      console.warn("Failed to load onboarding draft from localStorage:", e)
+    }
+  }, [draftStorageKey])
+
+  // Save draft to LocalStorage when important fields change
+  const saveDraftToStorage = () => {
+    if (!draftStorageKey) return
+    try {
+      const draft = {
+        schoolName,
+        schoolCode,
+        addressStreet,
+        addressLandmark,
+        addressCity,
+        addressState,
+        addressPincode,
+        primaryColor,
+        emblemUploadedUrl,
+        classesList,
+        classSectionMap,
+        subjectLibrary,
+        classSubjectMap,
+        useWings,
+        wingsList,
+        useHouses,
+        housesList,
+      }
+      localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+      setLastSavedTime(new Date())
+    } catch (e) {
+      console.warn("Failed to save onboarding draft:", e)
+    }
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveDraftToStorage()
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [
+    schoolName,
+    schoolCode,
+    addressStreet,
+    addressLandmark,
+    addressCity,
+    addressState,
+    addressPincode,
+    primaryColor,
+    emblemUploadedUrl,
+    classesList,
+    classSectionMap,
+    subjectLibrary,
+    classSubjectMap,
+    useWings,
+    wingsList,
+    useHouses,
+    housesList,
+  ])
 
   // Validate Onboarding Token on mount
   useEffect(() => {
@@ -206,75 +553,16 @@ export function SchoolSetupWizard() {
   }, [setupSuccess])
 
   const handleProceedToLogin = () => {
+    if (draftStorageKey) {
+      localStorage.removeItem(draftStorageKey)
+    }
     logout()
     navigate("/principal/login", { replace: true })
   }
 
-  // Class Helpers
-  const addClass = () => {
-    const trimmed = newClassName.trim()
-    if (!trimmed) return
-    if (classes.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) return
-
-    setClasses([
-      ...classes,
-      { name: trimmed, order_index: classes.length + 1, sections: ["A", "B"] },
-    ])
-    setNewClassName("")
-  }
-
-  const removeClass = (index) => {
-    setClasses(classes.filter((_, idx) => idx !== index))
-  }
-
-  const applyPresetClasses = (start, end) => {
-    const list = []
-    for (let i = start; i <= end; i++) {
-      list.push({ name: `Class ${i}`, order_index: i, sections: ["A", "B"] })
-    }
-    setClasses(list)
-  }
-
-  // Section Helpers
-  const addSectionToClass = (classIndex, sectionName) => {
-    const trimmed = sectionName.trim().toUpperCase()
-    if (!trimmed) return
-    const targetClass = classes[classIndex]
-    if (targetClass.sections.includes(trimmed)) return
-
-    const updated = [...classes]
-    updated[classIndex] = {
-      ...targetClass,
-      sections: [...targetClass.sections, trimmed],
-    }
-    setClasses(updated)
-  }
-
-  const removeSectionFromClass = (classIndex, secIndex) => {
-    const targetClass = classes[classIndex]
-    const updated = [...classes]
-    updated[classIndex] = {
-      ...targetClass,
-      sections: targetClass.sections.filter((_, idx) => idx !== secIndex),
-    }
-    setClasses(updated)
-  }
-
-  // House Helpers
-  const addHouse = () => {
-    const trimmed = newHouseName.trim()
-    if (!trimmed) return
-    if (houses.some((h) => h.name.toLowerCase() === trimmed.toLowerCase())) return
-
-    setHouses([...houses, { name: trimmed, color: newHouseColor }])
-    setNewHouseName("")
-  }
-
-  const removeHouse = (index) => {
-    setHouses(houses.filter((_, idx) => idx !== index))
-  }
-
-  // Emblem File Handler
+  // ==========================================
+  // STEP 1: School Emblem Upload Handlers
+  // ==========================================
   const handleEmblemFileChange = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -317,18 +605,932 @@ export function SchoolSetupWizard() {
     }
   }
 
-  // Step Validation & Navigation
+  // ==========================================
+  // STEP 2: Classes Handlers
+  // ==========================================
+  const handleAddClass = () => {
+    const trimmed = newClassName.trim()
+    if (!trimmed) return
+    if (classesList.some((c) => c.toLowerCase() === trimmed.toLowerCase())) {
+      setSubmitError(`Class "${trimmed}" already exists.`)
+      return
+    }
+
+    let updated = [...classesList]
+    if (newClassPosition === "start") {
+      updated.unshift(trimmed)
+    } else if (newClassPosition === "after") {
+      const idx = updated.indexOf(targetClassAnchor)
+      if (idx !== -1) {
+        updated.splice(idx + 1, 0, trimmed)
+      } else {
+        updated.push(trimmed)
+      }
+    } else if (newClassPosition === "before") {
+      const idx = updated.indexOf(targetClassAnchor)
+      if (idx !== -1) {
+        updated.splice(idx, 0, trimmed)
+      } else {
+        updated.push(trimmed)
+      }
+    } else {
+      updated.push(trimmed)
+    }
+
+    setClassesList(updated)
+    // Synchronize section mapping
+    setClassSectionMap((prev) => ({
+      ...prev,
+      [trimmed]: [...INITIAL_DEFAULT_SECTIONS],
+    }))
+    // Synchronize subject mapping
+    setClassSubjectMap((prev) => ({
+      ...prev,
+      [trimmed]: subjectLibrary.slice(0, 5),
+    }))
+
+    setNewClassName("")
+    setIsAddingClass(false)
+    setSubmitError(null)
+  }
+
+  const handleSaveEditClass = (index) => {
+    const trimmed = editingClassName.trim()
+    if (!trimmed) return
+    const oldName = classesList[index]
+    if (
+      oldName.toLowerCase() !== trimmed.toLowerCase() &&
+      classesList.some((c) => c.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      setSubmitError(`Class "${trimmed}" already exists.`)
+      return
+    }
+
+    const updated = [...classesList]
+    updated[index] = trimmed
+    setClassesList(updated)
+
+    // Update section map keys
+    if (oldName !== trimmed) {
+      setClassSectionMap((prev) => {
+        const copy = { ...prev }
+        copy[trimmed] = copy[oldName] || [...INITIAL_DEFAULT_SECTIONS]
+        delete copy[oldName]
+        return copy
+      })
+      // Update subject map keys
+      setClassSubjectMap((prev) => {
+        const copy = { ...prev }
+        copy[trimmed] = copy[oldName] || []
+        delete copy[oldName]
+        return copy
+      })
+      // Update wing ranges
+      setWingsList((prev) =>
+        prev.map((w) => ({
+          ...w,
+          startClass: w.startClass === oldName ? trimmed : w.startClass,
+          endClass: w.endClass === oldName ? trimmed : w.endClass,
+        }))
+      )
+    }
+
+    setEditingClassIdx(null)
+    setEditingClassName("")
+    setSubmitError(null)
+  }
+
+  const handleDeleteClass = (index) => {
+    const target = classesList[index]
+    if (classesList.length <= 1) {
+      setSubmitError("Your school must have at least one class configured.")
+      return
+    }
+    const updated = classesList.filter((_, idx) => idx !== index)
+    setClassesList(updated)
+
+    setClassSectionMap((prev) => {
+      const copy = { ...prev }
+      delete copy[target]
+      return copy
+    })
+    setClassSubjectMap((prev) => {
+      const copy = { ...prev }
+      delete copy[target]
+      return copy
+    })
+    setSubmitError(null)
+  }
+
+  const handleResetClassesToDefault = () => {
+    setClassesList([...INITIAL_DEFAULT_CLASSES])
+    setEditingClassIdx(null)
+    setEditingClassName("")
+    setIsAddingClass(false)
+    setNewClassName("")
+    setTargetClassAnchor(INITIAL_DEFAULT_CLASSES[0] || "")
+
+    // Reset section mappings for default classes
+    const resetSecMap = {}
+    INITIAL_DEFAULT_CLASSES.forEach((c) => {
+      resetSecMap[c] = [...INITIAL_DEFAULT_SECTIONS]
+    })
+    setClassSectionMap(resetSecMap)
+
+    // Reset subject mappings for default classes
+    const resetSubMap = {}
+    INITIAL_DEFAULT_CLASSES.forEach((c) => {
+      if (["Nursery", "LKG", "UKG"].includes(c)) {
+        resetSubMap[c] = ["English", "Hindi", "Mathematics", "Art & Craft", "Environmental Studies"]
+      } else if (["Class 1", "Class 2", "Class 3", "Class 4", "Class 5"].includes(c)) {
+        resetSubMap[c] = ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer Science", "Art & Craft", "Physical Education"]
+      } else if (["Class 6", "Class 7", "Class 8", "Class 9", "Class 10"].includes(c)) {
+        resetSubMap[c] = ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer Science", "Physical Education"]
+      } else {
+        resetSubMap[c] = ["English", "Mathematics", "Science", "Computer Science", "Physical Education"]
+      }
+    })
+    setClassSubjectMap(resetSubMap)
+
+    // Reset wing mappings to default classes
+    setWingsList(getInitialWingsForClasses(INITIAL_DEFAULT_CLASSES))
+
+    // Cancel any active drag
+    const resetDrag = {
+      isDragging: false,
+      dragIndex: null,
+      targetIndex: null,
+      startY: 0,
+      currentY: 0,
+      itemHeight: 52,
+      cardWidth: 0,
+      cardHeight: 0,
+      cardLeft: 0,
+      cardTop: 0,
+    }
+    classDragRef.current = resetDrag
+    setClassDragState(resetDrag)
+    setSubmitError(null)
+  }
+
+  const handleClassDragStart = (e, index) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return
+    if (editingClassIdx !== null) return
+
+    const container = classesContainerRef.current
+    if (!container) return
+
+    const itemElements = Array.from(container.querySelectorAll("[data-class-item='true']"))
+    if (itemElements.length === 0 || !itemElements[index]) return
+
+    const targetEl = itemElements[index]
+    const targetRect = targetEl.getBoundingClientRect()
+
+    const itemHeight =
+      itemElements.length > 1
+        ? itemElements[1].getBoundingClientRect().top - itemElements[0].getBoundingClientRect().top
+        : targetRect.height + 6
+
+    const startY = e.clientY
+
+    const newState = {
+      isDragging: true,
+      dragIndex: index,
+      targetIndex: index,
+      startY,
+      currentY: startY,
+      itemHeight,
+      cardWidth: targetRect.width,
+      cardHeight: targetRect.height,
+      cardLeft: targetRect.left,
+      cardTop: targetRect.top,
+    }
+
+    classDragRef.current = newState
+    setClassDragState(newState)
+
+    e.preventDefault()
+  }
+
+  // Live Drag-and-Drop event listeners for smooth physical sliding displacement
+  useEffect(() => {
+    if (!classDragState.isDragging) return
+
+    const handlePointerMove = (e) => {
+      const drag = classDragRef.current
+      if (!drag.isDragging) return
+
+      const currentY = e.clientY
+      const container = classesContainerRef.current
+      let newTargetIndex = drag.dragIndex
+
+      if (container) {
+        const itemElements = Array.from(container.querySelectorAll("[data-class-item='true']"))
+        if (itemElements.length > 0) {
+          let closestIdx = drag.dragIndex
+          let minDistance = Infinity
+
+          for (let i = 0; i < itemElements.length; i++) {
+            const r = itemElements[i].getBoundingClientRect()
+            const center = r.top + r.height / 2
+            const dist = Math.abs(currentY - center)
+            if (dist < minDistance) {
+              minDistance = dist
+              closestIdx = i
+            }
+          }
+          newTargetIndex = closestIdx
+        }
+
+        // Auto-scroll window when dragging near viewport edges
+        const viewportHeight = window.innerHeight
+        const threshold = 100
+        const maxScroll = 14
+        if (currentY < threshold) {
+          window.scrollBy(0, -Math.round(maxScroll * ((threshold - currentY) / threshold)))
+        } else if (currentY > viewportHeight - threshold) {
+          window.scrollBy(0, Math.round(maxScroll * ((currentY - (viewportHeight - threshold)) / threshold)))
+        }
+      }
+
+      classDragRef.current.currentY = currentY
+      classDragRef.current.targetIndex = newTargetIndex
+
+      setClassDragState((prev) => ({
+        ...prev,
+        currentY,
+        targetIndex: newTargetIndex,
+      }))
+    }
+
+    const handlePointerUp = () => {
+      const { isDragging, dragIndex, targetIndex } = classDragRef.current
+      if (isDragging && dragIndex !== null && targetIndex !== null && dragIndex !== targetIndex) {
+        setClassesList((prev) => {
+          const updated = [...prev]
+          const [draggedItem] = updated.splice(dragIndex, 1)
+          updated.splice(targetIndex, 0, draggedItem)
+          return updated
+        })
+      }
+
+      const reset = {
+        isDragging: false,
+        dragIndex: null,
+        targetIndex: null,
+        startY: 0,
+        currentY: 0,
+        itemHeight: 52,
+        cardWidth: 0,
+        cardHeight: 0,
+        cardLeft: 0,
+        cardTop: 0,
+      }
+      classDragRef.current = reset
+      setClassDragState(reset)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: false })
+    window.addEventListener("pointerup", handlePointerUp)
+    window.addEventListener("pointercancel", handlePointerUp)
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+      window.removeEventListener("pointercancel", handlePointerUp)
+    }
+  }, [classDragState.isDragging, classesList.length])
+
+  // ==========================================
+  // STEP 3: Class Sections Handlers (Per-Class with 2D Multi-Row Drag and Drop)
+  // ==========================================
+  const handleSectionDragStart = (e, clsName, index) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return
+    if (editingSectionState?.className === clsName && editingSectionState?.index === index) return
+
+    const classContainer = document.querySelector(`[data-sections-for="${clsName}"]`)
+    if (!classContainer) return
+
+    const itemElements = Array.from(classContainer.querySelectorAll("[data-section-item='true']"))
+    if (itemElements.length === 0 || !itemElements[index]) return
+
+    const targetEl = itemElements[index]
+    const targetRect = targetEl.getBoundingClientRect()
+    const slotRects = itemElements.map((el) => {
+      const r = el.getBoundingClientRect()
+      return { left: r.left, top: r.top, width: r.width, height: r.height }
+    })
+
+    const startX = e.clientX
+    const startY = e.clientY
+
+    const newState = {
+      isDragging: true,
+      className: clsName,
+      dragIndex: index,
+      targetIndex: index,
+      startX,
+      startY,
+      currentX: startX,
+      currentY: startY,
+      slotRects,
+      cardWidth: targetRect.width,
+      cardHeight: targetRect.height,
+      cardLeft: targetRect.left,
+      cardTop: targetRect.top,
+    }
+
+    sectionDragRef.current = newState
+    setSectionDragState(newState)
+
+    e.preventDefault()
+  }
+
+  // 2D Multi-Row Section Drag and Drop event listeners
+  useEffect(() => {
+    if (!sectionDragState.isDragging) return
+
+    const handlePointerMove = (e) => {
+      const drag = sectionDragRef.current
+      if (!drag.isDragging) return
+
+      const currentX = e.clientX
+      const currentY = e.clientY
+      const { slotRects, dragIndex } = drag
+      let newTargetIndex = dragIndex
+
+      if (slotRects && slotRects.length > 0) {
+        let closestIdx = dragIndex
+        let minDistance = Infinity
+
+        for (let i = 0; i < slotRects.length; i++) {
+          const r = slotRects[i]
+          const centerX = r.left + r.width / 2
+          const centerY = r.top + r.height / 2
+          const dist = Math.hypot(currentX - centerX, currentY - centerY)
+          if (dist < minDistance) {
+            minDistance = dist
+            closestIdx = i
+          }
+        }
+        newTargetIndex = closestIdx
+      }
+
+      sectionDragRef.current.currentX = currentX
+      sectionDragRef.current.currentY = currentY
+      sectionDragRef.current.targetIndex = newTargetIndex
+
+      setSectionDragState((prev) => ({
+        ...prev,
+        currentX,
+        currentY,
+        targetIndex: newTargetIndex,
+      }))
+    }
+
+    const handlePointerUp = () => {
+      const { isDragging, className, dragIndex, targetIndex } = sectionDragRef.current
+      if (isDragging && className && dragIndex !== null && targetIndex !== null && dragIndex !== targetIndex) {
+        setClassSectionMap((prev) => {
+          const currentList = prev[className] || []
+          const updated = [...currentList]
+          const [draggedItem] = updated.splice(dragIndex, 1)
+          updated.splice(targetIndex, 0, draggedItem)
+          return {
+            ...prev,
+            [className]: updated,
+          }
+        })
+      }
+
+      const reset = {
+        isDragging: false,
+        className: null,
+        dragIndex: null,
+        targetIndex: null,
+        startX: 0,
+        startY: 0,
+        currentX: 0,
+        currentY: 0,
+        slotRects: [],
+        cardWidth: 0,
+        cardHeight: 0,
+        cardLeft: 0,
+        cardTop: 0,
+      }
+      sectionDragRef.current = reset
+      setSectionDragState(reset)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: false })
+    window.addEventListener("pointerup", handlePointerUp)
+    window.addEventListener("pointercancel", handlePointerUp)
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+      window.removeEventListener("pointercancel", handlePointerUp)
+    }
+  }, [sectionDragState.isDragging])
+
+  const handleStartEditSection = (clsName, index, currentName) => {
+    setEditingSectionState({ className: clsName, index })
+    setEditingSectionNameVal(currentName)
+    setAddingSectionForClass(null)
+  }
+
+  const handleSaveEditSectionForClass = (clsName, index) => {
+    const trimmed = editingSectionNameVal.trim()
+    if (!trimmed) return
+    const currentSections = classSectionMap[clsName] || []
+    const oldName = currentSections[index]
+
+    if (
+      oldName.toLowerCase() !== trimmed.toLowerCase() &&
+      currentSections.some((s) => s.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      setSubmitError(`Section "${trimmed}" already exists in ${clsName}.`)
+      return
+    }
+
+    const updated = [...currentSections]
+    updated[index] = trimmed
+    setClassSectionMap((prev) => ({
+      ...prev,
+      [clsName]: updated,
+    }))
+
+    setEditingSectionState(null)
+    setEditingSectionNameVal("")
+    setSubmitError(null)
+  }
+
+  const handleDeleteSectionFromClass = (clsName, index) => {
+    const currentSections = classSectionMap[clsName] || []
+    if (currentSections.length <= 1) {
+      setSubmitError(`${clsName} must have at least one section configured.`)
+      return
+    }
+
+    const updated = currentSections.filter((_, idx) => idx !== index)
+    setClassSectionMap((prev) => ({
+      ...prev,
+      [clsName]: updated,
+    }))
+    setSubmitError(null)
+  }
+
+  const handleAddSectionToClass = (clsName) => {
+    const trimmed = newSectionForClassName.trim()
+    if (!trimmed) return
+    const currentSections = classSectionMap[clsName] || []
+    if (currentSections.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+      setSubmitError(`Section "${trimmed}" already exists in ${clsName}.`)
+      return
+    }
+
+    const updated = [...currentSections, trimmed]
+    setClassSectionMap((prev) => ({
+      ...prev,
+      [clsName]: updated,
+    }))
+    setNewSectionForClassName("")
+    setAddingSectionForClass(null)
+    setSubmitError(null)
+  }
+
+  const handleResetAllClassSections = () => {
+    const nextMap = {}
+    classesList.forEach((c) => {
+      nextMap[c] = [...INITIAL_DEFAULT_SECTIONS]
+    })
+    setClassSectionMap(nextMap)
+    setEditingSectionState(null)
+    setAddingSectionForClass(null)
+    setSubmitError(null)
+  }
+
+  // ==========================================
+  // STEP 4: Subjects Handlers
+  // ==========================================
+  const handleAddSubjectToLibrary = () => {
+    const trimmed = newSubjectName.trim()
+    if (!trimmed) return
+    if (subjectLibrary.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+      setSubmitError(`Subject "${trimmed}" already exists in library.`)
+      return
+    }
+    const updated = [...subjectLibrary, trimmed]
+    setSubjectLibrary(updated)
+    setNewSubjectName("")
+    setSubmitError(null)
+  }
+
+  const handleSaveEditSubject = (index) => {
+    const trimmed = editingSubjectName.trim()
+    if (!trimmed) return
+    const oldName = subjectLibrary[index]
+    if (
+      oldName.toLowerCase() !== trimmed.toLowerCase() &&
+      subjectLibrary.some((s) => s.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      setSubmitError(`Subject "${trimmed}" already exists in library.`)
+      return
+    }
+
+    const updated = [...subjectLibrary]
+    updated[index] = trimmed
+    setSubjectLibrary(updated)
+
+    // Update subject name across class mappings
+    setClassSubjectMap((prev) => {
+      const nextMap = {}
+      Object.entries(prev).forEach(([cls, subs]) => {
+        nextMap[cls] = subs.map((s) => (s === oldName ? trimmed : s))
+      })
+      return nextMap
+    })
+
+    setEditingSubjectIdx(null)
+    setEditingSubjectName("")
+    setSubmitError(null)
+  }
+
+  const handleDeleteSubjectFromLibrary = (index) => {
+    const target = subjectLibrary[index]
+    const updated = subjectLibrary.filter((_, idx) => idx !== index)
+    setSubjectLibrary(updated)
+
+    setClassSubjectMap((prev) => {
+      const nextMap = {}
+      Object.entries(prev).forEach(([cls, subs]) => {
+        nextMap[cls] = subs.filter((s) => s !== target)
+      })
+      return nextMap
+    })
+  }
+
+  // Get list of classes matching preset group
+  const getClassesForGroup = (group) => {
+    if (group === "Nursery – UKG") {
+      return classesList.filter((c) => ["Nursery", "LKG", "UKG"].includes(c))
+    }
+    if (group === "Class 1 – 5") {
+      return classesList.filter((c) => ["Class 1", "Class 2", "Class 3", "Class 4", "Class 5"].includes(c))
+    }
+    if (group === "Class 6 – 8") {
+      return classesList.filter((c) => ["Class 6", "Class 7", "Class 8"].includes(c))
+    }
+    if (group === "Class 9 – 10") {
+      return classesList.filter((c) => ["Class 9", "Class 10"].includes(c))
+    }
+    if (group === "Class 11 – 12") {
+      return classesList.filter((c) => ["Class 11", "Class 12"].includes(c))
+    }
+    if (group === "All Classes") {
+      return classesList
+    }
+    return manualSelectedClasses
+  }
+
+  const handleApplySubjectsToGroup = () => {
+    const targetClasses = getClassesForGroup(selectedGroupTarget)
+    if (targetClasses.length === 0) {
+      setSubmitError("No classes matched the selected target group.")
+      return
+    }
+    if (selectedSubjectsForAssign.length === 0) {
+      setSubmitError("Please select at least one subject to assign.")
+      return
+    }
+
+    setClassSubjectMap((prev) => {
+      const next = { ...prev }
+      targetClasses.forEach((cls) => {
+        next[cls] = [...selectedSubjectsForAssign]
+      })
+      return next
+    })
+
+    setAssignFeedback(`Successfully assigned ${selectedSubjectsForAssign.length} subjects to ${targetClasses.length} classes!`)
+    setTimeout(() => setAssignFeedback(null), 3500)
+  }
+
+  const handleCopySubjects = () => {
+    const sourceSubs = classSubjectMap[copySourceClass] || []
+    if (copyTargetClasses.length === 0) {
+      setSubmitError("Please select at least one destination class to copy to.")
+      return
+    }
+
+    setClassSubjectMap((prev) => {
+      const next = { ...prev }
+      copyTargetClasses.forEach((target) => {
+        next[target] = [...sourceSubs]
+      })
+      return next
+    })
+
+    setAssignFeedback(`Copied ${sourceSubs.length} subjects from ${copySourceClass} to ${copyTargetClasses.length} classes!`)
+    setCopyTargetClasses([])
+    setTimeout(() => setAssignFeedback(null), 3500)
+  }
+
+  // ==========================================
+  // STEP 5: Wings Handlers
+  // ==========================================
+  const handleStartEditWing = (index, currentName) => {
+    setEditingWingIdx(index)
+    setEditingWingNameVal(currentName)
+    setSubmitError(null)
+  }
+
+  const handleSaveEditWing = (index) => {
+    const trimmed = editingWingNameVal.trim()
+    if (!trimmed) {
+      setSubmitError("Wing name cannot be empty.")
+      return
+    }
+
+    if (
+      wingsList.some(
+        (w, i) => i !== index && w.name.toLowerCase() === trimmed.toLowerCase()
+      )
+    ) {
+      setSubmitError(`Wing "${trimmed}" already exists.`)
+      return
+    }
+
+    const updated = [...wingsList]
+    updated[index] = {
+      ...updated[index],
+      name: trimmed,
+    }
+    setWingsList(updated)
+    setEditingWingIdx(null)
+    setEditingWingNameVal("")
+    setSubmitError(null)
+  }
+
+  const handleCancelEditWing = () => {
+    setEditingWingIdx(null)
+    setEditingWingNameVal("")
+  }
+
+  const handleDeleteWing = (index) => {
+    const updated = wingsList.filter((_, idx) => idx !== index)
+    setWingsList(updated)
+    if (editingWingIdx === index) {
+      setEditingWingIdx(null)
+    }
+    setSubmitError(null)
+  }
+
+  const handleAddCustomWing = () => {
+    const trimmed = newCustomWingName.trim()
+    if (!trimmed) return
+    if (wingsList.some((w) => w.name.toLowerCase() === trimmed.toLowerCase())) {
+      setSubmitError(`Wing "${trimmed}" already exists.`)
+      return
+    }
+
+    setWingsList([
+      ...wingsList,
+      { id: `wing-${Date.now()}`, name: trimmed, classes: [] },
+    ])
+    setNewCustomWingName("")
+    setIsAddingCustomWing(false)
+    setSubmitError(null)
+  }
+
+  const handleResetWingsToDefault = () => {
+    setWingsList(getInitialWingsForClasses(classesList))
+    setEditingWingIdx(null)
+    setSubmitError(null)
+  }
+
+  const handleRemoveClassFromWing = (wingIdx, className) => {
+    const updated = [...wingsList]
+    updated[wingIdx] = {
+      ...updated[wingIdx],
+      classes: (updated[wingIdx].classes || []).filter((c) => c !== className),
+    }
+    setWingsList(updated)
+  }
+
+  const handleAddClassToWing = (targetWingIdx, className) => {
+    const updated = wingsList.map((w, idx) => {
+      if (idx === targetWingIdx) {
+        const existing = (w.classes || []).filter((c) => c !== className)
+        return { ...w, classes: [...existing, className] }
+      }
+      return {
+        ...w,
+        classes: (w.classes || []).filter((c) => c !== className),
+      }
+    })
+    setWingsList(updated)
+  }
+
+  const handleWingClassDragStart = (e, sourceWingIdx, className) => {
+    setDraggedClassData({ sourceWingIdx, className })
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({ sourceWingIdx, className })
+    )
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  const handleWingClassDragOver = (e, areaId) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    if (dragOverArea !== areaId) {
+      setDragOverArea(areaId)
+    }
+  }
+
+  const handleWingClassDrop = (e, targetWingIdx) => {
+    e.preventDefault()
+    setDragOverArea(null)
+
+    let data = draggedClassData
+    try {
+      const raw = e.dataTransfer.getData("application/json")
+      if (raw) {
+        data = JSON.parse(raw)
+      }
+    } catch {
+      // fallback to state
+    }
+
+    if (!data || !data.className) return
+    const { sourceWingIdx, className } = data
+
+    if (targetWingIdx === null) {
+      // Dropped onto Unassigned area
+      if (sourceWingIdx !== null) {
+        handleRemoveClassFromWing(sourceWingIdx, className)
+      }
+    } else {
+      // Dropped onto a specific wing
+      handleAddClassToWing(targetWingIdx, className)
+    }
+
+    setDraggedClassData(null)
+  }
+
+  const handleWingClassDragEnd = () => {
+    setDraggedClassData(null)
+    setDragOverArea(null)
+  }
+
+  // Auto-scroll window when dragging a wing class near viewport edges
+  useEffect(() => {
+    if (!draggedClassData) return
+
+    let animationFrameId = null
+    let currentMouseY = null
+
+    const handleWindowDragOver = (e) => {
+      e.preventDefault()
+      currentMouseY = e.clientY
+    }
+
+    const scrollLoop = () => {
+      if (currentMouseY !== null) {
+        const threshold = 140
+        const maxScrollSpeed = 18
+        const viewportHeight = window.innerHeight
+
+        if (currentMouseY < threshold) {
+          const intensity = Math.max(0.15, (threshold - currentMouseY) / threshold)
+          window.scrollBy(0, -Math.round(maxScrollSpeed * intensity))
+        } else if (currentMouseY > viewportHeight - threshold) {
+          const intensity = Math.max(0.15, (currentMouseY - (viewportHeight - threshold)) / threshold)
+          window.scrollBy(0, Math.round(maxScrollSpeed * intensity))
+        }
+      }
+      animationFrameId = requestAnimationFrame(scrollLoop)
+    }
+
+    window.addEventListener("dragover", handleWindowDragOver, { passive: false })
+    animationFrameId = requestAnimationFrame(scrollLoop)
+
+    return () => {
+      window.removeEventListener("dragover", handleWindowDragOver)
+      if (animationFrameId) cancelAnimationFrame(animationFrameId)
+    }
+  }, [draggedClassData])
+
+  // ==========================================
+  // STEP 6: Houses Handlers
+  // ==========================================
+  const normalizeHexColor = (color) => {
+    if (!color) return ""
+    return color.trim().toUpperCase()
+  }
+
+  const isColorUsedByOtherHouse = (hex, currentHouseIdx = null) => {
+    const target = normalizeHexColor(hex)
+    return housesList.some((h, idx) => {
+      if (currentHouseIdx !== null && idx === currentHouseIdx) return false
+      return normalizeHexColor(h.color) === target
+    })
+  }
+
+  const handleStartEditHouse = (index) => {
+    const house = housesList[index]
+    setEditingHouseIdx(index)
+    setHouseFormName(house.name)
+    setHouseFormColor(house.color || "#EF4444")
+    setHouseFormEmblem(house.emblem_url || "")
+    setHouseEmblemError(null)
+    setSubmitError(null)
+  }
+
+  const handleSaveHouseInline = () => {
+    if (editingHouseIdx === null) return
+    const trimmed = houseFormName.trim()
+    if (!trimmed) {
+      setSubmitError("House name is required.")
+      return
+    }
+
+    if (isColorUsedByOtherHouse(houseFormColor, editingHouseIdx)) {
+      setSubmitError("This color is already used by another house. Please select a unique color.")
+      return
+    }
+
+    const updated = [...housesList]
+    updated[editingHouseIdx] = {
+      ...updated[editingHouseIdx],
+      name: trimmed,
+      color: houseFormColor,
+      emblem_url: houseFormEmblem,
+      emblem: houseFormEmblem,
+    }
+    setHousesList(updated)
+    setEditingHouseIdx(null)
+    setHouseFormName("")
+    setHouseFormEmblem("")
+    setSubmitError(null)
+  }
+
+  const handleCancelHouseEdit = () => {
+    setEditingHouseIdx(null)
+    setHouseFormName("")
+    setHouseFormEmblem("")
+    setHouseEmblemError(null)
+  }
+
+  const handleHouseEmblemUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setHouseEmblemError(null)
+    if (file.size > 5 * 1024 * 1024) {
+      setHouseEmblemError("Emblem size must be 5 MB or less.")
+      return
+    }
+
+    // Instant local preview via FileReader
+    const reader = new FileReader()
+    reader.onload = (loadEvt) => {
+      if (loadEvt.target?.result) {
+        setHouseFormEmblem(loadEvt.target.result)
+      }
+    }
+    reader.readAsDataURL(file)
+
+    if (token) {
+      setIsUploadingHouseEmblem(true)
+      try {
+        const res = await authService.uploadSchoolEmblem(token, file)
+        if (res?.emblem_url) {
+          setHouseFormEmblem(res.emblem_url)
+        }
+      } catch (err) {
+        console.warn("Emblem upload notice:", err)
+      } finally {
+        setIsUploadingHouseEmblem(false)
+      }
+    }
+  }
+
+  // ==========================================
+  // Step Navigation & Validation
+  // ==========================================
   const handleNextStep = () => {
     setSubmitError(null)
 
-    // Step 1: School Identity, Details, Address, Theme
+    // Step 1: School Profile
     if (currentStep === 1) {
       if (!schoolName.trim()) {
         setSubmitError("Please enter the School Name.")
         return
       }
       if (!schoolCode.trim()) {
-        setSubmitError("Please enter the Affiliation Code (numbers only).")
+        setSubmitError("Please enter the Affiliation Code.")
         return
       }
       if (!addressStreet.trim()) {
@@ -347,15 +1549,11 @@ export function SchoolSetupWizard() {
         setSubmitError("Please enter a valid 6-digit Indian PIN Code.")
         return
       }
-      if (primaryColor && !/^#[0-9A-Fa-f]{6}$/.test(primaryColor.trim())) {
-        setSubmitError("Please enter a valid 6-character HEX color code (e.g. #2563EB) or reset.")
-        return
-      }
     }
 
     // Step 2: Classes
     if (currentStep === 2) {
-      if (classes.length === 0) {
+      if (classesList.length === 0) {
         setSubmitError("Please configure at least one class for your school.")
         return
       }
@@ -363,15 +1561,51 @@ export function SchoolSetupWizard() {
 
     // Step 3: Sections
     if (currentStep === 3) {
-      const hasEmptySections = classes.some((c) => c.sections.length === 0)
-      if (hasEmptySections) {
-        setSubmitError("Every class must have at least one section configured.")
+      const hasEmptySection = classesList.some((c) => !classSectionMap[c] || classSectionMap[c].length === 0)
+      if (hasEmptySection) {
+        setSubmitError("Every class must have at least one section assigned.")
         return
       }
     }
 
-    // Step 5: Credentials (Password & PIN)
+    // Step 4: Subjects
+    if (currentStep === 4) {
+      if (subjectLibrary.length === 0) {
+        setSubmitError("Please add at least one subject to your school library.")
+        return
+      }
+    }
+
+    // Step 5: Wings
     if (currentStep === 5) {
+      if (wingsList.length === 0) {
+        setSubmitError("Please configure at least one academic wing.")
+        return
+      }
+      const emptyWing = wingsList.find((w) => !w.name || !w.name.trim())
+      if (emptyWing) {
+        setSubmitError("All wings must have a valid name.")
+        return
+      }
+    }
+
+    // Step 6: Houses
+    if (currentStep === 6 && useHouses) {
+      if (housesList.length > 4) {
+        setSubmitError("Maximum 4 houses allowed.")
+        return
+      }
+      // Check for duplicate colors
+      const colors = housesList.map((h) => normalizeHexColor(h.color)).filter(Boolean)
+      const uniqueColors = new Set(colors)
+      if (colors.length !== uniqueColors.size) {
+        setSubmitError("Each house must have a unique color.")
+        return
+      }
+    }
+
+    // Step 7: Credentials (Password & PIN)
+    if (currentStep === 7) {
       if (password.length < 8) {
         setSubmitError("Password must be at least 8 characters.")
         return
@@ -398,7 +1632,7 @@ export function SchoolSetupWizard() {
     setCurrentStep((prev) => Math.max(1, prev - 1))
   }
 
-  // Combined Address formatted for backend
+  // Formatted Address for review & backend
   const getFullFormattedAddress = () => {
     const parts = [
       addressStreet.trim(),
@@ -410,12 +1644,54 @@ export function SchoolSetupWizard() {
     return parts.filter(Boolean).join(", ")
   }
 
+  // ==========================================
   // Complete Setup Submission
+  // ==========================================
   const handleCompleteSetup = async () => {
     setSubmitError(null)
     setIsSubmitting(true)
     try {
       const finalAddress = getFullFormattedAddress()
+
+      // 1. Classes payload
+      const classesPayload = classesList.map((cName, i) => ({
+        name: cName.trim(),
+        order_index: i + 1,
+        sections: classSectionMap[cName] && classSectionMap[cName].length > 0 ? classSectionMap[cName] : ["A"],
+      }))
+
+      // 2. Subjects payload
+      const subjectsPayload = subjectLibrary.map((subName, i) => {
+        const assignedClasses = classesList.filter(
+          (cName) => classSubjectMap[cName] && classSubjectMap[cName].includes(subName)
+        )
+        return {
+          name: subName.trim(),
+          order_index: i + 1,
+          assigned_classes: assignedClasses,
+        }
+      })
+
+      // 3. Wings payload
+      const wingsPayload = useWings
+        ? wingsList
+          .filter((w) => w.name && w.name.trim())
+          .map((w, i) => ({
+            name: w.name.trim(),
+            order_index: i + 1,
+            classes: (w.classes || []).filter((c) => classesList.includes(c)),
+          }))
+        : []
+
+      // 4. Houses payload
+      const housesPayload = useHouses
+        ? housesList.map((h) => ({
+          name: h.name.trim(),
+          color: h.color ? h.color.trim() : null,
+          emblem_url: h.emblem_url || null,
+        }))
+        : []
+
       await authService.completeSchoolSetup({
         token,
         school_name: schoolName.trim(),
@@ -425,21 +1701,19 @@ export function SchoolSetupWizard() {
         address: finalAddress,
         primary_color: primaryColor.trim() ? primaryColor.trim().toUpperCase() : null,
         emblem_url: emblemUploadedUrl || null,
-        classes: classes.map((c, i) => ({
-          name: c.name.trim(),
-          order_index: i + 1,
-          sections: c.sections,
-        })),
-        houses: houses.map((h) => ({
-          name: h.name.trim(),
-          color: h.color,
-        })),
+        classes: classesPayload,
+        subjects: subjectsPayload,
+        wings: wingsPayload,
+        houses: housesPayload,
         password,
         confirm_password: confirmPassword,
         pin,
         confirm_pin: confirmPin,
       })
 
+      if (draftStorageKey) {
+        localStorage.removeItem(draftStorageKey)
+      }
       setSetupSuccess(true)
     } catch (err) {
       setSubmitError(err.message || "Failed to complete school setup.")
@@ -501,17 +1775,12 @@ export function SchoolSetupWizard() {
               <strong className="font-mono text-foreground">{schoolCode}</strong>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Theme Color:</span>
-              <span className="text-foreground font-mono flex items-center gap-1.5">
-                {primaryColor ? (
-                  <>
-                    <span className="size-3 rounded-full border border-border" style={{ backgroundColor: primaryColor }} />
-                    {primaryColor}
-                  </>
-                ) : (
-                  "Default Theme"
-                )}
-              </span>
+              <span className="text-muted-foreground">Classes Configured:</span>
+              <strong className="text-foreground">{classesList.length} Classes</strong>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Subjects Library:</span>
+              <strong className="text-foreground">{subjectLibrary.length} Subjects</strong>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">General Login:</span>
@@ -541,41 +1810,50 @@ export function SchoolSetupWizard() {
     )
   }
 
-  // 6 Consolidated Steps
+  // 8 Redesigned Steps
   const steps = [
     { num: 1, label: "School Profile", icon: Building2 },
     { num: 2, label: "Classes", icon: BookOpen },
     { num: 3, label: "Sections", icon: Layers },
-    { num: 4, label: "Houses", icon: Shield },
-    { num: 5, label: "Password & PIN", icon: KeyRound },
-    { num: 6, label: "Review", icon: CheckCircle2 },
+    { num: 4, label: "Subjects", icon: Bookmark },
+    { num: 5, label: "Wings", icon: Compass },
+    { num: 6, label: "Houses", icon: Shield },
+    { num: 7, label: "Security", icon: KeyRound },
+    { num: 8, label: "Review", icon: CheckCircle2 },
   ]
 
   return (
     <div className="min-h-screen bg-muted/20 flex flex-col justify-between p-4 md:p-8">
-      <div className="max-w-4xl mx-auto w-full space-y-6">
+      <div className="max-w-4xl mx-auto w-full space-y-5">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-6 rounded-2xl border border-border shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
           <div>
-            <span className="text-xs font-semibold text-primary uppercase tracking-wider flex items-center gap-1.5">
-              School Onboarding Wizard
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-primary uppercase tracking-wider">
+                School Setup Wizard
+              </span>
+              {lastSavedTime && (
+                <span className="text-[11px] text-muted-foreground flex items-center gap-1 font-medium bg-muted/50 px-2 py-0.5 rounded-md">
+                  <Check className="size-3 text-emerald-500" /> Saved
+                </span>
+              )}
+            </div>
             <h1 className="text-xl sm:text-2xl font-bold text-foreground mt-1">
               Welcome, {principalInfo?.first_name} {principalInfo?.last_name}
             </h1>
-            <p className="text-sm sm:text-base text-muted-foreground mt-1 leading-relaxed">
-              Follow the steps below to initialize your school workspace and credentials.
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+              Smart defaults are ready. Review and customize your school structure in a few clicks.
             </p>
           </div>
-          <div className="flex items-center gap-2 self-start sm:self-center">
-            <Badge variant="outline" className="text-sm px-3.5 py-1 bg-muted/50 border-border font-semibold">
+          <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+            <Badge variant="outline" className="text-xs sm:text-sm px-3.5 py-2 bg-muted/50 border-border font-semibold">
               Step {currentStep} of {steps.length}
             </Badge>
           </div>
         </div>
 
-        {/* Stepper Navigation */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5 bg-card p-3.5 rounded-2xl border border-border shadow-xs overflow-x-auto">
+        {/* 8-Step Navigation */}
+        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 bg-card p-3 rounded-2xl border border-border shadow-xs overflow-x-auto">
           {steps.map((step) => {
             const Icon = step.icon
             const isDone = currentStep > step.num
@@ -591,33 +1869,33 @@ export function SchoolSetupWizard() {
                   }
                 }}
                 disabled={step.num > currentStep}
-                className={`flex flex-col items-center text-center p-2.5 rounded-xl transition-all cursor-pointer ${
-                  isCurrent
-                    ? "bg-primary/10 border-2 border-primary/40 text-primary font-bold shadow-xs scale-102"
+                className={`flex flex-col items-center text-center p-2 rounded-xl transition-all cursor-pointer ${isCurrent
+                    ? "bg-primary/10 border-2 border-primary/50 text-primary font-bold shadow-xs"
                     : isDone
-                    ? "text-foreground hover:bg-muted/40"
-                    : "text-muted-foreground/50 cursor-not-allowed opacity-60"
-                }`}
+                      ? "text-foreground hover:bg-muted/40"
+                      : "text-muted-foreground/60 cursor-not-allowed opacity-75"
+                  }`}
               >
                 <div
-                  className={`size-9 sm:size-10 rounded-xl flex items-center justify-center mb-1.5 text-sm transition-colors ${
-                    isCurrent
-                      ? "bg-primary text-primary-foreground shadow-xs"
+                  className={`size-8 sm:size-9 rounded-xl flex items-center justify-center mb-1 text-xs transition-colors ${isCurrent
+                      ? "bg-primary text-primary-foreground shadow-xs font-bold"
                       : isDone
-                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold"
-                      : "bg-muted text-muted-foreground"
-                  }`}
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold"
+                        : "bg-muted text-muted-foreground font-semibold"
+                    }`}
                 >
-                  {isDone ? <CheckCircle2 className="size-4.5" /> : <Icon className="size-4.5" />}
+                  {isDone ? <Check className="size-4" /> : <span>{step.num}</span>}
                 </div>
-                <span className="text-xs sm:text-sm font-semibold truncate max-w-full leading-tight">{step.label}</span>
+                <span className="text-[11px] sm:text-xs font-semibold truncate max-w-full leading-tight">
+                  {step.label}
+                </span>
               </button>
             )
           })}
         </div>
 
-        {/* Wizard Main Card */}
-        <div className="bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-xs">
+        {/* Wizard Main Content Card */}
+        <div className="bg-card border border-border rounded-2xl p-5 sm:p-8 shadow-xs">
           {submitError && (
             <div className="mb-6 p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2.5">
               <AlertCircle className="size-4 shrink-0 mt-0.5" />
@@ -625,18 +1903,20 @@ export function SchoolSetupWizard() {
             </div>
           )}
 
-          {/* STEP 1: CONSOLIDATED SCHOOL PROFILE (Emblem at top -> School Details -> Address -> Theme at bottom) */}
+          {/* ========================================== */}
+          {/* STEP 1: SCHOOL PROFILE & IDENTITY */}
+          {/* ========================================== */}
           {currentStep === 1 && (
             <div className="space-y-6">
               <div className="border-b border-border pb-4">
-                <h2 className="text-lg font-bold text-foreground">Step 1: School Profile & Identity</h2>
-                <p className="text-sm sm:text-base text-muted-foreground mt-1 leading-relaxed">
-                  Upload your school emblem, enter institution identity &amp; address, and choose your portal theme color.
+                <h2 className="text-lg font-bold text-foreground">Step 1: School Profile &amp; Identity</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+                  Provide institution details, campus address, and optional emblem and theme color.
                 </p>
               </div>
 
-              {/* 1. TOP: School Emblem / Logo Upload */}
-              <div className="p-4.5 sm:p-5 rounded-2xl border border-border bg-muted/20 space-y-3">
+              {/* 1. School Emblem Upload */}
+              <div className="p-4.5 rounded-2xl border border-border bg-muted/20 space-y-3">
                 <div className="flex items-center gap-2">
                   <ImageIcon className="size-4 text-primary" />
                   <span className="text-xs font-bold text-foreground uppercase tracking-wider">
@@ -671,9 +1951,9 @@ export function SchoolSetupWizard() {
                       </div>
                       <div>
                         <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                          <CheckCircle2 className="size-3.5 text-emerald-500" /> Emblem Ready
+                          <CheckCircle2 className="size-3.5 text-emerald-500" /> Emblem Uploaded
                         </div>
-                        <div className="text-[11px] text-muted-foreground">Uploaded &amp; verified for portal header</div>
+                        <div className="text-[11px] text-muted-foreground">Ready for portal header &amp; reports</div>
                       </div>
                     </div>
 
@@ -714,7 +1994,7 @@ export function SchoolSetupWizard() {
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-foreground">
-                        {isUploadingEmblem ? "Uploading Emblem..." : "Click to select School Emblem / Crest"}
+                        {isUploadingEmblem ? "Uploading Emblem..." : "Click to upload School Emblem / Crest"}
                       </p>
                       <p className="text-[10px] text-muted-foreground mt-0.5">
                         PNG (transparent recommended), JPG, WEBP (Max 5 MB)
@@ -724,14 +2004,11 @@ export function SchoolSetupWizard() {
                 )}
               </div>
 
-              {/* 2. MIDDLE: School Information */}
-              <div className="space-y-3">
-                
+              {/* 2. School Details */}
+              <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      School Name
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">School Name</label>
                     <Input
                       type="text"
                       maxLength={255}
@@ -742,16 +2019,14 @@ export function SchoolSetupWizard() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      Affiliation Code
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">Affiliation Code</label>
                     <Input
                       type="text"
                       inputMode="numeric"
-                      maxLength={30}
+                      maxLength={7}
                       value={schoolCode}
                       onChange={(e) => {
-                        const numericOnly = e.target.value.replace(/\D/g, "")
+                        const numericOnly = e.target.value.replace(/\D/g, "").slice(0, 7)
                         setSchoolCode(numericOnly)
                       }}
                       className="h-10 text-sm font-mono"
@@ -759,9 +2034,7 @@ export function SchoolSetupWizard() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      Official School Email
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">Official School Email</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
@@ -774,9 +2047,7 @@ export function SchoolSetupWizard() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      Official Phone Number
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">Official Phone Number</label>
                     <div className="relative">
                       <Phone className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
@@ -790,14 +2061,11 @@ export function SchoolSetupWizard() {
                 </div>
               </div>
 
-              {/* 3. MIDDLE: Indian Standard Address Fields */}
-              <div className="space-y-3 pt-1">
-                
+              {/* 3. Address Fields */}
+              <div className="space-y-4 pt-1">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      Street / Building / Area
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">Street / Building / Area</label>
                     <Input
                       type="text"
                       value={addressStreet}
@@ -807,9 +2075,7 @@ export function SchoolSetupWizard() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      Landmark (Optional)
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">Landmark (Optional)</label>
                     <Input
                       type="text"
                       value={addressLandmark}
@@ -819,9 +2085,7 @@ export function SchoolSetupWizard() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      City / District
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">City / District</label>
                     <Input
                       type="text"
                       value={addressCity}
@@ -831,9 +2095,7 @@ export function SchoolSetupWizard() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      State / Union Territory
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">State / Union Territory</label>
                     <select
                       value={addressState}
                       onChange={(e) => setAddressState(e.target.value)}
@@ -848,9 +2110,7 @@ export function SchoolSetupWizard() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
-                      PIN Code
-                    </label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">PIN Code (6 Digits)</label>
                     <Input
                       type="text"
                       inputMode="numeric"
@@ -866,19 +2126,19 @@ export function SchoolSetupWizard() {
                 </div>
               </div>
 
-              {/* 4. LAST: Theme Color Selector */}
-              <div className="space-y-3 pt-1 border-t border-border pt-4">
+              {/* 4. Theme Color */}
+              <div className="space-y-3 pt-2 border-t border-border">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Palette className="size-4 text-primary" />
                     <span className="text-xs font-bold text-foreground uppercase tracking-wider">
-                      Portal Theme Color (Optional)
+                      Portal Theme Accent (Optional)
                     </span>
                   </div>
                   {primaryColor && (
                     <button
                       type="button"
-                      onClick={() => setPrimaryColor("")}
+                      onClick={() => setPrimaryColor("#FFFFFF")}
                       className="text-[11px] font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       <RotateCcw className="size-3" /> Reset Default
@@ -887,7 +2147,6 @@ export function SchoolSetupWizard() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  {/* Color Picker + Input */}
                   <div className="flex items-center gap-3">
                     <div className="relative size-10 shrink-0 rounded-xl overflow-hidden border border-border shadow-xs cursor-pointer">
                       <input
@@ -895,7 +2154,6 @@ export function SchoolSetupWizard() {
                         value={primaryColor || "#FFFFFF"}
                         onChange={(e) => setPrimaryColor(e.target.value.toUpperCase())}
                         className="absolute inset-0 size-full scale-150 cursor-pointer border-0 p-0"
-                        title="Click to open color picker"
                       />
                     </div>
                     <Input
@@ -903,22 +2161,20 @@ export function SchoolSetupWizard() {
                       maxLength={7}
                       value={primaryColor}
                       onChange={(e) => setPrimaryColor(e.target.value.toUpperCase())}
-                      className="h-10 w-32 text-sm font-mono uppercase tracking-wider"
+                      className="h-10 w-28 text-sm font-mono uppercase tracking-wider"
                     />
                   </div>
 
-                  {/* Presets Grid */}
                   <div className="flex flex-wrap gap-1.5 flex-1">
                     {THEME_COLOR_PRESETS.map((preset) => (
                       <button
                         key={preset.value}
                         type="button"
                         onClick={() => setPrimaryColor(preset.value.toUpperCase())}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all cursor-pointer ${
-                          primaryColor.toUpperCase() === preset.value.toUpperCase()
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all cursor-pointer ${primaryColor.toUpperCase() === preset.value.toUpperCase()
                             ? "border-primary bg-primary/10 font-bold text-foreground ring-1 ring-primary/40"
                             : "border-border bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted"
-                        }`}
+                          }`}
                       >
                         <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: preset.value }} />
                         <span>{preset.label}</span>
@@ -930,201 +2186,1506 @@ export function SchoolSetupWizard() {
             </div>
           )}
 
-          {/* STEP 2: CLASSES */}
+          {/* ========================================== */}
+          {/* STEP 2: CLASSES (SMART DEFAULTS) */}
+          {/* ========================================== */}
           {currentStep === 2 && (
             <div className="space-y-5">
-              <div className="border-b border-border pb-4">
-                <h2 className="text-lg font-bold text-foreground">Step 2: Classes / Grades</h2>
-                <p className="text-sm sm:text-base text-muted-foreground mt-1 leading-relaxed">
-                  Configure the grade levels offered at your school.
-                </p>
-              </div>
-
-              {/* Presets */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-muted-foreground mr-1">Quick Presets:</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => applyPresetClasses(1, 5)}
-                  className="text-xs h-8 cursor-pointer"
-                >
-                  Class 1 - 5 (Primary)
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => applyPresetClasses(1, 10)}
-                  className="text-xs h-8 cursor-pointer"
-                >
-                  Class 1 - 10 (Secondary)
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => applyPresetClasses(1, 12)}
-                  className="text-xs h-8 cursor-pointer"
-                >
-                  Class 1 - 12 (K-12)
-                </Button>
-              </div>
-
-              {/* Add Custom Class */}
-              <div className="flex gap-2">
-                <Input
-                  type="text"
-                  value={newClassName}
-                  onChange={(e) => setNewClassName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addClass())}
-                  className="h-10 text-sm flex-1"
-                />
-                <Button type="button" onClick={addClass} className="h-10 gap-1.5 cursor-pointer">
-                  <Plus className="size-4" /> Add Class
-                </Button>
-              </div>
-
-              {/* Classes List */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2">
-                {classes.map((cls, idx) => (
-                  <div
-                    key={cls.name}
-                    className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/30"
+              <div className="border-b border-border pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">Step 2: School Classes</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+                    Your school starts with Nursery through Class 12. You can rename, reorder, add, or remove classes.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetClassesToDefault}
+                    className="h-8 text-xs gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground border-border hover:bg-muted/50"
+                    title="Reset classes to initial state & default order"
                   >
-                    <span className="text-xs font-bold text-foreground">{cls.name}</span>
-                    <button
+                    <RotateCcw className="size-3.5" /> Reset to Default
+                  </Button>
+                  {!isAddingClass && (
+                    <Button
                       type="button"
-                      onClick={() => removeClass(idx)}
-                      className="text-muted-foreground hover:text-destructive p-1 rounded transition-colors cursor-pointer"
+                      onClick={() => {
+                        setIsAddingClass(true)
+                        setNewClassName("")
+                      }}
+                      size="sm"
+                      className="h-8 text-xs font-semibold gap-1.5 cursor-pointer"
                     >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
+                      <Plus className="size-3.5" /> Add Class
+                    </Button>
+                  )}
+                </div>
               </div>
+
+              {/* Inline Add Class Form - Single-Row Layout (matching Wings) */}
+              {isAddingClass && (
+                <div className="p-3.5 rounded-2xl border border-primary/40 bg-card shadow-xs flex flex-wrap items-center gap-2 animate-in fade-in-50 duration-150">
+                  <Input
+                    type="text"
+                    value={newClassName}
+                    onChange={(e) => setNewClassName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        handleAddClass()
+                      } else if (e.key === "Escape") {
+                        setIsAddingClass(false)
+                      }
+                    }}
+                    className="h-8 text-xs flex-1 min-w-[160px]"
+                    autoFocus
+                  />
+
+                  <select
+                    value={newClassPosition}
+                    onChange={(e) => setNewClassPosition(e.target.value)}
+                    className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs text-foreground cursor-pointer focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30 outline-none shrink-0"
+                  >
+                    <option value="end">Insert at End</option>
+                    <option value="start">Insert at Beginning</option>
+                    <option value="after">Insert After...</option>
+                    <option value="before">Insert Before...</option>
+                  </select>
+
+                  {["after", "before"].includes(newClassPosition) && (
+                    <select
+                      value={targetClassAnchor}
+                      onChange={(e) => setTargetClassAnchor(e.target.value)}
+                      className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs text-foreground cursor-pointer focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30 outline-none shrink-0"
+                    >
+                      {classesList.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleAddClass}
+                    className="h-8 text-xs font-semibold gap-1 cursor-pointer shrink-0"
+                  >
+                    <Plus className="size-3.5" /> Add
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsAddingClass(false)}
+                    className="h-8 text-xs cursor-pointer shrink-0"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+
+              {/* Classes Compact Rows with Smooth Real-time Physical Displacement Drag and Drop */}
+              <div
+                ref={classesContainerRef}
+                className="relative space-y-1.5 p-1 select-none"
+              >
+                {classesList.map((clsName, idx) => {
+                  const isEditing = editingClassIdx === idx
+                  const { isDragging, dragIndex, targetIndex, itemHeight } = classDragState
+                  const isThisItemDragging = isDragging && dragIndex === idx
+
+                  let translateY = 0
+                  if (isDragging && dragIndex !== null && targetIndex !== null) {
+                    if (dragIndex < targetIndex) {
+                      // Dragging downwards: cards between dragIndex + 1 and targetIndex slide up
+                      if (idx > dragIndex && idx <= targetIndex) {
+                        translateY = -itemHeight
+                      }
+                    } else if (dragIndex > targetIndex) {
+                      // Dragging upwards: cards between targetIndex and dragIndex - 1 slide down
+                      if (idx >= targetIndex && idx < dragIndex) {
+                        translateY = itemHeight
+                      }
+                    }
+                  }
+
+                  // When this item is being actively dragged, render an in-place placeholder holding its slot
+                  if (isThisItemDragging) {
+                    return (
+                      <div
+                        key={`${clsName}-${idx}`}
+                        data-class-item="true"
+                        style={{
+                          height: classDragState.cardHeight ? `${classDragState.cardHeight}px` : undefined,
+                        }}
+                        className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-2.5 sm:p-3 text-xs select-none transition-all duration-200"
+                      >
+                        <div className="flex items-center gap-2.5 opacity-0">
+                          <div className="p-1">
+                            <GripVertical className="size-4" />
+                          </div>
+                          <span className="size-6">{idx + 1}</span>
+                          <span className="text-sm font-semibold">{clsName}</span>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div
+                      key={`${clsName}-${idx}`}
+                      data-class-item="true"
+                      style={{
+                        transform: translateY ? `translate3d(0, ${translateY}px, 0)` : undefined,
+                        transition: "transform 220ms cubic-bezier(0.2, 0, 0, 1)",
+                      }}
+                      className={`group flex items-center justify-between min-h-[50px] p-2.5 sm:p-3 rounded-xl border bg-card text-xs select-none will-change-transform ${
+                        isEditing ? "border-primary/50 ring-1 ring-primary/30" : "border-border hover:bg-muted/20"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0 mr-2">
+                        {/* Drag Handle with pointer events */}
+                        <div
+                          onPointerDown={(e) => handleClassDragStart(e, idx)}
+                          className={`text-muted-foreground/50 hover:text-foreground active:text-primary p-1 rounded-md hover:bg-muted/50 cursor-grab active:cursor-grabbing touch-none select-none ${
+                            isEditing ? "opacity-30 cursor-not-allowed pointer-events-none" : ""
+                          }`}
+                          title="Drag to reorder"
+                        >
+                          <GripVertical className="size-4" />
+                        </div>
+
+                        <span className="size-6 rounded-md bg-muted/60 text-muted-foreground font-mono flex items-center justify-center text-[11px] font-bold shrink-0">
+                          {idx + 1}
+                        </span>
+
+                        {isEditing ? (
+                          <Input
+                            type="text"
+                            value={editingClassName}
+                            onChange={(e) => setEditingClassName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault()
+                                handleSaveEditClass(idx)
+                              } else if (e.key === "Escape") {
+                                setEditingClassIdx(null)
+                              }
+                            }}
+                            className="h-8 text-xs font-semibold flex-1 max-w-sm"
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="font-semibold text-foreground text-sm truncate">{clsName}</span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isEditing ? (
+                          <>
+                            {/* Save Icon (Green Tick) */}
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditClass(idx)}
+                              className="size-7 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 flex items-center justify-center transition-colors cursor-pointer"
+                              title="Save"
+                              aria-label="Save"
+                            >
+                              <Check className="size-4 stroke-[2.5]" />
+                            </button>
+
+                            {/* Cancel Icon (Red Cross) */}
+                            <button
+                              type="button"
+                              onClick={() => setEditingClassIdx(null)}
+                              className="size-7 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 flex items-center justify-center transition-colors cursor-pointer"
+                              title="Cancel"
+                              aria-label="Cancel"
+                            >
+                              <X className="size-4 stroke-[2.5]" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {/* Edit Icon Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingClassIdx(idx)
+                                setEditingClassName(clsName)
+                              }}
+                              className="size-7 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted/50 flex items-center justify-center transition-colors cursor-pointer"
+                              title={`Edit ${clsName}`}
+                              aria-label={`Edit ${clsName}`}
+                            >
+                              <Edit3 className="size-3.5" />
+                            </button>
+
+                            {/* Delete Icon Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClass(idx)}
+                              className="size-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors cursor-pointer"
+                              title={`Delete ${clsName}`}
+                              aria-label={`Delete ${clsName}`}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Fixed Portal Drag Overlay to prevent clipping & overflow */}
+              {classDragState.isDragging &&
+                classDragState.dragIndex !== null &&
+                typeof document !== "undefined" &&
+                createPortal(
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: `${classDragState.cardTop + (classDragState.currentY - classDragState.startY)}px`,
+                      left: `${classDragState.cardLeft}px`,
+                      width: `${classDragState.cardWidth}px`,
+                      height: classDragState.cardHeight ? `${classDragState.cardHeight}px` : undefined,
+                      zIndex: 99999,
+                      pointerEvents: "none",
+                      boxShadow:
+                        "0 20px 30px -4px rgba(0, 0, 0, 0.45), 0 8px 16px -4px rgba(0, 0, 0, 0.3)",
+                    }}
+                    className="flex items-center justify-between p-2.5 sm:p-3 rounded-xl border border-primary ring-2 ring-primary/40 bg-card text-xs select-none shadow-2xl opacity-98"
+                  >
+                    <div className="flex items-center gap-2.5 flex-1 min-w-0 mr-2">
+                      <div className="text-primary p-1 rounded-md">
+                        <GripVertical className="size-4" />
+                      </div>
+                      <span className="size-6 rounded-md bg-primary/20 text-primary font-mono flex items-center justify-center text-[11px] font-bold shrink-0">
+                        {(classDragState.targetIndex ?? classDragState.dragIndex) + 1}
+                      </span>
+                      <span className="font-semibold text-foreground text-sm truncate">
+                        {classesList[classDragState.dragIndex]}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 opacity-60">
+                      <div className="size-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground">
+                        <Edit3 className="size-3.5" />
+                      </div>
+                      <div className="size-7 rounded-lg flex items-center justify-center text-muted-foreground">
+                        <Trash2 className="size-3.5" />
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
             </div>
           )}
 
-          {/* STEP 3: SECTIONS */}
+          {/* ========================================== */}
+          {/* STEP 3: CLASS SECTIONS (PER-CLASS WITH HORIZONTAL DRAG & DROP) */}
+          {/* ========================================== */}
           {currentStep === 3 && (
-            <div className="space-y-5">
+            <div className="space-y-6">
+              <div className="border-b border-border pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">Step 3: Class Sections</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+                    Configure and organize sections for each class. Drag horizontally to reorder, edit names inline, delete sections, or add new ones.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetAllClassSections}
+                  className="h-8 gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground border-border hover:bg-muted/50 text-xs self-start sm:self-center shrink-0"
+                  title="Reset all classes to default sections (Section A, Section B, Section C)"
+                >
+                  <RotateCcw className="size-3.5" /> Reset to Default
+                </Button>
+              </div>
+
+              {/* Class Sections List */}
+              <div className="space-y-4">
+                {classesList.map((clsName) => {
+                  const sections = classSectionMap[clsName] || []
+                  const isAddingHere = addingSectionForClass === clsName
+
+                  return (
+                    <div
+                      key={clsName}
+                      className="p-4 rounded-2xl border border-border bg-card/60 hover:bg-card/90 transition-colors space-y-3 shadow-2xs"
+                    >
+                      {/* Class Row Header */}
+                      <div className="flex items-center justify-between gap-2 min-h-[32px] border-b border-border/50 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-foreground text-sm">{clsName}</span>
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
+                            {sections.length} {sections.length === 1 ? "section" : "sections"}
+                          </span>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant={isAddingHere ? "secondary" : "ghost"}
+                          size="sm"
+                          onClick={() => {
+                            if (isAddingHere) {
+                              setAddingSectionForClass(null)
+                              setNewSectionForClassName("")
+                            } else {
+                              setAddingSectionForClass(clsName)
+                              setNewSectionForClassName("")
+                              setEditingSectionState(null)
+                            }
+                          }}
+                          className={`h-7 px-2 text-xs gap-1 cursor-pointer transition-colors ${
+                            isAddingHere
+                              ? "text-muted-foreground hover:text-foreground"
+                              : "text-primary hover:text-primary hover:bg-primary/10"
+                          }`}
+                        >
+                          {isAddingHere ? (
+                            <>
+                              <X className="size-3.5" /> Cancel Adding
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="size-3.5" /> Add Section
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Sections 4-in-a-Row Full-Width Grid */}
+                      <div
+                        data-sections-for={clsName}
+                        className="relative grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 auto-rows-[36px] items-stretch gap-2.5 w-full"
+                      >
+                        {sections.map((sec, secIdx) => {
+                          const isThisDragging =
+                            sectionDragState.isDragging &&
+                            sectionDragState.className === clsName &&
+                            sectionDragState.dragIndex === secIdx
+
+                          const isClassDragging =
+                            sectionDragState.isDragging && sectionDragState.className === clsName
+
+                          let transformStyle = ""
+                          if (isClassDragging && !isThisDragging) {
+                            const { dragIndex, targetIndex, slotRects } = sectionDragState
+                            if (
+                              dragIndex !== null &&
+                              targetIndex !== null &&
+                              dragIndex !== targetIndex &&
+                              slotRects &&
+                              slotRects.length > secIdx
+                            ) {
+                              let destSlot = secIdx
+                              if (dragIndex < targetIndex) {
+                                if (secIdx > dragIndex && secIdx <= targetIndex) {
+                                  destSlot = secIdx - 1
+                                }
+                              } else if (dragIndex > targetIndex) {
+                                if (secIdx >= targetIndex && secIdx < dragIndex) {
+                                  destSlot = secIdx + 1
+                                }
+                              }
+
+                              if (destSlot !== secIdx && slotRects[destSlot] && slotRects[secIdx]) {
+                                const origRect = slotRects[secIdx]
+                                const destRect = slotRects[destSlot]
+                                const dx = destRect.left - origRect.left
+                                const dy = destRect.top - origRect.top
+                                if (dx !== 0 || dy !== 0) {
+                                  transformStyle = `translate3d(${dx}px, ${dy}px, 0)`
+                                }
+                              }
+                            }
+                          }
+
+                          const isEditing =
+                            editingSectionState?.className === clsName &&
+                            editingSectionState?.index === secIdx
+
+                          if (isEditing) {
+                            return (
+                              <div
+                                key={`${sec}-${secIdx}`}
+                                data-section-item="true"
+                                className="group/sec flex items-center justify-between w-full h-9 min-h-9 max-h-9 px-2.5 rounded-xl border border-primary/50 ring-1 ring-primary/30 bg-card text-xs font-semibold text-foreground shadow-sm select-none box-border overflow-hidden"
+                              >
+                                <input
+                                  type="text"
+                                  value={editingSectionNameVal}
+                                  onChange={(e) => setEditingSectionNameVal(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault()
+                                      handleSaveEditSectionForClass(clsName, secIdx)
+                                    } else if (e.key === "Escape") {
+                                      setEditingSectionState(null)
+                                    }
+                                  }}
+                                  className="h-6 text-xs font-semibold px-2 py-0 flex-1 min-w-0 mr-1.5 rounded-md border border-primary/40 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary"
+                                  autoFocus
+                                />
+
+                                {/* Right-aligned Save (Green Tick) and Cancel (Red Cross) Icons */}
+                                <div className="flex items-center gap-0.5 shrink-0 pl-1 border-l border-border/60">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveEditSectionForClass(clsName, secIdx)}
+                                    className="size-6 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 flex items-center justify-center transition-colors cursor-pointer"
+                                    title="Save"
+                                    aria-label="Save"
+                                  >
+                                    <Check className="size-3.5 stroke-[2.5]" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingSectionState(null)}
+                                    className="size-6 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 flex items-center justify-center transition-colors cursor-pointer"
+                                    title="Cancel"
+                                    aria-label="Cancel"
+                                  >
+                                    <X className="size-3.5 stroke-[2.5]" />
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          return (
+                            <div
+                              key={`${sec}-${secIdx}`}
+                              data-section-item="true"
+                              style={{
+                                transform: transformStyle || undefined,
+                                transition: isThisDragging ? "none" : "transform 180ms cubic-bezier(0.2, 0, 0, 1)",
+                                opacity: isThisDragging ? 0 : 1,
+                                pointerEvents: isThisDragging ? "none" : "auto",
+                              }}
+                              className="group/sec flex items-center justify-between w-full h-9 min-h-9 max-h-9 px-2.5 rounded-xl border border-border bg-card hover:bg-muted/40 hover:border-primary/40 text-xs font-semibold text-foreground transition-all duration-150 select-none shadow-2xs box-border overflow-hidden"
+                            >
+                              {/* Horizontal Drag Handle */}
+                              <div
+                                onPointerDown={(e) => handleSectionDragStart(e, clsName, secIdx)}
+                                className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-primary transition-colors p-0.5 rounded touch-none shrink-0"
+                                title="Drag to reorder"
+                              >
+                                <GripVertical className="size-3.5" />
+                              </div>
+
+                              {/* Section Name */}
+                              <span className="text-xs font-semibold text-foreground truncate flex-1 min-w-0 px-1.5 text-left">
+                                {sec}
+                              </span>
+
+                              {/* Action Buttons */}
+                              <div className="flex items-center gap-0.5 shrink-0 pl-1 border-l border-border/60">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditSection(clsName, secIdx, sec)}
+                                  className="size-6 rounded-md hover:bg-muted hover:text-foreground text-muted-foreground flex items-center justify-center transition-colors cursor-pointer"
+                                  title={`Edit ${sec}`}
+                                  aria-label={`Edit ${sec}`}
+                                >
+                                  <Edit3 className="size-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSectionFromClass(clsName, secIdx)}
+                                  className="size-6 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground flex items-center justify-center transition-colors cursor-pointer"
+                                  title={`Delete ${sec}`}
+                                  aria-label={`Delete ${sec}`}
+                                >
+                                  <Trash2 className="size-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+
+                        {/* Inline Add Section Form for this class */}
+                        {isAddingHere && (
+                          <div className="flex items-center justify-between w-full h-9 min-h-9 max-h-9 px-2.5 rounded-xl border border-primary/50 ring-1 ring-primary/30 bg-card shadow-sm animate-in fade-in-50 duration-150 select-none box-border overflow-hidden">
+                            <input
+                              type="text"
+                              value={newSectionForClassName}
+                              onChange={(e) => setNewSectionForClassName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault()
+                                  handleAddSectionToClass(clsName)
+                                } else if (e.key === "Escape") {
+                                  setAddingSectionForClass(null)
+                                  setNewSectionForClassName("")
+                                }
+                              }}
+                              className="h-6 text-xs font-semibold px-1.5 py-0 flex-1 min-w-0 mr-1 rounded-md border border-primary/40 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary"
+                              autoFocus
+                            />
+                            <div className="flex items-center gap-0.5 shrink-0 pl-1 border-l border-border/60">
+                              <button
+                                type="button"
+                                onClick={() => handleAddSectionToClass(clsName)}
+                                className="size-6 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 flex items-center justify-center transition-colors cursor-pointer"
+                                title="Add Section"
+                                aria-label="Add Section"
+                              >
+                                <Check className="size-3.5 stroke-[2.5]" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddingSectionForClass(null)
+                                  setNewSectionForClassName("")
+                                }}
+                                className="size-6 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 flex items-center justify-center transition-colors cursor-pointer"
+                                title="Cancel"
+                                aria-label="Cancel"
+                              >
+                                <X className="size-3.5 stroke-[2.5]" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Fixed Portal Drag Overlay for multi-row section drag */}
+              {sectionDragState.isDragging &&
+                sectionDragState.className &&
+                sectionDragState.dragIndex !== null &&
+                typeof document !== "undefined" &&
+                createPortal(
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: `${sectionDragState.cardTop + (sectionDragState.currentY - sectionDragState.startY)}px`,
+                      left: `${sectionDragState.cardLeft + (sectionDragState.currentX - sectionDragState.startX)}px`,
+                      width: `${sectionDragState.cardWidth}px`,
+                      height: `${sectionDragState.cardHeight || 36}px`,
+                      zIndex: 99999,
+                      pointerEvents: "none",
+                      boxShadow: "0 20px 30px -4px rgba(0, 0, 0, 0.45), 0 8px 16px -4px rgba(0, 0, 0, 0.3)",
+                    }}
+                    className="flex items-center justify-between h-9 px-2.5 rounded-xl border border-primary ring-2 ring-primary/40 bg-card text-xs font-semibold text-foreground select-none shadow-2xl opacity-98"
+                  >
+                    <div className="text-primary p-0.5 rounded shrink-0">
+                      <GripVertical className="size-3.5" />
+                    </div>
+                    <span className="text-xs font-semibold text-foreground truncate flex-1 min-w-0 px-1.5 text-left">
+                      {classSectionMap[sectionDragState.className]?.[sectionDragState.dragIndex]}
+                    </span>
+                    <div className="flex items-center gap-0.5 shrink-0 pl-1 border-l border-border/60 opacity-60">
+                      <div className="size-6 rounded-md flex items-center justify-center text-muted-foreground">
+                        <Edit3 className="size-3" />
+                      </div>
+                      <div className="size-6 rounded-md flex items-center justify-center text-muted-foreground">
+                        <Trash2 className="size-3" />
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+            </div>
+          )}
+
+          {/* ========================================== */}
+          {/* STEP 4: SUBJECTS (TWO-LAYER MODEL) */}
+          {/* ========================================== */}
+          {currentStep === 4 && (
+            <div className="space-y-6">
               <div className="border-b border-border pb-4">
-                <h2 className="text-lg font-bold text-foreground">Step 3: Configure Class Sections</h2>
-                <p className="text-sm sm:text-base text-muted-foreground mt-1 leading-relaxed">
-                  Assign divisions/sections (e.g. A, B, C) for each configured class.
+                <h2 className="text-lg font-bold text-foreground">Step 4: Subject Library &amp; Assignment</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+                  Create subjects once in your library, then assign them across grade levels in bulk.
                 </p>
               </div>
 
-              <div className="space-y-3">
-                {classes.map((cls, classIdx) => (
-                  <div
-                    key={cls.name}
-                    className="p-4 rounded-xl border border-border bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+              {assignFeedback && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="size-4 shrink-0" />
+                  <span className="font-medium">{assignFeedback}</span>
+                </div>
+              )}
+
+              {/* 1. Subject Library Box */}
+              <div className="p-4.5 rounded-2xl border border-border bg-card space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bookmark className="size-4 text-primary" />
+                    <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+                      Subject Library ({subjectLibrary.length} subjects)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Add Subject Input */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    placeholder="New Subject e.g. Sanskrit, Economics, AI"
+                    value={newSubjectName}
+                    onChange={(e) => setNewSubjectName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSubjectToLibrary())}
+                    className="h-9 text-xs flex-1"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleAddSubjectToLibrary}
+                    className="h-9 text-xs font-semibold cursor-pointer"
                   >
-                    <div>
-                      <span className="text-sm font-bold text-foreground">{cls.name}</span>
-                      <p className="text-xs text-muted-foreground">
-                        Sections: {cls.sections.join(", ") || "None"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {["A", "B", "C", "D", "E"].map((sec) => {
-                        const isSelected = cls.sections.includes(sec)
+                    <Plus className="size-3.5 mr-1" /> Add Subject
+                  </Button>
+                </div>
+
+                {/* Subject Library Badges */}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {subjectLibrary.map((sub, idx) => {
+                    const isEditing = editingSubjectIdx === idx
+
+                    if (isEditing) {
+                      return (
+                        <div key={sub} className="flex items-center gap-1">
+                          <Input
+                            type="text"
+                            value={editingSubjectName}
+                            onChange={(e) => setEditingSubjectName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSaveEditSubject(idx))}
+                            className="h-7 w-32 text-xs"
+                            autoFocus
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSaveEditSubject(idx)}
+                            className="h-7 px-2 text-xs cursor-pointer"
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div
+                        key={sub}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-muted/30 text-xs font-medium"
+                      >
+                        <span className="text-foreground font-semibold">{sub}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSubjectIdx(idx)
+                            setEditingSubjectName(sub)
+                          }}
+                          className="text-muted-foreground hover:text-primary cursor-pointer p-0.5"
+                          title={`Rename ${sub}`}
+                        >
+                          <Edit3 className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSubjectFromLibrary(idx)}
+                          className="text-muted-foreground hover:text-destructive cursor-pointer p-0.5"
+                          title={`Delete ${sub}`}
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Group Bulk Assignment */}
+              <div className="p-4.5 rounded-2xl border border-border bg-muted/20 space-y-4">
+                <span className="text-xs font-bold text-foreground uppercase tracking-wider block">
+                  Assign Subjects in Bulk
+                </span>
+
+                {/* Group Selector */}
+                <div className="space-y-2">
+                  <span className="text-xs text-muted-foreground font-medium">Select Target Class Group:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "Nursery – UKG",
+                      "Class 1 – 5",
+                      "Class 6 – 8",
+                      "Class 9 – 10",
+                      "Class 11 – 12",
+                      "All Classes",
+                      "Select manually",
+                    ].map((grp) => (
+                      <button
+                        key={grp}
+                        type="button"
+                        onClick={() => setSelectedGroupTarget(grp)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${selectedGroupTarget === grp
+                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            : "bg-card border-border text-muted-foreground hover:bg-muted"
+                          }`}
+                      >
+                        {grp}
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedGroupTarget === "Select manually" && (
+                    <div className="flex flex-wrap gap-1.5 pt-2">
+                      {classesList.map((cls) => {
+                        const isSel = manualSelectedClasses.includes(cls)
                         return (
                           <button
-                            key={sec}
+                            key={cls}
                             type="button"
                             onClick={() => {
-                              if (isSelected) {
-                                if (cls.sections.length > 1) {
-                                  removeSectionFromClass(classIdx, cls.sections.indexOf(sec))
-                                }
-                              } else {
-                                addSectionToClass(classIdx, sec)
-                              }
+                              setManualSelectedClasses((prev) =>
+                                isSel ? prev.filter((c) => c !== cls) : [...prev, cls]
+                              )
                             }}
-                            className={`size-8 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                              isSelected
-                                ? "bg-primary text-primary-foreground shadow-xs"
-                                : "bg-card border border-border text-muted-foreground hover:bg-muted"
-                            }`}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium border cursor-pointer ${isSel
+                                ? "bg-primary/10 border-primary text-primary font-bold"
+                                : "bg-card border-border text-muted-foreground"
+                              }`}
                           >
-                            {sec}
+                            {cls}
                           </button>
                         )
                       })}
                     </div>
+                  )}
+                </div>
+
+                {/* Subject Checkbox Grid */}
+                <div className="space-y-2 pt-2 border-t border-border/70">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground font-medium">Choose Subjects to Assign:</span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSubjectsForAssign([...subjectLibrary])}
+                        className="text-[11px] text-primary hover:underline cursor-pointer font-medium"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSubjectsForAssign([])}
+                        className="text-[11px] text-muted-foreground hover:underline cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* STEP 4: HOUSES */}
-          {currentStep === 4 && (
-            <div className="space-y-5">
-              <div className="border-b border-border pb-4">
-                <h2 className="text-lg font-bold text-foreground">Step 4: School Houses (Optional)</h2>
-                <p className="text-sm sm:text-base text-muted-foreground mt-1 leading-relaxed">
-                  Add student houses/groups for extracurricular and sports activities.
-                </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {subjectLibrary.map((sub) => {
+                      const isChecked = selectedSubjectsForAssign.includes(sub)
+
+                      return (
+                        <label
+                          key={sub}
+                          onClick={() => {
+                            setSelectedSubjectsForAssign((prev) =>
+                              isChecked ? prev.filter((s) => s !== sub) : [...prev, sub]
+                            )
+                          }}
+                          className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer select-none transition-all ${isChecked
+                              ? "bg-primary/10 border-primary/40 font-semibold text-foreground"
+                              : "bg-card border-border text-muted-foreground hover:bg-muted/40"
+                            }`}
+                        >
+                          <div
+                            className={`size-4 rounded flex items-center justify-center text-xs shrink-0 ${isChecked ? "bg-primary text-primary-foreground" : "border border-border"
+                              }`}
+                          >
+                            {isChecked && <Check className="size-3" />}
+                          </div>
+                          <span className="truncate">{sub}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <Button
+                    type="button"
+                    onClick={handleApplySubjectsToGroup}
+                    className="h-9 text-xs font-bold gap-1.5 cursor-pointer"
+                  >
+                    <Check className="size-4" /> Apply to Selected Classes
+                  </Button>
+                </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  type="text"
-                  value={newHouseName}
-                  onChange={(e) => setNewHouseName(e.target.value)}
-                  className="h-10 text-sm flex-1"
-                />
-                <select
-                  value={newHouseColor}
-                  onChange={(e) => setNewHouseColor(e.target.value)}
-                  className="h-10 rounded-xl border border-input bg-card px-3 text-xs text-foreground cursor-pointer"
+              {/* 3. Copy Subjects Shortcut & Matrix Toggle */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                <div className="flex items-center gap-2 text-xs">
+                  <Copy className="size-3.5 text-muted-foreground" />
+                  <span className="text-muted-foreground">Copy subjects from</span>
+                  <select
+                    value={copySourceClass}
+                    onChange={(e) => setCopySourceClass(e.target.value)}
+                    className="h-8 rounded-lg border border-input bg-card px-2 text-xs text-foreground cursor-pointer"
+                  >
+                    {classesList.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const others = classesList.filter((c) => c !== copySourceClass)
+                      setCopyTargetClasses(others)
+                    }}
+                    className="h-8 text-xs cursor-pointer"
+                  >
+                    Copy to all others
+                  </Button>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowSubjectMatrix(!showSubjectMatrix)}
+                  className="text-xs h-8 text-primary cursor-pointer self-start sm:self-center"
                 >
-                  {HOUSE_COLOR_OPTIONS.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                <Button type="button" onClick={addHouse} className="h-10 gap-1.5 cursor-pointer">
-                  <Plus className="size-4" /> Add House
+                  <Grid className="size-3.5 mr-1" />
+                  {showSubjectMatrix ? "Hide Summary Matrix" : "View by Class Summary"}
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
-                {houses.map((h, idx) => (
-                  <div
-                    key={h.name}
-                    className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/30"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="size-3 rounded-full shrink-0" style={{ backgroundColor: h.color }} />
-                      <span className="text-xs font-bold text-foreground truncate">{h.name}</span>
-                    </div>
+              {/* Copy Target Dialog Confirmation if target selected */}
+              {copyTargetClasses.length > 0 && (
+                <div className="p-3.5 rounded-xl border border-primary/30 bg-primary/5 text-xs space-y-2 animate-in fade-in-50 duration-150">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-foreground">
+                      Confirm copying subjects from {copySourceClass} to {copyTargetClasses.length} classes?
+                    </span>
                     <button
                       type="button"
-                      onClick={() => removeHouse(idx)}
-                      className="text-muted-foreground hover:text-destructive p-1 rounded transition-colors cursor-pointer"
+                      onClick={() => setCopyTargetClasses([])}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
                     >
-                      <Trash2 className="size-3.5" />
+                      <X className="size-4" />
                     </button>
                   </div>
-                ))}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCopyTargetClasses([])}
+                      className="h-7 text-xs cursor-pointer"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleCopySubjects}
+                      className="h-7 text-xs font-semibold cursor-pointer"
+                    >
+                      Confirm &amp; Copy
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Class by Class Subject Breakdown */}
+              {showSubjectMatrix && (
+                <div className="space-y-2 pt-2 border-t border-border animate-in fade-in-50 duration-150">
+                  <span className="text-xs font-bold text-foreground">Current Subject Assignments</span>
+                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+                    {classesList.map((cls) => {
+                      const subs = classSubjectMap[cls] || []
+                      return (
+                        <div
+                          key={cls}
+                          className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-card text-xs"
+                        >
+                          <strong className="text-foreground w-24 shrink-0">{cls}</strong>
+                          <div className="flex flex-wrap gap-1 flex-1">
+                            {subs.length > 0 ? (
+                              subs.map((s) => (
+                                <Badge key={s} variant="outline" className="text-[10px] py-0.5 px-2">
+                                  {s}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-muted-foreground italic text-[11px]">No subjects assigned</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================== */}
+          {/* STEP 5: ACADEMIC WINGS */}
+          {/* ========================================== */}
+          {currentStep === 5 && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="border-b border-border pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">Step 5: Academic Wings</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+                    Organize classes into academic wings. Drag and drop classes between wings or into the unassigned pool.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetWingsToDefault}
+                    className="h-8 text-xs gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground border-border hover:bg-muted/50"
+                    title="Reset to default 5 wings mapping"
+                  >
+                    <RotateCcw className="size-3.5" /> Reset to Default
+                  </Button>
+                  {!isAddingCustomWing && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        setIsAddingCustomWing(true)
+                        setNewCustomWingName("")
+                      }}
+                      className="h-8 text-xs font-semibold gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="size-3.5" /> Add Wing
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Add Custom Wing Inline Form */}
+              {isAddingCustomWing && (
+                <div className="p-3.5 rounded-2xl border border-primary/40 bg-card shadow-xs flex items-center gap-2 animate-in fade-in-50 duration-150">
+                  <Input
+                    type="text"
+                    value={newCustomWingName}
+                    onChange={(e) => setNewCustomWingName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        handleAddCustomWing()
+                      } else if (e.key === "Escape") {
+                        setIsAddingCustomWing(false)
+                      }
+                    }}
+                    className="h-8 text-xs flex-1 min-w-0"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleAddCustomWing}
+                    className="h-8 text-xs font-semibold cursor-pointer"
+                  >
+                    <Plus className="size-3.5 mr-1" /> Add
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsAddingCustomWing(false)}
+                    className="h-8 text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+
+              {/* Unassigned Classes Section (Only shown at top if any class is unassigned) */}
+              {unassignedClasses.length > 0 && (
+                <div
+                  onDragOver={(e) => handleWingClassDragOver(e, "unassigned")}
+                  onDragLeave={() => setDragOverArea(null)}
+                  onDrop={(e) => handleWingClassDrop(e, null)}
+                  className={`p-4 rounded-2xl border transition-all duration-150 space-y-3 ${
+                    dragOverArea === "unassigned"
+                      ? "border-amber-500/80 bg-amber-500/10 ring-2 ring-amber-500/20"
+                      : "border-amber-500/30 bg-amber-500/5 shadow-2xs"
+                  }`}
+                >
+                  <div className="flex items-center justify-between pb-2.5 border-b border-amber-500/20">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="size-4 text-amber-500" />
+                      <span className="font-bold text-foreground text-sm">Unassigned Classes</span>
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold">
+                        {unassignedClasses.length} {unassignedClasses.length === 1 ? "class" : "classes"}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                      Drag into any wing below to assign
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                    {unassignedClasses.map((clsName) => (
+                      <div
+                        key={clsName}
+                        draggable
+                        onDragStart={(e) => handleWingClassDragStart(e, null, clsName)}
+                        onDragEnd={handleWingClassDragEnd}
+                        className="group flex items-center gap-1.5 h-8 px-2.5 rounded-xl border border-amber-500/40 bg-card hover:border-amber-500 hover:shadow-xs text-xs font-semibold text-foreground transition-all select-none shadow-2xs cursor-grab active:cursor-grabbing"
+                      >
+                        <GripVertical className="size-3 text-muted-foreground group-hover:text-amber-500 shrink-0" />
+                        <span className="truncate flex-1 min-w-0">{clsName}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Wings Cards List */}
+              <div className="space-y-3">
+                {wingsList.map((wing, wingIdx) => {
+                  const isEditingThisWing = editingWingIdx === wingIdx
+                  const isDragOver = dragOverArea === `wing-${wingIdx}`
+                  const wingClasses = wing.classes || []
+
+                  return (
+                    <div
+                      key={wing.id || wing.name || wingIdx}
+                      onDragOver={(e) => handleWingClassDragOver(e, `wing-${wingIdx}`)}
+                      onDragLeave={() => setDragOverArea(null)}
+                      onDrop={(e) => handleWingClassDrop(e, wingIdx)}
+                      className={`p-4 rounded-2xl border transition-all duration-150 space-y-3 shadow-2xs ${
+                        isDragOver
+                          ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                          : "border-border bg-card/60 hover:bg-card/90"
+                      }`}
+                    >
+                      {/* Wing Row Header */}
+                      <div className="flex items-center justify-between gap-2 min-h-[32px] h-[32px] border-b border-border/50 pb-2.5">
+                        {isEditingThisWing ? (
+                          <div className="flex items-center justify-between w-full">
+                            <Input
+                              type="text"
+                              value={editingWingNameVal}
+                              onChange={(e) => setEditingWingNameVal(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault()
+                                  handleSaveEditWing(wingIdx)
+                                } else if (e.key === "Escape") {
+                                  handleCancelEditWing()
+                                }
+                              }}
+                              className="h-6 text-xs font-semibold px-1.5 py-0 flex-1 min-w-0 mr-1 rounded-md border-primary/40 focus-visible:ring-1 focus-visible:ring-primary/40"
+                              autoFocus
+                            />
+                            <div className="flex items-center gap-0.5 shrink-0 pl-1 border-l border-border/60">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEditWing(wingIdx)}
+                                className="size-6 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 flex items-center justify-center transition-colors cursor-pointer"
+                                title="Save Wing Name"
+                                aria-label="Save Wing Name"
+                              >
+                                <Check className="size-3.5 stroke-[2.5]" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditWing}
+                                className="size-6 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 flex items-center justify-center transition-colors cursor-pointer"
+                                title="Cancel"
+                                aria-label="Cancel"
+                              >
+                                <X className="size-3.5 stroke-[2.5]" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-foreground text-sm">{wing.name}</span>
+                              <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
+                                {wingClasses.length} {wingClasses.length === 1 ? "class" : "classes"}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditWing(wingIdx, wing.name)}
+                                className="size-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center justify-center transition-colors cursor-pointer"
+                                title={`Rename ${wing.name}`}
+                                aria-label={`Rename ${wing.name}`}
+                              >
+                                <Edit3 className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteWing(wingIdx)}
+                                className="size-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors cursor-pointer"
+                                title={`Delete ${wing.name}`}
+                                aria-label={`Delete ${wing.name}`}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Child Classes in Wing */}
+                      {wingClasses.length > 0 ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                          {wingClasses.map((clsName) => (
+                            <div
+                              key={clsName}
+                              draggable
+                              onDragStart={(e) => handleWingClassDragStart(e, wingIdx, clsName)}
+                              onDragEnd={handleWingClassDragEnd}
+                              className="group flex items-center justify-between h-8 px-2.5 rounded-xl border border-border bg-card hover:bg-muted/40 hover:border-primary/40 text-xs font-semibold text-foreground transition-all select-none shadow-2xs cursor-grab active:cursor-grabbing"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <GripVertical className="size-3 text-muted-foreground group-hover:text-primary shrink-0" />
+                                <span className="truncate">{clsName}</span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveClassFromWing(wingIdx, clsName)}
+                                className="size-5 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground flex items-center justify-center transition-colors cursor-pointer shrink-0 ml-1"
+                                title={`Remove ${clsName} from ${wing.name}`}
+                                aria-label={`Remove ${clsName}`}
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="h-12 rounded-xl border border-dashed border-border/80 flex items-center justify-center text-xs text-muted-foreground bg-muted/10">
+                          Drag and drop classes here to assign to {wing.name}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
 
-          {/* STEP 5: CREDENTIALS */}
-          {currentStep === 5 && (
+          {/* ========================================== */}
+          {/* STEP 6: HOUSES (OPTIONAL, MAX 4, EMBLEMS) */}
+          {/* ========================================== */}
+          {currentStep === 6 && (
+            <div className="space-y-6">
+              <div className="border-b border-border pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">Step 6: School Houses (Optional)</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+                    Configure 4 houses for student activities with custom colors and emblems.
+                  </p>
+                </div>
+              </div>
+
+              {!useHouses ? (
+                <div className="p-6 rounded-2xl border border-border bg-muted/20 text-center space-y-3">
+                  <Shield className="size-10 text-muted-foreground mx-auto" />
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Does your school use houses?</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Houses are optional and can be configured later anytime in School Settings.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleNextStep()}
+                      className="text-xs h-9 cursor-pointer"
+                    >
+                      Skip for now
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => setUseHouses(true)}
+                      className="text-xs h-9 font-bold cursor-pointer"
+                    >
+                      <Plus className="size-4 mr-1" /> Set up Houses
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* House Cards Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+                    {housesList.map((h, idx) => {
+                      const isEditing = editingHouseIdx === idx
+
+                      if (isEditing) {
+                        return (
+                          <div
+                            key={idx}
+                            className="p-3.5 rounded-xl border-2 border-primary/40 bg-card/95 shadow-sm space-y-3 animate-in fade-in-50 duration-150"
+                          >
+                            {/* Row 1: Name input with save / cancel buttons */}
+                            <div className="flex items-center gap-2">
+                              <div className="relative flex-1">
+                                <Input
+                                  type="text"
+                                  placeholder="House name"
+                                  value={houseFormName}
+                                  onChange={(e) => setHouseFormName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleSaveHouseInline()
+                                    if (e.key === "Escape") handleCancelHouseEdit()
+                                  }}
+                                  className="h-8 text-xs font-semibold pr-2"
+                                  autoFocus
+                                />
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={handleSaveHouseInline}
+                                  className="size-7 rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-950/60 flex items-center justify-center transition-colors cursor-pointer"
+                                  title="Save Changes"
+                                >
+                                  <Check className="size-3.5 stroke-[2.5]" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelHouseEdit}
+                                  className="size-7 rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-400 dark:hover:bg-rose-950/60 flex items-center justify-center transition-colors cursor-pointer"
+                                  title="Cancel"
+                                >
+                                  <X className="size-3.5 stroke-[2.5]" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Row 2: Color selection - Single row with Curated Colors & Custom Picker */}
+                            <div className="space-y-1 pt-0.5">
+                              <div className="text-[11px] text-muted-foreground font-medium">
+                                <span>Color</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto py-0.5">
+                                {CURATED_HOUSE_PALETTE.map((pal) => {
+                                  const isSelected = normalizeHexColor(houseFormColor) === pal.hex
+                                  const isUsed = isColorUsedByOtherHouse(pal.hex, idx)
+
+                                  return (
+                                    <button
+                                      key={pal.hex}
+                                      type="button"
+                                      disabled={isUsed}
+                                      onClick={() => setHouseFormColor(pal.hex)}
+                                      className={`size-6 rounded-md border flex items-center justify-center relative shrink-0 transition-opacity ${
+                                        isUsed
+                                          ? "opacity-20 cursor-not-allowed border-transparent"
+                                          : "cursor-pointer border-black/10 dark:border-white/20 hover:opacity-90"
+                                      }`}
+                                      style={{ backgroundColor: pal.hex }}
+                                      title={isUsed ? `${pal.name} (Used by another house)` : pal.name}
+                                    >
+                                      {isSelected && <Check className="size-3.5 text-white stroke-[2.5] drop-shadow-xs" />}
+                                    </button>
+                                  )
+                                })}
+
+                                {/* Custom Color Trigger Button in Same Row */}
+                                {(() => {
+                                  const isCustomActive = !CURATED_HOUSE_PALETTE.some(
+                                    (pal) => pal.hex === normalizeHexColor(houseFormColor)
+                                  )
+                                  return (
+                                    <label
+                                      className="size-6 rounded-md border border-black/10 dark:border-white/20 relative flex items-center justify-center cursor-pointer shrink-0 transition-opacity hover:opacity-90"
+                                      style={{
+                                        background: isCustomActive
+                                          ? houseFormColor
+                                          : "conic-gradient(from 0deg, #ef4444, #f59e0b, #10b981, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)",
+                                      }}
+                                      title="Custom Color"
+                                    >
+                                      <input
+                                        type="color"
+                                        value={houseFormColor}
+                                        onChange={(e) => setHouseFormColor(e.target.value.toUpperCase())}
+                                        className="absolute inset-0 opacity-0 cursor-pointer size-full"
+                                      />
+                                      {isCustomActive ? (
+                                        <Check className="size-3.5 text-white stroke-[2.5] drop-shadow-xs" />
+                                      ) : (
+                                        <Pipette className="size-3 text-white drop-shadow-sm" />
+                                      )}
+                                    </label>
+                                  )
+                                })()}
+                              </div>
+                            </div>
+
+                            {/* Row 3: Emblem upload / preview with selected color background */}
+                            <div className="pt-0.5">
+                              <input
+                                ref={houseEmblemInputRef}
+                                type="file"
+                                accept="image/png, image/jpeg, image/jpg, image/webp"
+                                onChange={(e) => {
+                                  handleHouseEmblemUpload(e)
+                                  e.target.value = ""
+                                }}
+                                className="hidden"
+                              />
+
+                              {houseEmblemError && (
+                                <p className="text-[11px] text-destructive mb-1.5">{houseEmblemError}</p>
+                              )}
+
+                              {houseFormEmblem ? (
+                                <div className="flex items-center justify-between p-2 rounded-xl border border-border bg-muted/20 transition-all">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="size-9 rounded-lg flex items-center justify-center p-0.5 shrink-0 overflow-hidden">
+                                      <img
+                                        src={houseFormEmblem}
+                                        alt="Emblem Preview"
+                                        className="size-full object-contain"
+                                      />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <span className="text-xs text-foreground font-semibold truncate block">
+                                        Emblem Attached
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => houseEmblemInputRef.current?.click()}
+                                      className="text-[11px] text-primary hover:underline px-1 py-0.5 cursor-pointer font-semibold"
+                                    >
+                                      Change
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setHouseFormEmblem("")
+                                        if (houseEmblemInputRef.current) houseEmblemInputRef.current.value = ""
+                                      }}
+                                      className="text-[11px] text-destructive hover:underline px-1 py-0.5 cursor-pointer font-semibold"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => houseEmblemInputRef.current?.click()}
+                                  disabled={isUploadingHouseEmblem}
+                                  className="w-full h-8 rounded-lg border border-dashed border-border hover:border-primary/50 hover:bg-muted/40 text-[11px] font-medium text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  {isUploadingHouseEmblem ? (
+                                    <Loader2 className="size-3.5 animate-spin" />
+                                  ) : (
+                                    <Upload className="size-3.5" />
+                                  )}
+                                  <span>{isUploadingHouseEmblem ? "Uploading..." : "Upload Emblem (Optional)"}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      return (
+                        <div
+                          key={idx}
+                          className="p-3.5 rounded-xl border border-border bg-card flex items-center justify-between gap-3 text-xs shadow-2xs hover:border-border/80 transition-all"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            {h.emblem_url || h.emblem ? (
+                              <div className="size-11 rounded-lg flex items-center justify-center shrink-0 overflow-hidden p-0.5">
+                                <img
+                                  src={h.emblem_url || h.emblem}
+                                  alt={h.name}
+                                  className="size-full object-contain"
+                                />
+                              </div>
+                            ) : (
+                              <div
+                                className="size-11 rounded-lg border flex items-center justify-center shrink-0 shadow-2xs"
+                                style={{
+                                  backgroundColor: `${h.color}15`,
+                                  borderColor: `${h.color}35`,
+                                }}
+                              >
+                                <Shield className="size-5" style={{ color: h.color }} />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex items-center gap-2">
+                              <span
+                                className="size-2.5 rounded-full shrink-0 shadow-xs"
+                                style={{ backgroundColor: h.color }}
+                                title="House Color"
+                              />
+                              <span className="font-bold text-foreground text-sm truncate">{h.name}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditHouse(idx)}
+                              className="size-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted flex items-center justify-center transition-colors cursor-pointer"
+                              title={`Edit ${h.name}`}
+                            >
+                              <Edit3 className="size-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================== */}
+          {/* STEP 7: PASSWORD & PIN */}
+          {/* ========================================== */}
+          {currentStep === 7 && (
             <div className="space-y-6">
               <div className="border-b border-border pb-4">
-                <h2 className="text-lg font-bold text-foreground">Step 5: Create Principal Credentials</h2>
-                <p className="text-sm sm:text-base text-muted-foreground mt-1 leading-relaxed">
-                  Set up your master password and 4-10 digit quick login PIN.
+                <h2 className="text-lg font-bold text-foreground">Step 7: Security Credentials</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+                  Configure your master password and 4-10 digit Quick Login PIN for fast terminal access.
                 </p>
               </div>
 
@@ -1132,7 +3693,7 @@ export function SchoolSetupWizard() {
               <div className="p-4.5 rounded-2xl border border-border bg-card space-y-4">
                 <div className="flex items-center gap-2 font-bold text-sm text-foreground">
                   <Lock className="size-4 text-primary" />
-                  <span>General Password Setup</span>
+                  <span>Master Password</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1171,7 +3732,7 @@ export function SchoolSetupWizard() {
               <div className="p-4.5 rounded-2xl border border-border bg-card space-y-4">
                 <div className="flex items-center gap-2 font-bold text-sm text-foreground">
                   <Hash className="size-4 text-primary" />
-                  <span>Quick Login PIN Setup (4 to 10 digits)</span>
+                  <span>Quick Login PIN (4 to 10 numeric digits)</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1210,19 +3771,21 @@ export function SchoolSetupWizard() {
             </div>
           )}
 
-          {/* STEP 6: REVIEW */}
-          {currentStep === 6 && (
+          {/* ========================================== */}
+          {/* STEP 8: REVIEW & FINALIZE */}
+          {/* ========================================== */}
+          {currentStep === 8 && (
             <div className="space-y-6">
               <div className="border-b border-border pb-4">
-                <h2 className="text-lg font-bold text-foreground">Step 6: Review &amp; Finalize Setup</h2>
-                <p className="text-sm sm:text-base text-muted-foreground mt-1 leading-relaxed">
-                  Please verify your configured school settings before activation.
+                <h2 className="text-lg font-bold text-foreground">Step 8: Review &amp; Finish Setup</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
+                  Verify your configured school structure. Click any Edit link to return directly to that step.
                 </p>
               </div>
 
               <div className="space-y-4">
-                {/* School Summary Card */}
-                <div className="p-4.5 rounded-2xl border border-border bg-card space-y-3">
+                {/* 1. School Profile */}
+                <div className="p-4 rounded-2xl border border-border bg-card space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-bold text-sm text-foreground">
                       <Building2 className="size-4 text-primary" />
@@ -1254,74 +3817,27 @@ export function SchoolSetupWizard() {
                       <span className="font-mono text-foreground">{schoolPhone}</span>
                     </div>
                   </div>
-                  <div className="pt-2 border-t border-border/60 text-xs">
-                    <span className="text-muted-foreground block mb-0.5">Campus Address</span>
-                    <p className="text-foreground font-medium">{getFullFormattedAddress()}</p>
+                  <div className="pt-2 border-t border-border/60 text-xs flex justify-between items-center">
+                    <div>
+                      <span className="text-muted-foreground block mb-0.5">Address</span>
+                      <p className="text-foreground font-medium">{getFullFormattedAddress()}</p>
+                    </div>
+                    {emblemUploadedUrl && (
+                      <img
+                        src={emblemUploadedUrl}
+                        alt="Emblem"
+                        className="size-8 object-contain rounded border border-border bg-muted/20 p-0.5"
+                      />
+                    )}
                   </div>
                 </div>
 
-                {/* Theme & Emblem Review */}
-                <div className="p-4.5 rounded-2xl border border-border bg-card space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 font-bold text-sm text-foreground">
-                      <Palette className="size-4 text-primary" />
-                      <span>Theme &amp; Emblem Customization</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentStep(1)}
-                      className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer font-medium"
-                    >
-                      <Edit3 className="size-3" /> Edit
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-muted-foreground block mb-1">Theme Color</span>
-                      <div className="flex items-center gap-2">
-                        {primaryColor ? (
-                          <>
-                            <span
-                              className="size-3.5 rounded-full border border-border shadow-xs"
-                              style={{ backgroundColor: primaryColor }}
-                            />
-                            <strong className="font-mono text-foreground">{primaryColor}</strong>
-                          </>
-                        ) : (
-                          <span className="text-foreground font-semibold">Default Orange Theme</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-muted-foreground block mb-1">School Emblem</span>
-                      {emblemPreviewUrl ? (
-                        <div className="flex items-center gap-2">
-                          <img
-                            src={emblemPreviewUrl}
-                            alt="Emblem"
-                            className="size-6 object-contain rounded border border-border bg-muted/30 p-0.5"
-                          />
-                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                            Custom Emblem Uploaded
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <Sparkles className="size-3.5 text-primary" />
-                          <span>Default Sparkle Icon</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Academic Configuration */}
-                <div className="p-4.5 rounded-2xl border border-border bg-card space-y-3">
+                {/* 2. Academic Structure */}
+                <div className="p-4 rounded-2xl border border-border bg-card space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-bold text-sm text-foreground">
                       <BookOpen className="size-4 text-primary" />
-                      <span>Classes &amp; Sections ({classes.length} classes)</span>
+                      <span>Academic Structure</span>
                     </div>
                     <button
                       type="button"
@@ -1331,66 +3847,129 @@ export function SchoolSetupWizard() {
                       <Edit3 className="size-3" /> Edit
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {classes.map((c) => (
-                      <Badge key={c.name} variant="outline" className="text-xs py-1">
-                        {c.name}: ({c.sections.join(", ")})
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Houses */}
-                <div className="p-4.5 rounded-2xl border border-border bg-card space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 font-bold text-sm text-foreground">
-                      <Shield className="size-4 text-primary" />
-                      <span>Houses ({houses.length})</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentStep(4)}
-                      className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer font-medium"
-                    >
-                      <Edit3 className="size-3" /> Edit
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {houses.map((h) => (
-                      <span
-                        key={h.name}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border border-border bg-muted/40"
-                      >
-                        <span className="size-2.5 rounded-full" style={{ backgroundColor: h.color }} />
-                        {h.name}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div className="p-3 rounded-xl bg-muted/20 border border-border">
+                      <span className="text-muted-foreground block font-medium">Classes Configured</span>
+                      <strong className="text-foreground text-sm mt-0.5 block">{classesList.length} Classes</strong>
+                      <span className="text-[11px] text-muted-foreground">
+                        {classesList[0]} → {classesList[classesList.length - 1]}
                       </span>
-                    ))}
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-muted/20 border border-border">
+                      <span className="text-muted-foreground block font-medium">Sections</span>
+                      <strong className="text-foreground text-sm mt-0.5 block">
+                        {Array.from(new Set(Object.values(classSectionMap).flat())).join(", ") || INITIAL_DEFAULT_SECTIONS.join(", ")}
+                      </strong>
+                      <span className="text-[11px] text-muted-foreground">Applied across classes</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-muted/20 border border-border">
+                      <span className="text-muted-foreground block font-medium">Subject Library</span>
+                      <strong className="text-foreground text-sm mt-0.5 block">{subjectLibrary.length} Subjects</strong>
+                      <span className="text-[11px] text-muted-foreground">Assigned to grade levels</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Credentials */}
-                <div className="p-4.5 rounded-2xl border border-border bg-card space-y-3">
+                {/* 3. Wings & Houses */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Wings Card */}
+                  <div className="p-4 rounded-2xl border border-border bg-card space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-sm text-foreground">
+                        <Compass className="size-4 text-primary" />
+                        <span>Academic Wings</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(5)}
+                        className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer font-medium"
+                      >
+                        <Edit3 className="size-3" /> Edit
+                      </button>
+                    </div>
+                    {wingsList.length > 0 ? (
+                      <div className="space-y-1.5 text-xs max-h-[160px] overflow-y-auto pr-1">
+                        {wingsList.map((w) => (
+                          <div key={w.name} className="flex justify-between items-start text-muted-foreground gap-2">
+                            <span className="font-semibold text-foreground shrink-0">{w.name}:</span>
+                            <span className="text-right">
+                              {w.classes && w.classes.length > 0 ? (
+                                w.classes.join(", ")
+                              ) : (
+                                <span className="italic text-muted-foreground">No classes assigned</span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">No wings configured</p>
+                    )}
+                  </div>
+
+                  {/* Houses Card */}
+                  <div className="p-4 rounded-2xl border border-border bg-card space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-sm text-foreground">
+                        <Shield className="size-4 text-primary" />
+                        <span>School Houses</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(6)}
+                        className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer font-medium"
+                      >
+                        <Edit3 className="size-3" /> Edit
+                      </button>
+                    </div>
+                    {useHouses && housesList.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {housesList.map((h) => (
+                          <span
+                            key={h.name}
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border border-border bg-muted/40"
+                          >
+                            {h.emblem_url || h.emblem ? (
+                              <img src={h.emblem_url || h.emblem} alt="" className="size-3.5 object-contain" />
+                            ) : (
+                              <span className="size-2.5 rounded-full" style={{ backgroundColor: h.color }} />
+                            )}
+                            {h.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">No houses configured (Skipped)</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. Credentials */}
+                <div className="p-4 rounded-2xl border border-border bg-card space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-bold text-sm text-foreground">
                       <KeyRound className="size-4 text-primary" />
-                      <span>Credentials</span>
+                      <span>Security Credentials</span>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setCurrentStep(5)}
+                      onClick={() => setCurrentStep(7)}
                       className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer font-medium"
                     >
                       <Edit3 className="size-3" /> Edit
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-muted-foreground block">Password:</span>
-                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Configured</span>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="size-4 text-emerald-500" />
+                      <span className="text-foreground font-medium">Master Password Configured</span>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground block">Quick PIN:</span>
-                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Configured</span>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="size-4 text-emerald-500" />
+                      <span className="text-foreground font-medium">Quick Login PIN Configured</span>
                     </div>
                   </div>
                 </div>
@@ -1398,7 +3977,7 @@ export function SchoolSetupWizard() {
             </div>
           )}
 
-          {/* Navigation Buttons */}
+          {/* Navigation CTAs */}
           <div className="flex items-center justify-between pt-6 border-t border-border mt-8">
             {currentStep > 1 ? (
               <Button
@@ -1406,23 +3985,52 @@ export function SchoolSetupWizard() {
                 variant="outline"
                 onClick={handlePrevStep}
                 disabled={isSubmitting || isUploadingEmblem}
-                className="h-11 sm:h-12 px-6 sm:px-8 text-sm sm:text-base font-semibold rounded-xl gap-2 border-border cursor-pointer hover:bg-muted transition-all"
+                className="h-11 px-6 sm:px-8 text-sm font-semibold rounded-xl gap-2 border-border cursor-pointer hover:bg-muted transition-all"
               >
-                <ArrowLeft className="size-4 sm:size-4.5" /> Back
+                <ArrowLeft className="size-4" /> Back
               </Button>
             ) : (
               <div />
             )}
 
-            {currentStep < 6 ? (
-              <Button
-                type="button"
-                onClick={handleNextStep}
-                disabled={isUploadingEmblem}
-                className="h-11 sm:h-12 px-7 sm:px-9 text-sm sm:text-base font-bold rounded-xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer transition-all"
-              >
-                Next Step <ArrowRight className="size-4 sm:size-4.5" />
-              </Button>
+            {currentStep < 8 ? (
+              <div className="flex items-center gap-2">
+                {/* Optional step skip shortcut */}
+                {currentStep === 5 && useWings && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setUseWings(false)
+                      handleNextStep()
+                    }}
+                    className="h-11 text-xs text-muted-foreground cursor-pointer"
+                  >
+                    Skip Wings
+                  </Button>
+                )}
+                {currentStep === 6 && useHouses && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setUseHouses(false)
+                      handleNextStep()
+                    }}
+                    className="h-11 text-xs text-muted-foreground cursor-pointer"
+                  >
+                    Skip Houses
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  onClick={handleNextStep}
+                  disabled={isUploadingEmblem}
+                  className="h-11 px-7 sm:px-9 text-sm font-bold rounded-xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer transition-all"
+                >
+                  Continue <ArrowRight className="size-4" />
+                </Button>
+              </div>
             ) : (
               <Button
                 type="button"
@@ -1437,7 +4045,7 @@ export function SchoolSetupWizard() {
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="size-5" /> Complete School Setup
+                    <CheckCircle2 className="size-5" /> Finish Setup &amp; Activate
                   </>
                 )}
               </Button>

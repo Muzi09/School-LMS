@@ -13,6 +13,10 @@ export const adminService = {
     return await apiClient.post("/admin/principals", principalData)
   },
 
+  regenerateOnboarding: async (principalId) => {
+    return await apiClient.post(`/admin/principals/${principalId}/regenerate-onboarding`)
+  },
+
   getPlatformUsers: async () => {
     return await apiClient.get("/admin/users")
   },

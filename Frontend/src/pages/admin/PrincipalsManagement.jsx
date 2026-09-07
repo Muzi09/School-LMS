@@ -16,6 +16,7 @@ import {
   X,
   AlertCircle,
   Link as LinkIcon,
+  RefreshCw,
 } from "lucide-react"
 import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
@@ -46,6 +47,7 @@ export function PrincipalsManagement() {
   const [copiedId, setCopiedId] = useState(null)
   const [serverError, setServerError] = useState(null)
   const [successInfo, setSuccessInfo] = useState(null)
+  const [regeneratingId, setRegeneratingId] = useState(null)
 
   const { data: principals, isLoading } = useQuery({
     queryKey: ["adminPrincipals"],
@@ -63,11 +65,35 @@ export function PrincipalsManagement() {
         name: `${data.first_name} ${data.last_name}`,
         email: data.email,
         url: data.onboarding_url,
+        isRegenerated: false,
       })
       formik.resetForm()
     },
     onError: (err) => {
       setServerError(err.message || "Failed to create principal account.")
+    },
+  })
+
+  const regenerateMutation = useMutation({
+    mutationFn: (principalId) => adminService.regenerateOnboarding(principalId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["adminPrincipals"] })
+      queryClient.invalidateQueries({ queryKey: ["adminStats"] })
+      queryClient.invalidateQueries({ queryKey: ["superAdminPrincipals"] })
+      queryClient.invalidateQueries({ queryKey: ["superAdminStats"] })
+      setSuccessInfo({
+        name: `${data.first_name} ${data.last_name}`,
+        email: data.email,
+        url: data.onboarding_url,
+        isRegenerated: true,
+      })
+      setIsModalOpen(true)
+    },
+    onError: (err) => {
+      setServerError(err.message || "Failed to regenerate onboarding link.")
+    },
+    onSettled: () => {
+      setRegeneratingId(null)
     },
   })
 
@@ -103,7 +129,19 @@ export function PrincipalsManagement() {
       openSmtpModal()
       return
     }
+    setSuccessInfo(null)
+    setServerError(null)
     setIsModalOpen(true)
+  }
+
+  const handleRegenerateClick = (principal) => {
+    if (!isSmtpConfigured) {
+      openSmtpModal()
+      return
+    }
+    setServerError(null)
+    setRegeneratingId(principal.id)
+    regenerateMutation.mutate(principal.id)
   }
 
   return (
@@ -165,6 +203,23 @@ export function PrincipalsManagement() {
         </div>
       )}
 
+      {/* Server Error Alert Banner */}
+      {serverError && !isModalOpen && (
+        <div className="p-4 rounded-2xl bg-destructive/10 border border-destructive/30 text-destructive text-sm flex items-center justify-between gap-3 shadow-xs animate-in fade-in-0 duration-200">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="size-4.5 shrink-0" />
+            <span className="font-medium">{serverError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setServerError(null)}
+            className="text-xs font-semibold underline hover:opacity-80 cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Principals List */}
       <div className="rounded-2xl bg-card border border-border shadow-xs overflow-hidden">
         {isLoading ? (
@@ -197,6 +252,7 @@ export function PrincipalsManagement() {
                   <th className="px-6 py-3.5">School</th>
                   <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5">Invited / Created Date</th>
+                  <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/70 text-sm">
@@ -250,28 +306,60 @@ export function PrincipalsManagement() {
                     </td>
 
                     <td className="px-6 py-4">
-                      <Badge
-                        variant="outline"
-                        className={`gap-1 text-xs py-0.5 whitespace-nowrap ${
-                          p.school_setup_completed
-                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                            : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                        }`}
-                      >
-                        {p.school_setup_completed ? (
-                          <>
-                            <CheckCircle2 className="size-3.5" /> Active & Completed
-                          </>
-                        ) : (
-                          <>
-                            <Clock className="size-3.5" /> Pending Setup
-                          </>
-                        )}
-                      </Badge>
+                      {p.school_setup_completed ? (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 text-xs py-0.5 whitespace-nowrap bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-medium"
+                        >
+                          <CheckCircle2 className="size-3.5" /> Active & Completed
+                        </Badge>
+                      ) : p.onboarding_link_expired ? (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 text-xs py-0.5 whitespace-nowrap bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 font-medium"
+                        >
+                          <AlertCircle className="size-3.5" /> Link Expired
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 text-xs py-0.5 whitespace-nowrap bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 font-medium"
+                        >
+                          <Clock className="size-3.5" /> Pending Setup
+                        </Badge>
+                      )}
                     </td>
 
                     <td className="px-6 py-4 text-xs font-mono text-foreground">
                       {p.created_at ? formatDateTime(p.created_at) : "—"}
+                    </td>
+
+                    <td className="px-6 py-4 text-right">
+                      {!p.school_setup_completed && p.onboarding_link_expired ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRegenerateClick(p)}
+                          disabled={regeneratingId === p.id}
+                          className="h-8 px-3 text-xs font-semibold border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 hover:text-amber-700 dark:hover:text-amber-300 rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all"
+                          title="Generate new onboarding setup link and email it to principal"
+                        >
+                          {regeneratingId === p.id ? (
+                            <>
+                              <RefreshCw className="size-3.5 animate-spin" />
+                              <span>Sending...</span>
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="size-3.5" />
+                              <span>Re-generate & Email Link</span>
+                            </>
+                          )}
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/60">—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -281,7 +369,7 @@ export function PrincipalsManagement() {
         )}
       </div>
 
-      {/* Invite Principal Modal */}
+      {/* Invite Principal / Regenerated Link Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
           <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -289,12 +377,16 @@ export function PrincipalsManagement() {
             <div className="flex items-center justify-between px-6 py-5 border-b border-border bg-muted/30">
               <div className="flex items-center gap-3">
                 <div className="size-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
-                  <UserPlus className="size-5" />
+                  {successInfo?.isRegenerated ? <RefreshCw className="size-5" /> : <UserPlus className="size-5" />}
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-foreground">Invite New Principal</h3>
+                  <h3 className="text-lg font-bold text-foreground">
+                    {successInfo?.isRegenerated ? "New Onboarding Link Generated" : "Invite New Principal"}
+                  </h3>
                   <p className="text-xs text-muted-foreground">
-                    Principal will receive an onboarding invitation email
+                    {successInfo?.isRegenerated
+                      ? "A new setup link has been emailed to the principal"
+                      : "Principal will receive an onboarding invitation email"}
                   </p>
                 </div>
               </div>
@@ -314,10 +406,15 @@ export function PrincipalsManagement() {
                   <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
                     <div className="flex items-center gap-2 font-semibold text-sm">
                       <CheckCircle2 className="size-4.5" />
-                      Invitation Sent Successfully!
+                      {successInfo.isRegenerated
+                        ? "New Onboarding Link Generated & Emailed!"
+                        : "Invitation Sent Successfully!"}
                     </div>
                     <p className="text-xs mt-1 text-emerald-600 dark:text-emerald-400">
-                      An invitation email has been triggered to <strong>{successInfo.email}</strong>.
+                      {successInfo.isRegenerated
+                        ? "A new single-use onboarding link has been dispatched to "
+                        : "An invitation email has been triggered to "}
+                      <strong>{successInfo.email}</strong>.
                     </p>
                   </div>
 

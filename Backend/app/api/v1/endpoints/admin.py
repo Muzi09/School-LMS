@@ -288,6 +288,7 @@ def list_principals(
         .all()
     )
 
+    now_utc = datetime.now(timezone.utc)
     result: List[PrincipalListItem] = []
     for p in principals:
         school_name = None
@@ -297,6 +298,26 @@ def list_principals(
             if school:
                 school_name = school.name
                 school_code = school.code
+
+        onboarding_link_expired = False
+        onboarding_token_expires_at = None
+        can_regenerate_onboarding = False
+
+        if not p.school_setup_completed:
+            latest_token = (
+                db.query(PrincipalOnboardingToken)
+                .filter(PrincipalOnboardingToken.user_id == p.id)
+                .order_by(PrincipalOnboardingToken.created_at.desc())
+                .first()
+            )
+            if not latest_token:
+                onboarding_link_expired = True
+                can_regenerate_onboarding = True
+            else:
+                onboarding_token_expires_at = latest_token.expires_at
+                is_expired = latest_token.expires_at < now_utc or latest_token.used_at is not None
+                onboarding_link_expired = is_expired
+                can_regenerate_onboarding = is_expired
 
         result.append(
             PrincipalListItem(
@@ -312,6 +333,9 @@ def list_principals(
                 school_name=school_name,
                 school_code=school_code,
                 created_at=p.created_at,
+                onboarding_link_expired=onboarding_link_expired,
+                onboarding_token_expires_at=onboarding_token_expires_at,
+                can_regenerate_onboarding=can_regenerate_onboarding,
             )
         )
 
@@ -435,6 +459,136 @@ def create_principal(
         school_code=None,
         created_at=principal.created_at,
         onboarding_url=onboarding_url,
+        onboarding_link_expired=False,
+        onboarding_token_expires_at=expires_at,
+        can_regenerate_onboarding=False,
+    )
+
+
+@router.post("/principals/{principal_id}/regenerate-onboarding", response_model=PrincipalListItem)
+def regenerate_principal_onboarding(
+    principal_id: str,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Regenerate a new onboarding token and email it to the Principal.
+    Only allowed if the previous onboarding link has expired and school setup is not completed.
+    """
+    # 0. Check Admin SMTP Configuration Pre-requisite
+    smtp_config = (
+        db.query(SmtpConfiguration)
+        .filter(
+            SmtpConfiguration.admin_id == current_user.id,
+            SmtpConfiguration.is_active.is_(True),
+            SmtpConfiguration.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not smtp_config or not smtp_config.smtp_host or not smtp_config.smtp_password_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SMTP configuration is required to send onboarding invitation emails. Please configure SMTP settings first.",
+        )
+
+    # 1. Fetch Principal
+    principal = (
+        db.query(User)
+        .filter(
+            User.id == principal_id,
+            User.role == UserRole.PRINCIPAL,
+            User.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not principal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Principal not found.",
+        )
+
+    # 2. Check if already onboarded
+    if principal.school_setup_completed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Principal has already completed school onboarding. Onboarding link cannot be regenerated.",
+        )
+
+    # 3. Check if previous token is expired
+    now_utc = datetime.now(timezone.utc)
+    latest_token = (
+        db.query(PrincipalOnboardingToken)
+        .filter(PrincipalOnboardingToken.user_id == principal.id)
+        .order_by(PrincipalOnboardingToken.created_at.desc())
+        .first()
+    )
+
+    if latest_token and latest_token.expires_at >= now_utc and latest_token.used_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The current onboarding link is still valid and has not expired yet. Regeneration is only allowed for expired links.",
+        )
+
+    # 4. Generate new onboarding token
+    raw_token, token_hash = generate_onboarding_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.ONBOARDING_TOKEN_EXPIRE_HOURS)
+
+    token_record = PrincipalOnboardingToken(
+        user_id=principal.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+    db.add(token_record)
+    db.flush()
+
+    # 5. Send invitation email
+    full_name = f"{principal.first_name} {principal.last_name}"
+    try:
+        send_principal_invitation_email(
+            principal_name=full_name,
+            principal_email=principal.email,
+            raw_token=raw_token,
+            smtp_config=smtp_config,
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to send onboarding invitation email: {str(e)}",
+        )
+
+    db.commit()
+    db.refresh(principal)
+
+    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
+
+    school_name = None
+    school_code = None
+    if principal.school_id:
+        school = db.query(School).filter(School.id == principal.school_id, School.deleted_at.is_(None)).first()
+        if school:
+            school_name = school.name
+            school_code = school.code
+
+    return PrincipalListItem(
+        id=principal.id,
+        first_name=principal.first_name,
+        last_name=principal.last_name,
+        email=principal.email,
+        login_mobile=principal.login_mobile,
+        role=principal.role,
+        is_active=principal.is_active,
+        school_setup_completed=principal.school_setup_completed,
+        school_id=principal.school_id,
+        school_name=school_name,
+        school_code=school_code,
+        created_at=principal.created_at,
+        onboarding_url=onboarding_url,
+        onboarding_link_expired=False,
+        onboarding_token_expires_at=expires_at,
+        can_regenerate_onboarding=False,
     )
 
 

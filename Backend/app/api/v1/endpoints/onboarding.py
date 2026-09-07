@@ -15,7 +15,9 @@ from app.models.onboarding_token import PrincipalOnboardingToken
 from app.models.school import School
 from app.models.school_class import SchoolClass
 from app.models.section import Section
+from app.models.subject import ClassSubject, Subject
 from app.models.user import User
+from app.models.wing import Wing, WingClass
 from app.schemas.onboarding import (
     OnboardingValidateResponse,
     SchoolSetupRequest,
@@ -242,6 +244,7 @@ def complete_school_setup(
 
         # Create Classes and Sections
         seen_classes = set()
+        class_name_map = {}
         for idx, class_item in enumerate(payload.classes):
             c_name = class_item.name.strip()
             if not c_name or c_name in seen_classes:
@@ -256,6 +259,7 @@ def complete_school_setup(
             )
             db.add(school_class)
             db.flush()
+            class_name_map[c_name.lower()] = school_class
 
             # Create Sections for this class
             seen_sections = set()
@@ -274,7 +278,64 @@ def complete_school_setup(
                 )
                 db.add(section)
 
-        # Create Houses
+        # Create Subjects and ClassSubject mappings
+        seen_subjects = set()
+        for idx, sub_item in enumerate(payload.subjects):
+            sub_name = sub_item.name.strip()
+            if not sub_name or sub_name.lower() in seen_subjects:
+                continue
+            seen_subjects.add(sub_name.lower())
+
+            subject = Subject(
+                school_id=school.id,
+                name=sub_name,
+                code=sub_item.code.strip() if sub_item.code else None,
+                order_index=sub_item.order_index if sub_item.order_index else idx,
+                created_by=principal.id,
+            )
+            db.add(subject)
+            db.flush()
+
+            for assigned_c_name in sub_item.assigned_classes:
+                target_class = class_name_map.get(assigned_c_name.strip().lower())
+                if target_class:
+                    class_sub = ClassSubject(
+                        school_id=school.id,
+                        class_id=target_class.id,
+                        subject_id=subject.id,
+                        created_by=principal.id,
+                    )
+                    db.add(class_sub)
+
+        # Create Wings and WingClass mappings
+        seen_wings = set()
+        for idx, wing_item in enumerate(payload.wings):
+            w_name = wing_item.name.strip()
+            if not w_name or w_name.lower() in seen_wings:
+                continue
+            seen_wings.add(w_name.lower())
+
+            wing = Wing(
+                school_id=school.id,
+                name=w_name,
+                order_index=wing_item.order_index if wing_item.order_index else idx,
+                created_by=principal.id,
+            )
+            db.add(wing)
+            db.flush()
+
+            for c_name in wing_item.classes:
+                target_class = class_name_map.get(c_name.strip().lower())
+                if target_class:
+                    wing_cls = WingClass(
+                        school_id=school.id,
+                        wing_id=wing.id,
+                        class_id=target_class.id,
+                        created_by=principal.id,
+                    )
+                    db.add(wing_cls)
+
+        # Create Houses (with optional emblem_url)
         seen_houses = set()
         for h_item in payload.houses:
             h_name = h_item.name.strip()
@@ -286,6 +347,7 @@ def complete_school_setup(
                 school_id=school.id,
                 name=h_name,
                 color=h_item.color.strip() if h_item.color else None,
+                emblem_url=h_item.emblem_url.strip() if h_item.emblem_url else None,
                 created_by=principal.id,
             )
             db.add(house)

@@ -46,6 +46,9 @@ class PrincipalListItem(BaseModel):
     school_code: str | None = None
     created_at: datetime
     onboarding_url: str | None = None
+    onboarding_link_expired: bool = False
+    onboarding_token_expires_at: datetime | None = None
+    can_regenerate_onboarding: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

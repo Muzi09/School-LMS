@@ -14,7 +14,9 @@ from app.models.section import Section
 from app.models.smtp_configuration import SmtpConfiguration
 from app.models.staff import StaffProfile
 from app.models.student import StudentProfile
+from app.models.subject import ClassSubject, Subject
 from app.models.user import User
+from app.models.wing import Wing, WingClass
 
 __all__ = [
     "Base",
@@ -29,6 +31,10 @@ __all__ = [
     "School",
     "SchoolClass",
     "Section",
+    "Subject",
+    "ClassSubject",
+    "Wing",
+    "WingClass",
     "House",
     "User",
     "PrincipalOnboardingToken",

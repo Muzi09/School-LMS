@@ -20,8 +20,22 @@ class ClassSectionItem(BaseModel):
 
 
 class HouseItem(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100, description="House name e.g. Red")
+    name: str = Field(..., min_length=1, max_length=100, description="House name e.g. Red House")
     color: str | None = Field(default=None, description="Optional color code or hex e.g. #ef4444")
+    emblem_url: str | None = Field(default=None, description="Optional emblem URL for the house")
+
+
+class SubjectItem(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="Subject name e.g. Mathematics")
+    code: str | None = Field(default=None, description="Optional subject code e.g. MATH101")
+    order_index: int = Field(default=0)
+    assigned_classes: List[str] = Field(default_factory=list, description="List of class names this subject is assigned to")
+
+
+class WingItem(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="Wing name e.g. Primary Wing")
+    order_index: int = Field(default=0)
+    classes: List[str] = Field(default_factory=list, description="List of class names in this wing")
 
 
 class SchoolSetupRequest(BaseModel):
@@ -34,8 +48,10 @@ class SchoolSetupRequest(BaseModel):
     school_phone: str = Field(..., min_length=5, max_length=20)
     address: str = Field(..., min_length=3, max_length=1000)
 
-    # Step 3, 4, 5: Classes, Sections, Houses
+    # Classes, Sections, Subjects, Wings, Houses
     classes: List[ClassSectionItem] = Field(..., min_length=1, description="List of configured classes with sections")
+    subjects: List[SubjectItem] = Field(default_factory=list, description="List of configured subjects and class assignments")
+    wings: List[WingItem] = Field(default_factory=list, description="Optional list of configured academic wings")
     houses: List[HouseItem] = Field(default_factory=list, description="List of school houses")
 
     # Step 6: School Customization (Theme & Emblem - Optional)

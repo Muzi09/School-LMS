@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from app.models.house import House
     from app.models.school_class import SchoolClass
     from app.models.section import Section
+    from app.models.subject import Subject
     from app.models.user import User
+    from app.models.wing import Wing
 
 
 class School(Base, AuditMixin):
@@ -93,6 +95,18 @@ class School(Base, AuditMixin):
 
     houses: Mapped[List["House"]] = relationship(
         "House",
+        back_populates="school",
+        cascade="all, delete-orphan",
+    )
+
+    subjects: Mapped[List["Subject"]] = relationship(
+        "Subject",
+        back_populates="school",
+        cascade="all, delete-orphan",
+    )
+
+    wings: Mapped[List["Wing"]] = relationship(
+        "Wing",
         back_populates="school",
         cascade="all, delete-orphan",
     )

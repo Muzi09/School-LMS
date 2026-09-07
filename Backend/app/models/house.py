@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
@@ -33,6 +33,11 @@ class House(Base, AuditMixin):
 
     color: Mapped[str | None] = mapped_column(
         String(50),
+        nullable=True,
+    )
+
+    emblem_url: Mapped[str | None] = mapped_column(
+        Text,
         nullable=True,
     )
 
