@@ -24,7 +24,7 @@ def upgrade() -> None:
     
     # Try updating index name
     try:
-        op.drop_index('ix_smtp_configurations_super_admin_id', table_name='smtp_configurations')
+        op.drop_index('ix_smtp_configurations_super_admin_id', table_name='smtp_configurations', if_exists=True)
         op.create_index(op.f('ix_smtp_configurations_admin_id'), 'smtp_configurations', ['admin_id'], unique=True)
     except Exception:
         pass

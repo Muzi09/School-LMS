@@ -54,7 +54,8 @@ def upgrade() -> None:
     op.drop_index(
         'uq_class_subjects_class_subject',
         table_name='class_subjects',
-        postgresql_where=sa.text('deleted_at IS NULL')
+        postgresql_where=sa.text('deleted_at IS NULL'),
+        if_exists=True
     )
     op.create_index(
         'uq_class_subjects_class_section_subject',

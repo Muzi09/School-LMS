@@ -113,7 +113,7 @@ def upgrade() -> None:
     op.create_foreign_key(None, 'sections', 'users', ['deleted_by'], ['id'], ondelete='RESTRICT')
     op.create_foreign_key(None, 'sections', 'users', ['created_by'], ['id'], ondelete='RESTRICT')
     op.create_foreign_key(None, 'sections', 'users', ['updated_by'], ['id'], ondelete='RESTRICT')
-    op.drop_index(op.f('ix_smtp_configurations_super_admin_id'), table_name='smtp_configurations')
+    op.drop_index(op.f('ix_smtp_configurations_super_admin_id'), table_name='smtp_configurations', if_exists=True)
     op.drop_constraint(op.f('uq_smtp_super_admin_id'), 'smtp_configurations', type_='unique')
     op.create_index(op.f('ix_smtp_configurations_admin_id'), 'smtp_configurations', ['admin_id'], unique=True)
     op.create_unique_constraint('uq_smtp_admin_id', 'smtp_configurations', ['admin_id'])

@@ -34,10 +34,10 @@ def upgrade() -> None:
     sa.UniqueConstraint('user_id')
     )
     op.create_index('idx_staff_profiles_roll_no', 'staff_profiles', ['roll_no'], unique=False)
-    op.drop_index(op.f('idx_teacher_profiles_roll_no'), table_name='teacher_profiles')
-    op.drop_table('teacher_profiles')
-    op.drop_index(op.f('idx_admin_profiles_roll_no'), table_name='admin_profiles')
-    op.drop_table('admin_profiles')
+    op.drop_index(op.f('idx_teacher_profiles_roll_no'), table_name='teacher_profiles', if_exists=True)
+    op.drop_table('teacher_profiles', if_exists=True)
+    op.drop_index(op.f('idx_admin_profiles_roll_no'), table_name='admin_profiles', if_exists=True)
+    op.drop_table('admin_profiles', if_exists=True)
     # ### end Alembic commands ###
 
 
