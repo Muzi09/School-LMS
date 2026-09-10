@@ -28,8 +28,11 @@ class HouseItem(BaseModel):
 class SubjectItem(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Subject name e.g. Mathematics")
     code: str | None = Field(default=None, description="Optional subject code e.g. MATH101")
+    category: str = Field(default="academic", description="Category: 'academic' or 'non_academic'")
+    is_academic: bool = Field(default=True, description="Whether this is an academic subject")
     order_index: int = Field(default=0)
-    assigned_classes: List[str] = Field(default_factory=list, description="List of class names this subject is assigned to")
+    assigned_classes: List[str] = Field(default_factory=list, description="List of class names this subject is assigned to across all sections")
+    assigned_sections: List[str] = Field(default_factory=list, description="List of specific class-section identifiers e.g. 'Class 5::Section A'")
 
 
 class WingItem(BaseModel):

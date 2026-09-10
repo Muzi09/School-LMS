@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 from uuid import UUID, uuid4
 
 from sqlalchemy import ForeignKey, Index, String
@@ -10,6 +10,7 @@ from app.models.base import Base, AuditMixin
 if TYPE_CHECKING:
     from app.models.school import School
     from app.models.school_class import SchoolClass
+    from app.models.subject import ClassSubject
 
 
 class Section(Base, AuditMixin):
@@ -47,6 +48,12 @@ class Section(Base, AuditMixin):
     school_class: Mapped["SchoolClass"] = relationship(
         "SchoolClass",
         back_populates="sections",
+    )
+
+    class_subjects: Mapped[List["ClassSubject"]] = relationship(
+        "ClassSubject",
+        back_populates="section",
+        cascade="all, delete-orphan",
     )
 
     @declared_attr

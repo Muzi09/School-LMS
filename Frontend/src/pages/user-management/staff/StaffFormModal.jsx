@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { useCreateStaff, useUpdateStaff } from "@/hooks/useStaff"
 import { getStaffValidationSchema } from "./staffValidation"
+import { ModalHeader } from "@/components/common/ModalHeader"
 import { cn } from "@/lib/utils"
 
 export function StaffFormModal({ isOpen, onClose, staff = null }) {
@@ -127,27 +128,12 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
       <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-border/70 bg-muted/30">
-          <div>
-            <h3 className="text-lg sm:text-xl font-bold text-foreground flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0">
-                <Briefcase className="size-5" />
-              </div>
-              <span>{isEdit ? `Edit Staff: ${staff.first_name} ${staff.last_name}` : "Create New Staff Member"}</span>
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              {isEdit ? "Update staff account credentials and profile details." : "Fill in information to register a staff account."}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-            title="Close"
-          >
-            <X className="size-4.5" />
-          </button>
-        </div>
+        <ModalHeader
+          icon={Briefcase}
+          title={isEdit ? `Edit Staff: ${staff.first_name} ${staff.last_name}` : "Create New Staff Member"}
+          description={isEdit ? "Update staff account credentials and profile details." : "Fill in information to register a staff account."}
+          onClose={onClose}
+        />
 
         {/* Form Body */}
         <form onSubmit={formik.handleSubmit} noValidate className="flex-1 overflow-y-auto p-6 sm:p-7 space-y-6">

@@ -20,6 +20,7 @@ import { adminService } from "@/api/adminService"
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ModalHeader } from "@/components/common/ModalHeader"
 import { cn } from "@/lib/utils"
 
 export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
@@ -160,29 +161,13 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
       <div className="relative w-full max-w-xl sm:max-w-2xl bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-border/70 bg-muted/30 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="size-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-xs">
-              <Mail className="size-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-foreground tracking-tight">
-                SMTP Email Server Config
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Configure your outgoing email settings for sending Principal invitations
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-            title="Close"
-          >
-            <X className="size-4.5" />
-          </button>
-        </div>
+        <ModalHeader
+          icon={Mail}
+          iconClassName="bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400"
+          title="SMTP Email Server Config"
+          description="Configure your outgoing email settings for sending Principal invitations"
+          onClose={onClose}
+        />
 
         {/* Form Body */}
         <form onSubmit={formik.handleSubmit} className="p-6 space-y-4.5 overflow-y-auto flex-1">

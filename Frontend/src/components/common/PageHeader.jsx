@@ -10,6 +10,10 @@ export function PageHeader({
   icon: Icon,
   title,
   description,
+  badge,
+  iconClassName,
+  titleClassName,
+  descriptionClassName,
   onRefresh,
   isRefreshing = false,
   onCreate,
@@ -29,20 +33,40 @@ export function PageHeader({
       {...props}
     >
       {/* Title and Subheading */}
-      <div className="space-y-1">
-        <h2 className="text-lg sm:text-xl font-bold text-foreground tracking-tight flex items-center gap-2.5">
-          {Icon && (
-            <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0">
-              <Icon className="size-5" />
-            </div>
-          )}
-          <span>{title}</span>
-        </h2>
-        {description && (
-          <p className="text-sm text-muted-foreground mt-1 leading-normal">
-            {description}
-          </p>
+      <div className="flex items-center gap-3.5 min-w-0">
+        {Icon && (
+          <div
+            className={cn(
+              "size-10 sm:size-11 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs shrink-0",
+              iconClassName
+            )}
+          >
+            {React.isValidElement(Icon) ? Icon : <Icon className="size-5 sm:size-5.5" />}
+          </div>
         )}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2
+              className={cn(
+                "text-lg sm:text-xl font-bold text-foreground tracking-tight",
+                titleClassName
+              )}
+            >
+              {title}
+            </h2>
+            {badge}
+          </div>
+          {description && (
+            <p
+              className={cn(
+                "text-sm text-muted-foreground mt-0.5 leading-normal",
+                descriptionClassName
+              )}
+            >
+              {description}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Action Buttons */}

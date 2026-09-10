@@ -245,16 +245,16 @@ def complete_school_setup(
         # Create Classes and Sections
         seen_classes = set()
         class_name_map = {}
-        for idx, class_item in enumerate(payload.classes):
+        section_name_map = {}  # (class_id, section_name_upper) -> Section
+        for class_item in payload.classes:
             c_name = class_item.name.strip()
-            if not c_name or c_name in seen_classes:
+            if not c_name or c_name.lower() in class_name_map:
                 continue
-            seen_classes.add(c_name)
 
             school_class = SchoolClass(
                 school_id=school.id,
                 name=c_name,
-                order_index=class_item.order_index if class_item.order_index else idx,
+                order_index=class_item.order_index,
                 created_by=principal.id,
             )
             db.add(school_class)
@@ -265,18 +265,20 @@ def complete_school_setup(
             seen_sections = set()
             sections_list = class_item.sections if class_item.sections else ["A"]
             for s_name in sections_list:
-                sec_clean = s_name.strip().upper()
-                if not sec_clean or sec_clean in seen_sections:
+                sec_raw = s_name.strip()
+                if not sec_raw or sec_raw.lower() in seen_sections:
                     continue
-                seen_sections.add(sec_clean)
+                seen_sections.add(sec_raw.lower())
 
                 section = Section(
                     school_id=school.id,
                     class_id=school_class.id,
-                    name=sec_clean,
+                    name=sec_raw,
                     created_by=principal.id,
                 )
                 db.add(section)
+                db.flush()
+                section_name_map[(school_class.id, sec_raw.upper())] = section
 
         # Create Subjects and ClassSubject mappings
         seen_subjects = set()
@@ -286,26 +288,53 @@ def complete_school_setup(
                 continue
             seen_subjects.add(sub_name.lower())
 
+            category_val = (sub_item.category or "academic").strip().lower()
+            is_acad_val = sub_item.is_academic if sub_item.is_academic is not None else (category_val == "academic")
+
             subject = Subject(
                 school_id=school.id,
                 name=sub_name,
                 code=sub_item.code.strip() if sub_item.code else None,
+                category=category_val,
+                is_academic=is_acad_val,
                 order_index=sub_item.order_index if sub_item.order_index else idx,
                 created_by=principal.id,
             )
             db.add(subject)
             db.flush()
 
+            # Whole-class / Shared assignments (section_id = None)
             for assigned_c_name in sub_item.assigned_classes:
                 target_class = class_name_map.get(assigned_c_name.strip().lower())
                 if target_class:
                     class_sub = ClassSubject(
                         school_id=school.id,
                         class_id=target_class.id,
+                        section_id=None,
                         subject_id=subject.id,
                         created_by=principal.id,
                     )
                     db.add(class_sub)
+
+            # Section-specific assignments
+            for assigned_sec_str in sub_item.assigned_sections:
+                # Format: "ClassName::SectionName" or "ClassName:SectionName"
+                parts = assigned_sec_str.split("::") if "::" in assigned_sec_str else assigned_sec_str.split(":")
+                if len(parts) >= 2:
+                    c_part = parts[0].strip().lower()
+                    s_part = parts[1].strip().upper()
+                    target_class = class_name_map.get(c_part)
+                    if target_class:
+                        target_sec = section_name_map.get((target_class.id, s_part))
+                        sec_id = target_sec.id if target_sec else None
+                        class_sub = ClassSubject(
+                            school_id=school.id,
+                            class_id=target_class.id,
+                            section_id=sec_id,
+                            subject_id=subject.id,
+                            created_by=principal.id,
+                        )
+                        db.add(class_sub)
 
         # Create Wings and WingClass mappings
         seen_wings = set()

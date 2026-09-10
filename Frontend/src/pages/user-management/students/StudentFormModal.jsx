@@ -16,6 +16,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { useCreateStudent, useUpdateStudent } from "@/hooks/useStudents"
 import { schoolConfigService } from "@/api/schoolConfigService"
 import { getStudentValidationSchema } from "./studentValidation"
+import { ModalHeader } from "@/components/common/ModalHeader"
 import { cn } from "@/lib/utils"
 
 export function StudentFormModal({ isOpen, onClose, student = null }) {
@@ -130,29 +131,12 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
       <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-border/70 bg-muted/30">
-          <div className="flex items-center gap-3">
-            <div className="size-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
-              <GraduationCap className="size-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-foreground tracking-tight">
-                {isEdit ? "Edit Student Profile" : "Register New Student"}
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {isEdit ? "Update personal and academic records" : "Add a new student to your school roster"}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-            title="Close"
-          >
-            <X className="size-4.5" />
-          </button>
-        </div>
+        <ModalHeader
+          icon={GraduationCap}
+          title={isEdit ? "Edit Student Profile" : "Register New Student"}
+          description={isEdit ? "Update personal and academic records" : "Add a new student to your school roster"}
+          onClose={onClose}
+        />
 
         {/* Form */}
         <form onSubmit={formik.handleSubmit} className="flex flex-col flex-1 overflow-hidden">
@@ -474,7 +458,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                       <option value="" disabled className="bg-popover text-muted-foreground">Select Section</option>
                       {availableSections.map((s) => (
                         <option key={s.id} value={s.name} className="bg-popover text-popover-foreground">
-                          Section {s.name}
+                          {s.name}
                         </option>
                       ))}
                     </select>

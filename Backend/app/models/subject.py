@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, List
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
@@ -10,6 +10,7 @@ from app.models.base import Base, AuditMixin
 if TYPE_CHECKING:
     from app.models.school import School
     from app.models.school_class import SchoolClass
+    from app.models.section import Section
 
 
 class Subject(Base, AuditMixin):
@@ -35,6 +36,20 @@ class Subject(Base, AuditMixin):
     code: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
+    )
+
+    category: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="academic",
+        server_default="academic",
+    )
+
+    is_academic: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
     )
 
     order_index: Mapped[int] = mapped_column(
@@ -94,6 +109,12 @@ class ClassSubject(Base, AuditMixin):
         nullable=False,
     )
 
+    section_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("sections.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
     subject_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("subjects.id", ondelete="CASCADE"),
@@ -106,6 +127,11 @@ class ClassSubject(Base, AuditMixin):
         back_populates="class_subjects",
     )
 
+    section: Mapped["Section | None"] = relationship(
+        "Section",
+        back_populates="class_subjects",
+    )
+
     subject: Mapped["Subject"] = relationship(
         "Subject",
         back_populates="class_subjects",
@@ -115,8 +141,9 @@ class ClassSubject(Base, AuditMixin):
     def __table_args__(cls):
         return (
             Index(
-                "uq_class_subjects_class_subject",
+                "uq_class_subjects_class_section_subject",
                 cls.class_id,
+                cls.section_id,
                 cls.subject_id,
                 unique=True,
                 postgresql_where=cls.deleted_at.is_(None),
@@ -124,5 +151,9 @@ class ClassSubject(Base, AuditMixin):
             Index(
                 "idx_class_subjects_school_id",
                 cls.school_id,
+            ),
+            Index(
+                "idx_class_subjects_section_id",
+                cls.section_id,
             ),
         )

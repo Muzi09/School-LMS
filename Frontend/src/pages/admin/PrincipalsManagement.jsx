@@ -22,6 +22,8 @@ import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ModalHeader } from "@/components/common/ModalHeader"
+import { PageHeader } from "@/components/common/PageHeader"
 import { formatDateTime } from "@/lib/utils"
 
 const principalValidationSchema = Yup.object().shape({
@@ -147,34 +149,26 @@ export function PrincipalsManagement() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
-        <div className="space-y-1">
-          <h2 className="text-lg sm:text-xl font-bold text-foreground tracking-tight flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
-              <GraduationCap className="size-5" />
-            </div>
-            <span>Principals & School Onboarding</span>
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1 leading-normal">
-            Create principal accounts and initiate multi-tenant school onboarding invitations.
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5 shrink-0">
-          <Button
-            type="button"
-            onClick={handleInviteClick}
-            className={`h-9 px-4 text-sm font-medium rounded-xl text-white shadow-xs inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
-              !isSmtpConfigured
-                ? "bg-amber-600/70 hover:bg-amber-600"
-                : "bg-amber-600 hover:bg-amber-700"
-            }`}
-            title={!isSmtpConfigured ? "Configure SMTP to enable inviting principals" : "Invite Principal"}
-          >
-            <UserPlus className="size-4" />
-            <span>Invite Principal</span>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        icon={GraduationCap}
+        iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+        title="Principals & School Onboarding"
+        description="Create principal accounts and initiate multi-tenant school onboarding invitations."
+      >
+        <Button
+          type="button"
+          onClick={handleInviteClick}
+          className={`h-9 px-4 text-sm font-medium rounded-xl text-white shadow-xs inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
+            !isSmtpConfigured
+              ? "bg-amber-600/70 hover:bg-amber-600"
+              : "bg-amber-600 hover:bg-amber-700"
+          }`}
+          title={!isSmtpConfigured ? "Configure SMTP to enable inviting principals" : "Invite Principal"}
+        >
+          <UserPlus className="size-4" />
+          <span>Invite Principal</span>
+        </Button>
+      </PageHeader>
 
       {/* SMTP Missing Warning Banner */}
       {!isSmtpConfigured && (
@@ -374,30 +368,17 @@ export function PrincipalsManagement() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
           <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-border bg-muted/30">
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
-                  {successInfo?.isRegenerated ? <RefreshCw className="size-5" /> : <UserPlus className="size-5" />}
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-foreground">
-                    {successInfo?.isRegenerated ? "New Onboarding Link Generated" : "Invite New Principal"}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {successInfo?.isRegenerated
-                      ? "A new setup link has been emailed to the principal"
-                      : "Principal will receive an onboarding invitation email"}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-              >
-                <X className="size-4.5" />
-              </button>
-            </div>
+            <ModalHeader
+              icon={successInfo?.isRegenerated ? RefreshCw : UserPlus}
+              iconClassName="bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400"
+              title={successInfo?.isRegenerated ? "New Onboarding Link Generated" : "Invite New Principal"}
+              description={
+                successInfo?.isRegenerated
+                  ? "A new setup link has been emailed to the principal"
+                  : "Principal will receive an onboarding invitation email"
+              }
+              onClose={handleCloseModal}
+            />
 
             {/* Modal Body */}
             <div className="p-6">

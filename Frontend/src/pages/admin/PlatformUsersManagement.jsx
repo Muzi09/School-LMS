@@ -22,6 +22,8 @@ import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ModalHeader } from "@/components/common/ModalHeader"
+import { PageHeader } from "@/components/common/PageHeader"
 import { formatDateTime } from "@/lib/utils"
 
 const userValidationSchema = Yup.object().shape({
@@ -100,29 +102,21 @@ export function PlatformUsersManagement() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
-        <div className="space-y-1">
-          <h2 className="text-lg sm:text-xl font-bold text-foreground tracking-tight flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
-              <Users className="size-5" />
-            </div>
-            <span>Platform Administrators & Sales</span>
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1 leading-normal">
-            Manage Admin platform administrators and Sales Person representatives.
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5 shrink-0">
-          <Button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="h-9 px-4 text-sm font-medium rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-xs inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
-          >
-            <UserPlus className="size-4" />
-            <span>Create Platform User</span>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        icon={Users}
+        iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+        title="Platform Administrators & Sales"
+        description="Manage Admin platform administrators and Sales Person representatives."
+      >
+        <Button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          className="h-9 px-4 text-sm font-medium rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-xs inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+        >
+          <UserPlus className="size-4" />
+          <span>Create Platform User</span>
+        </Button>
+      </PageHeader>
 
       {/* Platform Users Table */}
       <div className="rounded-2xl bg-card border border-border shadow-xs overflow-hidden">
@@ -258,26 +252,13 @@ export function PlatformUsersManagement() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
           <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-border/70 bg-muted/30">
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
-                  <UserPlus className="size-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-foreground">Create Platform User</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Register a new Admin or Sales Person platform account
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-              >
-                <X className="size-4.5" />
-              </button>
-            </div>
+            <ModalHeader
+              icon={UserPlus}
+              iconClassName="bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400"
+              title="Create Platform User"
+              description="Register a new Admin or Sales Person platform account"
+              onClose={handleCloseModal}
+            />
 
             {/* Modal Body */}
             <div className="p-6 space-y-4">

@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/common/PageHeader"
 
 export function AdminDashboard() {
   const navigate = useNavigate()
@@ -67,21 +68,12 @@ export function AdminDashboard() {
   return (
     <div className="space-y-6">
       {/* Top Banner / Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
-        <div className="space-y-1">
-          <h2 className="text-lg sm:text-xl font-bold text-foreground tracking-tight flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
-              <Building2 className="size-5" />
-            </div>
-            <span>Platform Overview</span>
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1 leading-normal">
-            Manage school tenancies, onboard new principals, and monitor platform health.
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5 shrink-0">
-        </div>
-      </div>
+      <PageHeader
+        icon={Building2}
+        iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+        title="Platform Overview"
+        description="Manage school tenancies, onboard new principals, and monitor platform health."
+      />
 
       {/* Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
