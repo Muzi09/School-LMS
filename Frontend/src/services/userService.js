@@ -9,7 +9,7 @@ const getApiBase = () => {
   return "/api/v1"
 }
 
-const API_BASE = getApiBase();
+const API_BASE = 'https://school-lms-d12h.onrender.com/'
 
 export async function fetchUsers({ schoolId, role, isActive, search, page = 1, pageSize = 20 } = {}) {
   const params = new URLSearchParams();
