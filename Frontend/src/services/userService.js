@@ -1,4 +1,4 @@
-const API_BASE = "/api/v1";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 export async function fetchUsers({ schoolId, role, isActive, search, page = 1, pageSize = 20 } = {}) {
   const params = new URLSearchParams();
