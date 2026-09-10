@@ -10,3 +10,4 @@ bcrypt
 pyjwt
 email-validator
 httpx
+python-multipart
