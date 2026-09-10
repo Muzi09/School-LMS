@@ -7,7 +7,7 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const backendUrl = env.BACKEND_URL || 'http://localhost:8000'
+  const backendUrl = env.VITE_BACKEND_URL || env.BACKEND_URL || 'http://localhost:8000'
   const port = parseInt(env.VITE_PORT || '5173', 10)
 
   return {
