@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.enums import UserRole
 from app.schemas.profile import (
+    PrincipalProfileRead,
+    PrincipalProfileUpdate,
     StaffProfileCreate,
     StaffProfileRead,
     StaffProfileUpdate,
@@ -63,6 +65,7 @@ class UserUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8)
     is_active: bool | None = None
 
+    principal_profile: PrincipalProfileUpdate | None = None
     staff_profile: StaffProfileUpdate | None = None
     student_profile: StudentProfileUpdate | None = None
 
@@ -89,6 +92,7 @@ class UserRead(UserBase):
 
 
 class UserDetailRead(UserRead):
+    principal_profile: PrincipalProfileRead | None = None
     staff_profile: StaffProfileRead | None = None
     student_profile: StudentProfileRead | None = None
 

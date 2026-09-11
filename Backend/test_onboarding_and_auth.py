@@ -34,7 +34,6 @@ def test_complete_onboarding_and_auth_flow():
                 password_hash=hash_password(settings.ADMIN_DEFAULT_PASSWORD),
                 role=UserRole.ADMIN,
                 is_active=True,
-                school_setup_completed=True,
             )
             db.add(admin)
             db.commit()

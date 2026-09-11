@@ -4,7 +4,6 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     Boolean,
-    ForeignKey,
     Index,
     SmallInteger,
     String,
@@ -18,11 +17,11 @@ from app.models.base import Base, AuditMixin
 from app.models.enums import UserRole
 
 if TYPE_CHECKING:
-    from app.models.school import School
+    from app.models.onboarding_token import PrincipalOnboardingToken
+    from app.models.principal import PrincipalProfile
+    from app.models.smtp_configuration import SmtpConfiguration
     from app.models.staff import StaffProfile
     from app.models.student import StudentProfile
-    from app.models.onboarding_token import PrincipalOnboardingToken
-    from app.models.smtp_configuration import SmtpConfiguration
 
 
 class User(Base, AuditMixin):
@@ -32,12 +31,6 @@ class User(Base, AuditMixin):
         PG_UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
-    )
-
-    school_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("schools.id", ondelete="SET NULL"),
-        nullable=True,
     )
 
     first_name: Mapped[str] = mapped_column(
@@ -65,11 +58,6 @@ class User(Base, AuditMixin):
         nullable=True,
     )
 
-    pin_hash: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )
-
     role: Mapped[UserRole] = mapped_column(
         SmallInteger,
         nullable=False,
@@ -82,18 +70,12 @@ class User(Base, AuditMixin):
         server_default="true",
     )
 
-    school_setup_completed: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default="false",
-    )
-
     # Relationships
-    school: Mapped["School | None"] = relationship(
-        "School",
-        back_populates="users",
-        foreign_keys=[school_id],
+    principal_profile: Mapped["PrincipalProfile | None"] = relationship(
+        "PrincipalProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
     )
 
     staff_profile: Mapped["StaffProfile | None"] = relationship(
@@ -124,6 +106,25 @@ class User(Base, AuditMixin):
         cascade="all, delete-orphan",
     )
 
+    # Backward compatibility properties
+    @property
+    def school_id(self) -> UUID | None:
+        if self.principal_profile:
+            return self.principal_profile.school_id
+        return None
+
+    @property
+    def pin_hash(self) -> str | None:
+        if self.principal_profile:
+            return self.principal_profile.pin_hash
+        return None
+
+    @property
+    def school_setup_completed(self) -> bool:
+        if self.principal_profile:
+            return self.principal_profile.school_setup_completed
+        return False
+
     @declared_attr
     def __table_args__(cls):
         return (
@@ -142,10 +143,6 @@ class User(Base, AuditMixin):
             Index(
                 "idx_users_role",
                 cls.role,
-            ),
-            Index(
-                "idx_users_school_id",
-                cls.school_id,
             ),
             Index(
                 "idx_users_active",

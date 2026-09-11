@@ -6,10 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ConflictException, NotFoundException
 from app.core.security import hash_password
 from app.models.enums import UserRole
+from app.models.principal import PrincipalProfile
 from app.models.staff import StaffProfile
 from app.models.student import StudentProfile
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+from app.schemas.user import CreatePrincipalRequest, UserUpdate
 from app.schemas.staff import CreateStaffRequest, StaffUpdate
 from app.schemas.student import CreateStudentRequest, StudentUpdate
 
@@ -41,6 +43,47 @@ class UserService:
             raise ConflictException(f"User with login mobile '{login_mobile}' already exists.")
 
     # ----------------------------------------------------
+    # PRINCIPAL OPERATIONS
+    # ----------------------------------------------------
+    def create_principal(
+        self,
+        data: CreatePrincipalRequest,
+        created_by_id: UUID | None = None,
+        school_id: UUID | None = None,
+    ) -> User:
+        """Create a Principal user with PrincipalProfile atomically."""
+        if data.email:
+            self.verify_email_available(data.email)
+        self.verify_mobile_available(data.login_mobile)
+
+        try:
+            user = User(
+                first_name=data.first_name,
+                last_name=data.last_name,
+                email=data.email,
+                login_mobile=data.login_mobile,
+                password_hash=hash_password(data.password) if data.password else None,
+                role=UserRole.PRINCIPAL,
+                is_active=True,
+                created_by=created_by_id,
+            )
+            created_user = self.user_repo.create(user, autocommit=False)
+
+            profile = PrincipalProfile(
+                user_id=created_user.id,
+                school_id=school_id,
+                pin_hash=None,
+                school_setup_completed=False,
+            )
+            self.user_repo.add_principal_profile(profile, autocommit=False)
+
+            self.db.commit()
+            return self.user_repo.get_by_id_with_profiles(created_user.id)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    # ----------------------------------------------------
     # STAFF OPERATIONS
     # ----------------------------------------------------
     def create_staff(
@@ -56,7 +99,6 @@ class UserService:
         try:
             # 1. Create User Account
             user = User(
-                school_id=school_id,
                 first_name=data.first_name,
                 last_name=data.last_name,
                 email=data.email,
@@ -64,7 +106,6 @@ class UserService:
                 password_hash=hash_password(data.password),
                 role=UserRole.STAFF,
                 is_active=True,
-                school_setup_completed=True,
                 created_by=created_by_id,
                 updated_by=created_by_id,
             )
@@ -161,7 +202,6 @@ class UserService:
         try:
             # 1. Create User Account
             user = User(
-                school_id=school_id,
                 first_name=data.first_name,
                 last_name=data.last_name,
                 email=data.email,
@@ -169,7 +209,6 @@ class UserService:
                 password_hash=hash_password(data.password),
                 role=UserRole.STUDENT,
                 is_active=True,
-                school_setup_completed=True,
                 created_by=created_by_id,
                 updated_by=created_by_id,
             )
@@ -246,6 +285,77 @@ class UserService:
 
         if data.profile and user.student_profile:
             for key, value in data.profile.model_dump(exclude_unset=True).items():
+                setattr(user.student_profile, key, value)
+
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    # ----------------------------------------------------
+    # GENERAL USER OPERATIONS
+    # ----------------------------------------------------
+    def get_user_by_id(self, user_id: UUID) -> User:
+        """Retrieve user with all profiles eager-loaded."""
+        user = self.user_repo.get_by_id_with_profiles(user_id)
+        if not user:
+            raise NotFoundException(f"User with ID '{user_id}' not found.")
+        return user
+
+    def list_users(
+        self,
+        role: UserRole | None = None,
+        is_active: bool | None = None,
+        search: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[User], int]:
+        """List users with role filters, search, and pagination."""
+        skip = (page - 1) * page_size
+        return self.user_repo.list_users(
+            role=role,
+            is_active=is_active,
+            search=search,
+            skip=skip,
+            limit=page_size,
+        )
+
+    def update_user(
+        self,
+        user_id: UUID,
+        data: UserUpdate,
+        updated_by_id: UUID | None = None,
+    ) -> User:
+        """Update user general details and role profile details."""
+        user = self.get_user_by_id(user_id)
+
+        if data.email is not None and (user.email is None or data.email.lower() != user.email.lower()):
+            self.verify_email_available(data.email, exclude_user_id=user_id)
+            user.email = data.email
+
+        if data.login_mobile is not None and data.login_mobile != user.login_mobile:
+            self.verify_mobile_available(data.login_mobile, exclude_user_id=user_id)
+            user.login_mobile = data.login_mobile
+
+        if data.first_name is not None:
+            user.first_name = data.first_name
+        if data.last_name is not None:
+            user.last_name = data.last_name
+        if data.password is not None:
+            user.password_hash = hash_password(data.password)
+        if data.is_active is not None:
+            user.is_active = data.is_active
+
+        user.updated_by = updated_by_id
+        user.updated_at = datetime.utcnow()
+
+        if data.principal_profile and user.principal_profile:
+            for key, value in data.principal_profile.model_dump(exclude_unset=True).items():
+                setattr(user.principal_profile, key, value)
+        elif data.staff_profile and user.staff_profile:
+            for key, value in data.staff_profile.model_dump(exclude_unset=True).items():
+                setattr(user.staff_profile, key, value)
+        elif data.student_profile and user.student_profile:
+            for key, value in data.student_profile.model_dump(exclude_unset=True).items():
                 setattr(user.student_profile, key, value)
 
         self.db.commit()

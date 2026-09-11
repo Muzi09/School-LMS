@@ -8,6 +8,7 @@ from app.models.base import (
 from app.models.enums import Gender, UserRole
 from app.models.house import House
 from app.models.onboarding_token import PrincipalOnboardingToken
+from app.models.principal import PrincipalProfile
 from app.models.school import School
 from app.models.school_class import SchoolClass
 from app.models.section import Section
@@ -38,6 +39,7 @@ __all__ = [
     "House",
     "User",
     "PrincipalOnboardingToken",
+    "PrincipalProfile",
     "SmtpConfiguration",
     "StaffProfile",
     "StudentProfile",

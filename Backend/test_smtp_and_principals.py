@@ -31,7 +31,6 @@ def run_smtp_tests():
         password_hash=hash_password(admin_pwd),
         role=UserRole.ADMIN,
         is_active=True,
-        school_setup_completed=True,
     )
     db.add(admin_user)
     db.commit()
@@ -162,7 +161,6 @@ def run_smtp_tests():
         password_hash=hash_password(admin_pwd),
         role=UserRole.ADMIN,
         is_active=True,
-        school_setup_completed=True,
     )
     db.add(admin_2)
     db.commit()

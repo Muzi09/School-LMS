@@ -33,7 +33,6 @@ def run_tests():
         password_hash=hash_password(admin_pwd),
         role=UserRole.ADMIN,
         is_active=True,
-        school_setup_completed=True,
     )
     db.add(admin_user)
     db.commit()
@@ -130,7 +129,7 @@ def run_tests():
 
     # 11. Mark setup completed in DB and attempt regen -> MUST FAIL WITH 400
     p_user = db.query(User).filter(User.id == p_id).first()
-    p_user.school_setup_completed = True
+    p_user.principal_profile.school_setup_completed = True
     db.commit()
 
     with patch("app.api.v1.endpoints.admin.send_principal_invitation_email", return_value=True):

@@ -8,6 +8,7 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password, hash_token
 from app.models.enums import UserRole
 from app.models.user import User
+from app.models.principal import PrincipalProfile
 from app.models.school import School
 from app.models.onboarding_token import PrincipalOnboardingToken
 
@@ -30,9 +31,17 @@ def run_theme_and_emblem_tests():
         login_mobile=f"98{str(ts)[-8:]}",
         role=UserRole.PRINCIPAL,
         is_active=True,
-        school_setup_completed=False,
     )
     db.add(principal_a)
+    db.flush()
+
+    profile_a = PrincipalProfile(
+        user_id=principal_a.id,
+        school_id=None,
+        pin_hash=None,
+        school_setup_completed=False,
+    )
+    db.add(profile_a)
     db.commit()
     db.refresh(principal_a)
 
@@ -116,9 +125,17 @@ def run_theme_and_emblem_tests():
         login_mobile=f"97{str(ts_b)[-8:]}",
         role=UserRole.PRINCIPAL,
         is_active=True,
-        school_setup_completed=False,
     )
     db.add(principal_b)
+    db.flush()
+
+    profile_b = PrincipalProfile(
+        user_id=principal_b.id,
+        school_id=None,
+        pin_hash=None,
+        school_setup_completed=False,
+    )
+    db.add(profile_b)
     db.commit()
     db.refresh(principal_b)
 

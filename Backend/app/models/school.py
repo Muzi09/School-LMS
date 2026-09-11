@@ -15,10 +15,10 @@ from app.models.base import Base, AuditMixin
 
 if TYPE_CHECKING:
     from app.models.house import House
+    from app.models.principal import PrincipalProfile
     from app.models.school_class import SchoolClass
     from app.models.section import Section
     from app.models.subject import Subject
-    from app.models.user import User
     from app.models.wing import Wing
 
 
@@ -111,10 +111,10 @@ class School(Base, AuditMixin):
         cascade="all, delete-orphan",
     )
 
-    users: Mapped[List["User"]] = relationship(
-        "User",
+    principals: Mapped[List["PrincipalProfile"]] = relationship(
+        "PrincipalProfile",
         back_populates="school",
-        foreign_keys="User.school_id",
+        foreign_keys="PrincipalProfile.school_id",
     )
 
     @declared_attr

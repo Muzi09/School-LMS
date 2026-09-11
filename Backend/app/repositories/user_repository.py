@@ -5,6 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.enums import UserRole
+from app.models.principal import PrincipalProfile
 from app.models.staff import StaffProfile
 from app.models.student import StudentProfile
 from app.models.user import User
@@ -22,6 +23,7 @@ class UserRepository(BaseRepository[User]):
         stmt = (
             select(User)
             .options(
+                joinedload(User.principal_profile),
                 joinedload(User.staff_profile),
                 joinedload(User.student_profile),
             )
@@ -34,9 +36,13 @@ class UserRepository(BaseRepository[User]):
 
     def get_by_email(self, email: str, exclude_user_id: UUID | None = None) -> User | None:
         """Find non-deleted user by case-insensitive email address."""
-        stmt = select(User).where(
-            func.lower(User.email) == email.lower(),
-            User.deleted_at.is_(None),
+        stmt = (
+            select(User)
+            .options(joinedload(User.principal_profile))
+            .where(
+                func.lower(User.email) == email.lower(),
+                User.deleted_at.is_(None),
+            )
         )
         if exclude_user_id:
             stmt = stmt.where(User.id != exclude_user_id)
@@ -45,14 +51,61 @@ class UserRepository(BaseRepository[User]):
 
     def get_by_login_mobile(self, login_mobile: str, exclude_user_id: UUID | None = None) -> User | None:
         """Find non-deleted user by login mobile number."""
-        stmt = select(User).where(
-            User.login_mobile == login_mobile,
-            User.deleted_at.is_(None),
+        stmt = (
+            select(User)
+            .options(joinedload(User.principal_profile))
+            .where(
+                User.login_mobile == login_mobile,
+                User.deleted_at.is_(None),
+            )
         )
         if exclude_user_id:
             stmt = stmt.where(User.id != exclude_user_id)
 
         return self.db.scalars(stmt).first()
+
+    def list_users(
+        self,
+        role: UserRole | None = None,
+        is_active: bool | None = None,
+        search: str | None = None,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> tuple[list[User], int]:
+        """List users across roles with search, filter, and pagination."""
+        stmt = select(User).where(User.deleted_at.is_(None))
+        if role is not None:
+            stmt = stmt.where(User.role == role)
+        if is_active is not None:
+            stmt = stmt.where(User.is_active == is_active)
+
+        if search:
+            search_term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    User.first_name.ilike(search_term),
+                    User.last_name.ilike(search_term),
+                    User.email.ilike(search_term),
+                    User.login_mobile.ilike(search_term),
+                )
+            )
+
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = self.db.scalar(count_stmt) or 0
+
+        stmt = (
+            stmt.options(
+                joinedload(User.principal_profile),
+                joinedload(User.staff_profile),
+                joinedload(User.student_profile),
+            )
+            .order_by(User.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+
+        items = list(self.db.scalars(stmt).unique().all())
+        return items, total
 
     def list_staff(
         self,
@@ -146,6 +199,16 @@ class UserRepository(BaseRepository[User]):
 
         items = list(self.db.scalars(stmt).unique().all())
         return items, total
+
+    def add_principal_profile(self, profile: PrincipalProfile, autocommit: bool = False) -> PrincipalProfile:
+        """Persist a PrincipalProfile."""
+        self.db.add(profile)
+        if autocommit:
+            self.db.commit()
+            self.db.refresh(profile)
+        else:
+            self.db.flush()
+        return profile
 
     def add_staff_profile(self, profile: StaffProfile, autocommit: bool = False) -> StaffProfile:
         """Persist a StaffProfile."""

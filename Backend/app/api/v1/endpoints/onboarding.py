@@ -12,6 +12,7 @@ from app.core.security import hash_password, hash_pin, hash_token
 from app.models.enums import UserRole
 from app.models.house import House
 from app.models.onboarding_token import PrincipalOnboardingToken
+from app.models.principal import PrincipalProfile
 from app.models.school import School
 from app.models.school_class import SchoolClass
 from app.models.section import Section
@@ -381,11 +382,21 @@ def complete_school_setup(
             )
             db.add(house)
 
-        # Update Principal User
-        principal.school_id = school.id
+        # Update Principal User and Principal Profile
+        if not principal.principal_profile:
+            principal.principal_profile = PrincipalProfile(
+                user_id=principal.id,
+                school_id=school.id,
+                pin_hash=hash_pin(payload.pin),
+                school_setup_completed=True,
+            )
+            db.add(principal.principal_profile)
+        else:
+            principal.principal_profile.school_id = school.id
+            principal.principal_profile.pin_hash = hash_pin(payload.pin)
+            principal.principal_profile.school_setup_completed = True
+
         principal.password_hash = hash_password(payload.password)
-        principal.pin_hash = hash_pin(payload.pin)
-        principal.school_setup_completed = True
         principal.updated_by = principal.id
 
         # Invalidate Token

@@ -21,6 +21,7 @@ from app.core.security import (
 )
 from app.models.enums import UserRole
 from app.models.onboarding_token import PrincipalOnboardingToken
+from app.models.principal import PrincipalProfile
 from app.models.school import School
 from app.models.smtp_configuration import SmtpConfiguration
 from app.models.user import User
@@ -57,11 +58,16 @@ def get_super_admin_dashboard(
         School.is_active.is_(True),
         School.setup_completed.is_(True),
     ).count()
-    total_pending_setups = db.query(User).filter(
-        User.role == UserRole.PRINCIPAL,
-        User.deleted_at.is_(None),
-        User.school_setup_completed.is_(False),
-    ).count()
+    total_pending_setups = (
+        db.query(PrincipalProfile)
+        .join(User, User.id == PrincipalProfile.user_id)
+        .filter(
+            User.role == UserRole.PRINCIPAL,
+            User.deleted_at.is_(None),
+            PrincipalProfile.school_setup_completed.is_(False),
+        )
+        .count()
+    )
 
     total_principals = db.query(User).filter(
         User.role == UserRole.PRINCIPAL,
@@ -363,13 +369,20 @@ def create_principal(
         email=email_clean,
         login_mobile=mobile_clean,
         password_hash=None,
-        pin_hash=None,
         role=UserRole.PRINCIPAL,
         is_active=True,
-        school_setup_completed=False,
         created_by=current_user.id,
     )
     db.add(principal)
+    db.flush()
+
+    principal_profile = PrincipalProfile(
+        user_id=principal.id,
+        school_id=None,
+        pin_hash=None,
+        school_setup_completed=False,
+    )
+    db.add(principal_profile)
     db.flush()
 
     raw_token, token_hash = generate_onboarding_token()
@@ -607,7 +620,6 @@ def create_platform_user(
         password_hash=hash_password(payload.password),
         role=target_role,
         is_active=True,
-        school_setup_completed=True,
         created_by=current_user.id,
     )
 

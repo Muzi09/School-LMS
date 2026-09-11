@@ -6,6 +6,30 @@ from app.models.enums import Gender
 
 
 # ----------------------------------------------------
+# Principal Profile Schemas
+# ----------------------------------------------------
+class PrincipalProfileBase(BaseModel):
+    school_id: UUID | None = Field(default=None, description="Assigned School ID")
+    school_setup_completed: bool = Field(default=False, description="Whether school onboarding setup is complete")
+
+
+class PrincipalProfileCreate(PrincipalProfileBase):
+    pass
+
+
+class PrincipalProfileUpdate(BaseModel):
+    school_id: UUID | None = None
+    school_setup_completed: bool | None = None
+
+
+class PrincipalProfileRead(PrincipalProfileBase):
+    id: UUID
+    user_id: UUID
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ----------------------------------------------------
 # Staff Profile Schemas (Replaces Admin & Teacher)
 # ----------------------------------------------------
 class StaffProfileBase(BaseModel):

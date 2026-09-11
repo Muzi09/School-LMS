@@ -118,7 +118,7 @@ def run_tests():
         print(f"   Student created: {student_read.id}, Class: {student_read.student_profile.class_name}, Section: {student_read.student_profile.section}")
 
         print("5. Testing List & Search via Controller...")
-        paginated_res = user_controller.list_users(school_id=school.id, search="Charlie")
+        paginated_res = user_controller.list_users(search="Charlie")
         assert paginated_res.total >= 1
         assert any(u.id == student_read.id for u in paginated_res.items)
         print(f"   Search verified: found {paginated_res.total} matches for 'Charlie'")
@@ -142,7 +142,7 @@ def run_tests():
         print("8. Testing Soft Delete via Controller...")
         del_response = user_controller.delete_user(user_id=student_read.id)
         assert "deleted successfully" in del_response.message
-        list_after_del = user_controller.list_users(school_id=school.id, search="Charles")
+        list_after_del = user_controller.list_users(search="Charles")
         assert not any(u.id == student_read.id for u in list_after_del.items)
         print("   Soft delete verified: excluded from active list")
 
