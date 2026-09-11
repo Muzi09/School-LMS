@@ -1,8 +1,11 @@
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.api.deps import require_admin
 from app.core.config import settings
@@ -355,7 +358,7 @@ def create_principal(
     CRITICAL RESTRICTION: The authenticated Admin MUST have active SMTP
     configured before creating or inviting Principals.
     """
-    # 0. Check Admin SMTP Configuration Pre-requisite
+    # 0. Check Admin SMTP Configuration (Optional)
     smtp_config = (
         db.query(SmtpConfiguration)
         .filter(
@@ -365,12 +368,6 @@ def create_principal(
         )
         .first()
     )
-
-    if not smtp_config or not smtp_config.smtp_host or not smtp_config.smtp_password_encrypted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="SMTP configuration is required before creating a Principal. Please configure SMTP settings first.",
-        )
 
     email_clean = payload.email.strip().lower()
     mobile_clean = payload.login_mobile.strip()
@@ -424,21 +421,18 @@ def create_principal(
     db.add(token_record)
     db.flush()
 
-    # 3. Trigger email using authenticated Admin's dynamic SMTP configuration
+    # 3. Trigger email if active SMTP is configured
     full_name = f"{principal.first_name} {principal.last_name}"
-    try:
-        send_principal_invitation_email(
-            principal_name=full_name,
-            principal_email=principal.email,
-            raw_token=raw_token,
-            smtp_config=smtp_config,
-        )
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to send invitation email: {str(e)}",
-        )
+    if smtp_config and smtp_config.smtp_host and smtp_config.smtp_password_encrypted:
+        try:
+            send_principal_invitation_email(
+                principal_name=full_name,
+                principal_email=principal.email,
+                raw_token=raw_token,
+                smtp_config=smtp_config,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send invitation email to {principal.email}: {e}")
 
     db.commit()
     db.refresh(principal)
@@ -475,7 +469,7 @@ def regenerate_principal_onboarding(
     Regenerate a new onboarding token and email it to the Principal.
     Only allowed if the previous onboarding link has expired and school setup is not completed.
     """
-    # 0. Check Admin SMTP Configuration Pre-requisite
+    # 0. Check Admin SMTP Configuration (Optional)
     smtp_config = (
         db.query(SmtpConfiguration)
         .filter(
@@ -485,12 +479,6 @@ def regenerate_principal_onboarding(
         )
         .first()
     )
-
-    if not smtp_config or not smtp_config.smtp_host or not smtp_config.smtp_password_encrypted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="SMTP configuration is required to send onboarding invitation emails. Please configure SMTP settings first.",
-        )
 
     # 1. Fetch Principal
     principal = (
@@ -543,21 +531,18 @@ def regenerate_principal_onboarding(
     db.add(token_record)
     db.flush()
 
-    # 5. Send invitation email
+    # 5. Send invitation email if active SMTP is configured
     full_name = f"{principal.first_name} {principal.last_name}"
-    try:
-        send_principal_invitation_email(
-            principal_name=full_name,
-            principal_email=principal.email,
-            raw_token=raw_token,
-            smtp_config=smtp_config,
-        )
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to send onboarding invitation email: {str(e)}",
-        )
+    if smtp_config and smtp_config.smtp_host and smtp_config.smtp_password_encrypted:
+        try:
+            send_principal_invitation_email(
+                principal_name=full_name,
+                principal_email=principal.email,
+                raw_token=raw_token,
+                smtp_config=smtp_config,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send onboarding invitation email to {principal.email}: {e}")
 
     db.commit()
     db.refresh(principal)
