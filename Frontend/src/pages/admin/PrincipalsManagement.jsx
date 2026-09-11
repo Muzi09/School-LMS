@@ -127,20 +127,12 @@ export function PrincipalsManagement() {
   }
 
   const handleInviteClick = () => {
-    if (!isSmtpConfigured) {
-      openSmtpModal()
-      return
-    }
     setSuccessInfo(null)
     setServerError(null)
     setIsModalOpen(true)
   }
 
   const handleRegenerateClick = (principal) => {
-    if (!isSmtpConfigured) {
-      openSmtpModal()
-      return
-    }
     setServerError(null)
     setRegeneratingId(principal.id)
     regenerateMutation.mutate(principal.id)
@@ -158,41 +150,37 @@ export function PrincipalsManagement() {
         <Button
           type="button"
           onClick={handleInviteClick}
-          className={`h-9 px-4 text-sm font-medium rounded-xl text-white shadow-xs inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
-            !isSmtpConfigured
-              ? "bg-amber-600/70 hover:bg-amber-600"
-              : "bg-amber-600 hover:bg-amber-700"
-          }`}
-          title={!isSmtpConfigured ? "Configure SMTP to enable inviting principals" : "Invite Principal"}
+          className="h-9 px-4 text-sm font-medium rounded-xl text-white shadow-xs inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer bg-amber-600 hover:bg-amber-700"
+          title="Invite Principal"
         >
           <UserPlus className="size-4" />
           <span>Invite Principal</span>
         </Button>
       </PageHeader>
 
-      {/* SMTP Missing Warning Banner */}
+      {/* SMTP Optional Notice Banner */}
       {!isSmtpConfigured && (
-        <div className="p-4 sm:p-5 rounded-2xl bg-destructive/10 border border-destructive/30 text-destructive text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs animate-in fade-in-0 duration-300">
+        <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-950 dark:text-amber-200 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs animate-in fade-in-0 duration-300">
           <div className="flex items-start sm:items-center gap-3">
-            <div className="p-2 rounded-xl bg-destructive/20 text-destructive shrink-0 mt-0.5 sm:mt-0">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0">
               <AlertCircle className="size-5" />
             </div>
             <div>
               <p className="font-bold text-foreground leading-tight">
-                SMTP Configuration Required Before Inviting Principals
+                SMTP Not Configured (Optional)
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Outgoing email settings must be configured to deliver invitation links and school onboarding tokens.
+                You can create principals and copy onboarding setup links manually. Configure SMTP settings anytime to enable automated invitation emails.
               </p>
             </div>
           </div>
           <Button
             type="button"
             onClick={openSmtpModal}
-            className="h-9 px-4 text-xs font-semibold rounded-xl bg-destructive text-white hover:bg-destructive/90 shrink-0 inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-xs"
+            className="h-9 px-4 text-xs font-semibold rounded-xl bg-amber-600 text-white hover:bg-amber-700 shrink-0 inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-xs"
           >
             <Mail className="size-3.5" />
-            <span>Configure SMTP Now</span>
+            <span>Configure SMTP</span>
           </Button>
         </div>
       )}
@@ -337,17 +325,17 @@ export function PrincipalsManagement() {
                           onClick={() => handleRegenerateClick(p)}
                           disabled={regeneratingId === p.id}
                           className="h-8 px-3 text-xs font-semibold border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 hover:text-amber-700 dark:hover:text-amber-300 rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all"
-                          title="Generate new onboarding setup link and email it to principal"
+                          title="Generate new onboarding setup link for principal"
                         >
                           {regeneratingId === p.id ? (
                             <>
                               <RefreshCw className="size-3.5 animate-spin" />
-                              <span>Sending...</span>
+                              <span>Generating...</span>
                             </>
                           ) : (
                             <>
                               <RefreshCw className="size-3.5" />
-                              <span>Re-generate & Email Link</span>
+                              <span>Re-generate Link</span>
                             </>
                           )}
                         </Button>
@@ -374,8 +362,8 @@ export function PrincipalsManagement() {
               title={successInfo?.isRegenerated ? "New Onboarding Link Generated" : "Invite New Principal"}
               description={
                 successInfo?.isRegenerated
-                  ? "A new setup link has been emailed to the principal"
-                  : "Principal will receive an onboarding invitation email"
+                  ? (isSmtpConfigured ? "A new setup link has been generated and emailed" : "A new onboarding setup link has been generated")
+                  : (isSmtpConfigured ? "Principal account created and invitation email sent" : "Principal account created and onboarding link ready")
               }
               onClose={handleCloseModal}
             />
@@ -388,14 +376,22 @@ export function PrincipalsManagement() {
                     <div className="flex items-center gap-2 font-semibold text-sm">
                       <CheckCircle2 className="size-4.5" />
                       {successInfo.isRegenerated
-                        ? "New Onboarding Link Generated & Emailed!"
-                        : "Invitation Sent Successfully!"}
+                        ? (isSmtpConfigured ? "New Onboarding Link Generated & Emailed!" : "New Onboarding Link Ready!")
+                        : (isSmtpConfigured ? "Invitation Sent Successfully!" : "Principal Created & Link Ready!")}
                     </div>
                     <p className="text-xs mt-1 text-emerald-600 dark:text-emerald-400">
-                      {successInfo.isRegenerated
-                        ? "A new single-use onboarding link has been dispatched to "
-                        : "An invitation email has been triggered to "}
-                      <strong>{successInfo.email}</strong>.
+                      {isSmtpConfigured ? (
+                        <>
+                          {successInfo.isRegenerated
+                            ? "A new single-use onboarding link has been emailed to "
+                            : "An invitation email has been dispatched to "}
+                          <strong>{successInfo.email}</strong>.
+                        </>
+                      ) : (
+                        <>
+                          Onboarding setup link has been created for <strong>{successInfo.email}</strong>. You can copy and share it directly with the principal.
+                        </>
+                      )}
                     </p>
                   </div>
 
