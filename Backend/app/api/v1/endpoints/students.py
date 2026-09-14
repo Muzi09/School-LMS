@@ -6,11 +6,45 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.deps import get_current_user_optional, get_user_service
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
-from app.schemas.student import CreateStudentRequest, StudentDetailRead, StudentUpdate
+from app.schemas.student import (
+    CreateStudentRequest,
+    RollNumberCalculateResponse,
+    StudentDetailRead,
+    StudentUpdate,
+)
 from app.schemas.user import UserStatusUpdate
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/students", tags=["Student Management"])
+
+
+@router.get(
+    "/calculate-roll-no",
+    response_model=RollNumberCalculateResponse,
+    summary="Calculate Student Roll Number",
+    description="Calculate preview roll number for a student based on alphabetical order within class and section.",
+)
+def calculate_roll_no(
+    first_name: Annotated[str, Query(min_length=1, max_length=100, description="First name of student")],
+    last_name: Annotated[str, Query(min_length=1, max_length=100, description="Last name of student")],
+    class_name: Annotated[str, Query(min_length=1, max_length=50, description="Class name")],
+    section: Annotated[str, Query(min_length=1, max_length=50, description="Section name")],
+    service: Annotated[UserService, Depends(get_user_service)],
+    student_id: Annotated[UUID | None, Query(description="Student ID if editing")] = None,
+):
+    roll_no, total = service.calculate_roll_number(
+        first_name=first_name,
+        last_name=last_name,
+        class_name=class_name,
+        section=section,
+        student_id=student_id,
+    )
+    return RollNumberCalculateResponse(
+        roll_no=roll_no,
+        class_name=class_name,
+        section=section,
+        total_students=total,
+    )
 
 
 @router.post(

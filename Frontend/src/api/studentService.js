@@ -44,6 +44,20 @@ export async function updateStudentStatusApi(studentId, isActive) {
 }
 
 /**
+ * Calculate preview roll number for a student.
+ */
+export async function calculateStudentRollNoApi({ firstName, lastName, className, section, studentId } = {}) {
+  const params = {
+    first_name: firstName,
+    last_name: lastName,
+    class_name: className,
+    section: section,
+  }
+  if (studentId) params.student_id = studentId
+  return apiClient.get("/students/calculate-roll-no", { params })
+}
+
+/**
  * Soft delete Student.
  */
 export async function deleteStudentApi(studentId) {

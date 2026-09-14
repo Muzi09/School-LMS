@@ -1,3 +1,4 @@
+from typing import List
 from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -11,8 +12,16 @@ class CreateStudentRequest(BaseModel):
     last_name: str = Field(..., min_length=1, max_length=100)
     login_mobile: str = Field(..., min_length=5, max_length=20)
     email: EmailStr | None = Field(default=None, description="Optional email for Student")
-    password: str = Field(..., min_length=8, description="Password")
+    password: str | None = Field(default=None, min_length=8, description="Password (optional, set on first login)")
     profile: StudentProfileCreate = Field(..., description="Student profile details")
+    subjects: List[str] | None = Field(default=None, description="Optional list of subjects chosen for this student")
+
+
+class RollNumberCalculateResponse(BaseModel):
+    roll_no: str
+    class_name: str
+    section: str
+    total_students: int
 
 
 class StudentUpdate(BaseModel):
@@ -23,6 +32,7 @@ class StudentUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8)
     is_active: bool | None = None
     profile: StudentProfileUpdate | None = None
+    subjects: List[str] | None = Field(default=None, description="Optional list of subjects chosen for this student")
 
 
 class StudentDetailRead(BaseModel):

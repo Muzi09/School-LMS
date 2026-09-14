@@ -16,6 +16,17 @@ import { Badge } from "@/components/ui/badge"
 import { formatDateTime } from "@/lib/utils"
 
 export function StudentDetailsModal({ isOpen, onClose, student, onEdit }) {
+  React.useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = ""
+    }
+    return () => {
+      document.body.style.overflow = ""
+    }
+  }, [isOpen])
+
   if (!isOpen || !student) return null
 
   const profile = student.student_profile || {}

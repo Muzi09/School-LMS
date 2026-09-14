@@ -174,12 +174,14 @@
     font-size: 14px; /* Compact, enterprise density */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-background text-foreground;
     margin: 0;
     padding: 0;
     min-height: 100vh;
+    scrollbar-gutter: stable;
   }
   #root {
     min-height: 100vh;

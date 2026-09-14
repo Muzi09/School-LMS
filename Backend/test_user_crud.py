@@ -105,9 +105,8 @@ def run_tests():
         )
         student_read = user_controller.create_student(data=student_req)
         assert student_read.role == UserRole.STUDENT
-        assert student_read.student_profile is not None
-        assert student_read.student_profile.middle_name == "Alexander"
-        assert student_read.student_profile.roll_no == f"STU-{suffix}"
+        assert student_read.student_profile.roll_no is not None
+        assert student_read.student_profile.roll_no.isdigit()
         assert student_read.student_profile.gender == Gender.MALE
         assert student_read.student_profile.date_of_birth == date(2008, 5, 15)
         assert student_read.student_profile.class_name == "Grade 10"

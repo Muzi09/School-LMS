@@ -186,7 +186,7 @@ export function AdminLayout() {
         </header>
 
         {/* Content Outlet */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-muted/15">
+        <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-muted/15 [scrollbar-gutter:stable]">
           <div className="mx-auto max-w-6xl">
             <Outlet context={{ isSmtpConfigured, openSmtpModal: () => setIsSmtpModalOpen(true) }} />
           </div>

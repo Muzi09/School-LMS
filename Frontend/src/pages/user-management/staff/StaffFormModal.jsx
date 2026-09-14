@@ -88,19 +88,35 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
           await createStaffMutation.mutateAsync(payload)
         }
 
-        onClose()
+        handleClose()
       } catch (err) {
         setServerError(err.message || "An error occurred while saving staff.")
       }
     },
   })
 
+  const handleClose = () => {
+    setServerError("")
+    createStaffMutation.reset?.()
+    updateStaffMutation.reset?.()
+    formik.resetForm({ values: initialValues })
+    onClose()
+  }
+
   useEffect(() => {
     if (isOpen) {
+      document.body.style.overflow = "hidden"
       setServerError("")
-      formik.resetForm()
+      createStaffMutation.reset?.()
+      updateStaffMutation.reset?.()
+      formik.resetForm({ values: initialValues })
+    } else {
+      document.body.style.overflow = ""
     }
-  }, [isOpen])
+    return () => {
+      document.body.style.overflow = ""
+    }
+  }, [isOpen, staff])
 
   if (!isOpen) return null
 
@@ -132,7 +148,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
           icon={Briefcase}
           title={isEdit ? `Edit Staff: ${staff.first_name} ${staff.last_name}` : "Create New Staff Member"}
           description={isEdit ? "Update staff account credentials and profile details." : "Fill in information to register a staff account."}
-          onClose={onClose}
+          onClose={handleClose}
         />
 
         {/* Form Body */}
@@ -409,7 +425,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
               type="button"
               variant="outline"
               size="default"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={isPending}
               className="h-10 px-5 text-sm font-medium rounded-xl"
             >

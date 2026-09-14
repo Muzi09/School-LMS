@@ -64,7 +64,7 @@ class StaffProfileRead(StaffProfileBase):
 # ----------------------------------------------------
 class StudentProfileBase(BaseModel):
     middle_name: str | None = Field(default=None, max_length=100, description="Middle name")
-    roll_no: str = Field(..., min_length=1, max_length=50, description="Roll number")
+    roll_no: str = Field(default="", max_length=50, description="Roll number (auto-assigned)")
     gender: Gender = Field(..., description="Gender (1=Male, 2=Female, 3=Other)")
     date_of_birth: date = Field(..., description="Date of birth")
     class_name: str = Field(..., min_length=1, max_length=50, description="Class / Grade")

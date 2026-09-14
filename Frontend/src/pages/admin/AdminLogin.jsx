@@ -81,7 +81,7 @@ export function AdminLogin() {
                 value={formik.values.email}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
-                className="pl-9 h-11 text-sm bg-background"
+                className="pl-9 h-11 text-sm"
                 autoComplete="email"
               />
             </div>
@@ -104,7 +104,7 @@ export function AdminLogin() {
                 value={formik.values.password}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
-                className="pl-9 pr-10 h-11 text-sm bg-background"
+                className="pl-9 pr-10 h-11 text-sm"
                 autoComplete="current-password"
               />
               <button

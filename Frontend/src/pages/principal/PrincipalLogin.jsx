@@ -163,7 +163,7 @@ export function PrincipalLogin() {
                   value={generalFormik.values.email}
                   onChange={generalFormik.handleChange}
                   onBlur={generalFormik.handleBlur}
-                  className="pl-9 h-11 text-sm bg-background"
+                  className="pl-9 h-11 text-sm"
                   autoComplete="email"
                 />
               </div>
@@ -187,13 +187,14 @@ export function PrincipalLogin() {
                   value={generalFormik.values.password}
                   onChange={generalFormik.handleChange}
                   onBlur={generalFormik.handleBlur}
-                  className="pl-9 pr-10 h-11 text-sm bg-background"
+                  className="pl-9 pr-10 h-11 text-sm"
                   autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  title={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
@@ -240,7 +241,7 @@ export function PrincipalLogin() {
                   value={quickFormik.values.email}
                   onChange={quickFormik.handleChange}
                   onBlur={quickFormik.handleBlur}
-                  className="pl-9 h-11 text-sm bg-background"
+                  className="pl-9 h-11 text-sm"
                   autoComplete="email"
                 />
               </div>
@@ -268,7 +269,7 @@ export function PrincipalLogin() {
                     quickFormik.setFieldValue("pin", onlyNums)
                   }}
                   onBlur={quickFormik.handleBlur}
-                  className="pl-9 pr-10 h-11 text-sm font-mono tracking-widest bg-background"
+                  className="pl-9 pr-10 h-11 text-sm font-mono tracking-widest"
                   autoComplete="off"
                 />
                 <button

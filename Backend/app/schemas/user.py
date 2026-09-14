@@ -50,7 +50,7 @@ class CreateStudentRequest(BaseModel):
     last_name: str = Field(..., min_length=1, max_length=100)
     login_mobile: str = Field(..., min_length=5, max_length=20)
     email: EmailStr | None = Field(default=None, description="Optional email for Student")
-    password: str = Field(..., min_length=8, description="Plaintext password to be hashed")
+    password: str | None = Field(default=None, min_length=8, description="Plaintext password to be hashed")
     profile: StudentProfileCreate = Field(..., description="Student profile details")
 
 

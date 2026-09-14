@@ -11,7 +11,7 @@ export function AppLayout() {
         <AppSidebar />
         <SidebarInset className="flex flex-col flex-1 min-w-0 bg-background">
           <AppHeader />
-          <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-muted/20">
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-muted/20 [scrollbar-gutter:stable]">
             <div className="mx-auto max-w-7xl">
               <Outlet />
             </div>

@@ -12,7 +12,7 @@ const getBaseURL = () => {
 }
 
 export const apiClient = axios.create({
-  baseURL: 'https://school-lms-d12h.onrender.com/api/v1/',
+  baseURL: 'http://localhost:8000/api/v1/',
   headers: {
     "Content-Type": "application/json",
   },

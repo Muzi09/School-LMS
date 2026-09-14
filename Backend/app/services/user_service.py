@@ -1,7 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import ConflictException, NotFoundException
 from app.core.security import hash_password
@@ -188,6 +189,95 @@ class UserService:
     # ----------------------------------------------------
     # STUDENT OPERATIONS
     # ----------------------------------------------------
+    def calculate_roll_number(
+        self,
+        first_name: str,
+        last_name: str,
+        class_name: str,
+        section: str,
+        student_id: UUID | None = None,
+    ) -> tuple[str, int]:
+        """
+        Calculate preview roll number for a student in a class & section
+        sorted alphabetically by first_name, then last_name.
+        Returns (calculated_roll_no, total_students_count).
+        """
+        fn = first_name.strip()
+        ln = last_name.strip()
+        cn = class_name.strip()
+        sec = section.strip()
+
+        stmt = (
+            select(User)
+            .join(User.student_profile)
+            .where(
+                User.deleted_at.is_(None),
+                User.role == UserRole.STUDENT,
+                StudentProfile.class_name == cn,
+                StudentProfile.section == sec,
+            )
+        )
+        if student_id:
+            stmt = stmt.where(User.id != student_id)
+
+        existing_students = list(self.db.scalars(stmt).unique().all())
+
+        # Build comparison list with candidate
+        student_entries = [
+            (u.first_name.strip(), u.last_name.strip(), False)
+            for u in existing_students
+        ]
+        student_entries.append((fn, ln, True))
+
+        # Sort alphabetically (case-insensitive) by first_name, then last_name
+        student_entries.sort(key=lambda x: (x[0].casefold(), x[1].casefold()))
+
+        for idx, entry in enumerate(student_entries, start=1):
+            if entry[2]:  # candidate found
+                return str(idx), len(student_entries)
+
+        return "1", 1
+
+    def reassign_class_section_roll_numbers(
+        self,
+        class_name: str,
+        section: str,
+    ) -> None:
+        """
+        Reassigns roll numbers sequentially (1, 2, ..., N) to all active students
+        in a given class and section, sorted alphabetically by first_name, then last_name.
+        """
+        cn = class_name.strip()
+        sec = section.strip()
+        if not cn or not sec:
+            return
+
+        stmt = (
+            select(User)
+            .join(User.student_profile)
+            .where(
+                User.deleted_at.is_(None),
+                User.role == UserRole.STUDENT,
+                StudentProfile.class_name == cn,
+                StudentProfile.section == sec,
+            )
+            .options(joinedload(User.student_profile))
+            .order_by(
+                func.lower(User.first_name).asc(),
+                func.lower(User.last_name).asc(),
+                func.lower(func.coalesce(StudentProfile.middle_name, "")).asc(),
+                User.created_at.asc(),
+            )
+        )
+        students = list(self.db.scalars(stmt).unique().all())
+
+        for idx, student in enumerate(students, start=1):
+            if student.student_profile:
+                new_roll = str(idx)
+                if student.student_profile.roll_no != new_roll:
+                    student.student_profile.roll_no = new_roll
+                    self.db.add(student.student_profile)
+
     def create_student(
         self,
         data: CreateStudentRequest,
@@ -202,11 +292,11 @@ class UserService:
         try:
             # 1. Create User Account
             user = User(
-                first_name=data.first_name,
-                last_name=data.last_name,
-                email=data.email,
-                login_mobile=data.login_mobile,
-                password_hash=hash_password(data.password),
+                first_name=data.first_name.strip(),
+                last_name=data.last_name.strip(),
+                email=data.email.strip() if data.email else None,
+                login_mobile=data.login_mobile.strip(),
+                password_hash=hash_password(data.password) if data.password else None,
                 role=UserRole.STUDENT,
                 is_active=True,
                 created_by=created_by_id,
@@ -215,11 +305,22 @@ class UserService:
             self.user_repo.create(user, autocommit=False)
 
             # 2. Create StudentProfile
+            profile_dict = data.profile.model_dump()
+            if not profile_dict.get("roll_no"):
+                profile_dict["roll_no"] = "temp"
+
             student_profile = StudentProfile(
                 user_id=user.id,
-                **data.profile.model_dump(),
+                **profile_dict,
             )
             self.user_repo.add_student_profile(student_profile, autocommit=False)
+            self.db.flush()
+
+            # 3. Automatically assign/reorder sequential alphabetical roll numbers for the class & section
+            self.reassign_class_section_roll_numbers(
+                class_name=student_profile.class_name,
+                section=student_profile.section,
+            )
 
             self.db.commit()
             return self.get_student_by_id(user.id)
@@ -263,6 +364,11 @@ class UserService:
         """Update student user information and profile fields."""
         user = self.get_student_by_id(student_id)
 
+        old_first_name = user.first_name
+        old_last_name = user.last_name
+        old_class_name = user.student_profile.class_name if user.student_profile else None
+        old_section = user.student_profile.section if user.student_profile else None
+
         if data.email is not None and (user.email is None or data.email.lower() != user.email.lower()):
             self.verify_email_available(data.email, exclude_user_id=student_id)
             user.email = data.email
@@ -272,11 +378,11 @@ class UserService:
             user.login_mobile = data.login_mobile
 
         if data.first_name is not None:
-            user.first_name = data.first_name
+            user.first_name = data.first_name.strip()
         if data.last_name is not None:
-            user.last_name = data.last_name
+            user.last_name = data.last_name.strip()
         if data.password is not None:
-            user.password_hash = hash_password(data.password)
+            user.password_hash = hash_password(data.password) if data.password else None
         if data.is_active is not None:
             user.is_active = data.is_active
 
@@ -286,6 +392,19 @@ class UserService:
         if data.profile and user.student_profile:
             for key, value in data.profile.model_dump(exclude_unset=True).items():
                 setattr(user.student_profile, key, value)
+
+        self.db.flush()
+
+        new_class_name = user.student_profile.class_name if user.student_profile else None
+        new_section = user.student_profile.section if user.student_profile else None
+
+        name_changed = (user.first_name != old_first_name) or (user.last_name != old_last_name)
+        class_section_changed = (new_class_name != old_class_name) or (new_section != old_section)
+
+        if new_class_name and new_section and (name_changed or class_section_changed):
+            self.reassign_class_section_roll_numbers(new_class_name, new_section)
+            if class_section_changed and old_class_name and old_section:
+                self.reassign_class_section_roll_numbers(old_class_name, old_section)
 
         self.db.commit()
         self.db.refresh(user)
@@ -388,11 +507,21 @@ class UserService:
         deleted_by_id: UUID | None = None,
     ) -> None:
         """Soft delete a user."""
-        user = self.user_repo.get_by_id(user_id)
+        user = self.user_repo.get_by_id_with_profiles(user_id)
         if not user:
             raise NotFoundException(f"User with ID '{user_id}' not found.")
+
+        class_name = user.student_profile.class_name if user.student_profile else None
+        section = user.student_profile.section if user.student_profile else None
+        is_student = user.role == UserRole.STUDENT
+
         self.user_repo.soft_delete(
             instance=user,
             deleted_by_id=deleted_by_id,
-            autocommit=True,
+            autocommit=False,
         )
+
+        if is_student and class_name and section:
+            self.reassign_class_section_roll_numbers(class_name, section)
+
+        self.db.commit()

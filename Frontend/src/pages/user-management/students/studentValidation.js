@@ -35,28 +35,18 @@ export const getStudentValidationSchema = (isEdit = false) => {
 
     email: Yup.string()
       .trim()
-      .required("Email address is required")
-      .matches(EMAIL_REGEX, "Please enter a valid email address")
+      .nullable()
+      .notRequired()
+      .test("is-valid-email", "Please enter a valid email address", (val) => {
+        if (!val || val.trim() === "") return true
+        return EMAIL_REGEX.test(val.trim())
+      })
       .max(100, "Email cannot exceed 100 characters"),
-
-    password: isEdit
-      ? Yup.string()
-          .trim()
-          .transform((value) => (value === "" ? undefined : value))
-          .nullable()
-          .notRequired()
-          .min(8, "Password must be at least 8 characters")
-          .max(100, "Password cannot exceed 100 characters")
-      : Yup.string()
-          .trim()
-          .required("Password is required")
-          .min(8, "Password must be at least 8 characters")
-          .max(100, "Password cannot exceed 100 characters"),
 
     roll_no: Yup.string()
       .trim()
-      .required("Roll number is required")
-      .min(1, "Roll number cannot be empty")
+      .nullable()
+      .notRequired()
       .max(50, "Roll number cannot exceed 50 characters"),
 
     gender: Yup.number()

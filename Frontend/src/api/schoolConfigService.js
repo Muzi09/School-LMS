@@ -12,4 +12,8 @@ export const schoolConfigService = {
   getHouses: async () => {
     return await apiClient.get("/school/houses")
   },
+
+  getSectionSubjects: async (className, section) => {
+    return await apiClient.get(`/school/section-subjects?class_name=${encodeURIComponent(className)}&section=${encodeURIComponent(section)}`)
+  },
 }
