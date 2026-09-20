@@ -13,7 +13,10 @@ import {
   PrincipalRoute,
   AdminLoginRoute,
   PrincipalLoginRoute,
+  PermissionRoute,
+  AppIndexRoute,
 } from "@/components/auth/ProtectedRoute"
+import { Permission } from "@/lib/permissions"
 
 // Admin Pages
 import { AdminLogin } from "@/pages/admin/Login"
@@ -24,6 +27,9 @@ import { PlatformUsersManagement } from "@/pages/admin/UsersManagement"
 // Principal & Onboarding Pages
 import { PrincipalLogin } from "@/pages/principal/Login"
 import { SchoolSetupWizard } from "@/pages/principal/SchoolSetupWizard"
+
+// Staff First Login Account Setup Page
+import { StaffAccountSetup } from "@/pages/staff/StaffAccountSetup"
 
 // School User Management Pages
 import { StaffList } from "@/pages/user-management/staff/StaffList"
@@ -41,10 +47,15 @@ export function App() {
                 <Route path="/admin/login" element={<AdminLogin />} />
               </Route>
 
-              {/* Principal Login (Only redirects if already School Principal/Staff) */}
+              {/* Unified Login Route for Principal and Staff */}
               <Route element={<PrincipalLoginRoute />}>
+                <Route path="/login" element={<PrincipalLogin />} />
                 <Route path="/principal/login" element={<PrincipalLogin />} />
               </Route>
+
+              {/* Staff First-Login One-Time Setup */}
+              <Route path="/login/setup" element={<StaffAccountSetup />} />
+              <Route path="/staff/setup" element={<Navigate to="/login/setup" replace />} />
 
               {/* Principal School Setup Onboarding Wizard */}
               <Route path="/principal/setup-school" element={<SchoolSetupWizard />} />
@@ -69,14 +80,17 @@ export function App() {
               {/* Principal & Staff Protected School Application */}
               <Route element={<PrincipalRoute />}>
                 <Route element={<AppLayout />}>
-                  <Route index element={<Navigate to="/staff" replace />} />
-                  <Route path="staff" element={<StaffList />} />
+                  <Route index element={<AppIndexRoute />} />
+                  <Route element={<PermissionRoute permission={Permission.MANAGE_STAFF} redirectTo="/students" />}>
+                    <Route path="staff" element={<StaffList />} />
+                    <Route path="manage-staff" element={<Navigate to="/staff" replace />} />
+                  </Route>
                   <Route path="students" element={<StudentList />} />
                 </Route>
               </Route>
 
               {/* Catch-all Fallback */}
-              <Route path="*" element={<Navigate to="/principal/login" replace />} />
+              <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
           </BrowserRouter>
         </AuthProvider>

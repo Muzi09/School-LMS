@@ -188,3 +188,12 @@
     width: 100%;
   }
 }
+
+/* React Aria Popover underlay click interceptor:
+   Blocks click-through to underlying UI buttons and dismisses the popover
+   without blurring or darkening the header or background. */
+div[data-testid="underlay"] {
+  z-index: 40 !important;
+  background-color: transparent !important;
+  pointer-events: auto !important;
+}

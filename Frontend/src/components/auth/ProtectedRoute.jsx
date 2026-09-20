@@ -1,6 +1,7 @@
 
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
+import { hasPermission, Permission } from "@/lib/permissions"
 
 export function AdminRoute() {
   const { isAuthenticated, isAdmin, isLoading } = useAuth()
@@ -46,6 +47,32 @@ export function PrincipalRoute() {
   return <Outlet />
 }
 
+export function PermissionRoute({ permission, redirectTo = "/students" }) {
+  const { user, isLoading } = useAuth()
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (!hasPermission(user?.role, permission)) {
+    return <Navigate to={redirectTo} replace />
+  }
+
+  return <Outlet />
+}
+
+export function AppIndexRoute() {
+  const { user } = useAuth()
+  if (user?.role === 2) {
+    return <Navigate to="/students" replace />
+  }
+  return <Navigate to="/staff" replace />
+}
+
 export function AdminLoginRoute() {
   const { isAuthenticated, isAdmin, isLoading } = useAuth()
 
@@ -80,6 +107,10 @@ export function PrincipalLoginRoute() {
   if (isAuthenticated && !isAdmin) {
     if (user?.role === 1 && !user?.school_setup_completed) {
       return <Navigate to="/principal/setup-school" replace />
+    }
+    // Staff (role 2) lands on /students; Principal lands on /staff
+    if (user?.role === 2) {
+      return <Navigate to="/students" replace />
     }
     return <Navigate to="/staff" replace />
   }

@@ -32,6 +32,10 @@ export function PrincipalLogin() {
       navigate("/principal/setup-school", { replace: true })
     } else if (res.user.role === 0) {
       navigate("/admin/dashboard", { replace: true })
+    } else if (res.user.role === 2) {
+      const from = location.state?.from?.pathname
+      const target = from && from !== "/staff" && from !== "/manage-staff" ? from : "/students"
+      navigate(target, { replace: true })
     } else {
       const from = location.state?.from?.pathname || "/staff"
       navigate(from, { replace: true })

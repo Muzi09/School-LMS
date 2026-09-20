@@ -1,14 +1,16 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.exceptions import ConflictException, NotFoundException
-from app.core.security import hash_password
+from app.core.config import settings
+from app.core.exceptions import BadRequestException, ConflictException, NotFoundException
+from app.core.security import generate_onboarding_token, hash_password, hash_pin, hash_token
 from app.models.enums import UserRole
 from app.models.principal import PrincipalProfile
 from app.models.staff import StaffProfile
+from app.models.staff_onboarding_token import StaffOnboardingToken
 from app.models.student import StudentProfile
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
@@ -92,19 +94,23 @@ class UserService:
         data: CreateStaffRequest,
         created_by_id: UUID | None = None,
         school_id: UUID | None = None,
-    ) -> User:
-        """Create a Staff user with StaffProfile atomically."""
+    ) -> tuple[User, str]:
+        """
+        Create a Staff user with StaffProfile atomically in PENDING_ACTIVATION state.
+        Generates a secure single-use first login setup token.
+        Returns (user, raw_token).
+        """
         self.verify_email_available(data.email)
         self.verify_mobile_available(data.login_mobile)
 
         try:
-            # 1. Create User Account
+            # 1. Create User Account (without password - set by Staff on first login)
             user = User(
                 first_name=data.first_name,
                 last_name=data.last_name,
                 email=data.email,
                 login_mobile=data.login_mobile,
-                password_hash=hash_password(data.password),
+                password_hash=None,
                 role=UserRole.STAFF,
                 is_active=True,
                 created_by=created_by_id,
@@ -112,19 +118,119 @@ class UserService:
             )
             self.user_repo.create(user, autocommit=False)
 
-            # 2. Create StaffProfile
+            # 2. Create StaffProfile with PENDING_ACTIVATION status
             profile_data = data.profile.model_dump() if data.profile else {}
             staff_profile = StaffProfile(
                 user_id=user.id,
+                school_id=school_id,
+                status="PENDING_ACTIVATION",
                 **profile_data,
             )
             self.user_repo.add_staff_profile(staff_profile, autocommit=False)
+
+            # 3. Generate secure onboarding token
+            raw_token, token_hash = generate_onboarding_token()
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.ONBOARDING_TOKEN_EXPIRE_HOURS)
+            token_record = StaffOnboardingToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                expires_at=expires_at,
+            )
+            self.db.add(token_record)
+
+            self.db.commit()
+            created_user = self.get_staff_by_id(user.id)
+            return created_user, raw_token
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def generate_staff_setup_token(self, staff_id: UUID) -> tuple[str, StaffOnboardingToken]:
+        """Generate a secure onboarding token for Staff first login setup."""
+        raw_token, token_hash = generate_onboarding_token()
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.ONBOARDING_TOKEN_EXPIRE_HOURS)
+        token_record = StaffOnboardingToken(
+            user_id=staff_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        self.db.add(token_record)
+        return raw_token, token_record
+
+    def validate_staff_setup_token(self, raw_token: str) -> tuple[StaffOnboardingToken, User]:
+        """Validate staff setup token exists, unexpired, and unused."""
+        raw_clean = (raw_token or "").strip()
+        if not raw_clean:
+            raise BadRequestException("Setup token is required.")
+
+        t_hash = hash_token(raw_clean)
+        token_record = (
+            self.db.query(StaffOnboardingToken)
+            .filter(StaffOnboardingToken.token_hash == t_hash)
+            .first()
+        )
+
+        if not token_record:
+            raise NotFoundException("Invalid or unrecognized setup link.")
+
+        if token_record.used_at is not None:
+            raise BadRequestException(
+                "This setup link has already been used. Please log in with your credentials on the normal login page."
+            )
+
+        now_utc = datetime.now(timezone.utc)
+        if token_record.expires_at < now_utc:
+            raise BadRequestException(
+                "This setup link has expired. Please ask your School Principal to resend your setup link."
+            )
+
+        user = self.user_repo.get_by_id_with_profiles(token_record.user_id)
+        if not user or not user.is_active or user.role != UserRole.STAFF:
+            raise BadRequestException("Invalid staff account for this setup link.")
+
+        if user.staff_profile and user.staff_profile.status == "ACTIVE":
+            raise BadRequestException(
+                "This staff account has already been activated. Please use the normal login page."
+            )
+
+        return token_record, user
+
+    def complete_staff_setup(self, raw_token: str, password: str, pin: str) -> User:
+        """Atomically activate staff account by setting password, PIN, and status=ACTIVE."""
+        token_record, user = self.validate_staff_setup_token(raw_token)
+
+        try:
+            user.password_hash = hash_password(password)
+            if user.staff_profile:
+                user.staff_profile.pin_hash = hash_pin(pin)
+                user.staff_profile.status = "ACTIVE"
+                user.staff_profile.activated_at = datetime.now(timezone.utc)
+            user.updated_at = datetime.now(timezone.utc)
+
+            token_record.used_at = datetime.now(timezone.utc)
 
             self.db.commit()
             return self.get_staff_by_id(user.id)
         except Exception:
             self.db.rollback()
             raise
+
+    def resend_staff_setup_token(self, staff_id: UUID) -> tuple[User, str]:
+        """Invalidate old tokens and generate a fresh setup token for pending staff."""
+        user = self.get_staff_by_id(staff_id)
+        if user.staff_profile and user.staff_profile.status == "ACTIVE":
+            raise BadRequestException("This staff member has already activated their account.")
+
+        # Invalidate any existing active tokens for this user
+        now_utc = datetime.now(timezone.utc)
+        self.db.query(StaffOnboardingToken).filter(
+            StaffOnboardingToken.user_id == staff_id,
+            StaffOnboardingToken.used_at.is_(None),
+        ).update({"used_at": now_utc}, synchronize_session=False)
+
+        raw_token, _ = self.generate_staff_setup_token(staff_id)
+        self.db.commit()
+        return user, raw_token
 
     def get_staff_by_id(self, staff_id: UUID) -> User:
         """Retrieve staff user by ID."""

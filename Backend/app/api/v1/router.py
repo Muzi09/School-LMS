@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     admin,
     auth,
     onboarding,
+    principal_email,
     school_config,
     staff,
     students,
@@ -17,6 +18,7 @@ api_router.include_router(auth.router)
 api_router.include_router(admin.router)
 api_router.include_router(super_admin.router)
 api_router.include_router(onboarding.router)
+api_router.include_router(principal_email.router)
 api_router.include_router(school_config.router)
 api_router.include_router(staff.router)
 api_router.include_router(students.router)

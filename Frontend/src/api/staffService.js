@@ -47,3 +47,25 @@ export async function updateStaffStatusApi(staffId, isActive) {
 export async function deleteStaffApi(staffId) {
   return apiClient.delete(`/staff/${staffId}`)
 }
+
+/**
+ * Resend Staff account setup invitation email/link.
+ */
+export async function resendStaffSetupApi(staffId) {
+  return apiClient.post(`/staff/${staffId}/resend-setup`)
+}
+
+/**
+ * Validate one-time Staff onboarding token.
+ */
+export async function validateStaffSetupTokenApi(token) {
+  return apiClient.get("/staff/setup/validate", { params: { token } })
+}
+
+/**
+ * Complete Staff account setup (create password and PIN).
+ */
+export async function completeStaffSetupApi({ token, password, pin }) {
+  return apiClient.post("/staff/setup", { token, password, pin })
+}
+

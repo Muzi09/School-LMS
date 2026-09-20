@@ -6,10 +6,16 @@ import {
   Eye,
   Edit2,
   Trash2,
+  Send,
+  Copy,
+  Check,
+  Loader2,
+  ShieldAlert,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useStaffList, useUpdateStaffStatus } from "@/hooks/useStaff"
+import { resendStaffSetupApi } from "@/api/staffService"
 import { PageHeader } from "@/components/common/PageHeader"
 import { DataTable } from "@/components/common/DataTable"
 import { StaffFormModal } from "./StaffFormModal"
@@ -20,6 +26,9 @@ import { formatDateTime } from "@/lib/utils"
 export function StaffList() {
   const [globalFilter, setGlobalFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
+  const [setupModalData, setSetupModalData] = useState(null)
+  const [isResendingId, setIsResendingId] = useState(null)
+  const [isCopiedLink, setIsCopiedLink] = useState(false)
   const [pagination, setPagination] = useState({
     pageIndex: 0,
     pageSize: 10,
@@ -60,6 +69,25 @@ export function StaffList() {
     })
   }
 
+  const handleResendSetup = async (staff) => {
+    try {
+      setIsResendingId(staff.id)
+      const res = await resendStaffSetupApi(staff.id)
+      const data = res?.data || res
+      setSetupModalData({
+        staffName: `${staff.first_name} ${staff.last_name}`.trim(),
+        setupUrl: data.setup_url,
+        emailSent: data.email_sent,
+        message: data.message,
+      })
+      refetch()
+    } catch (err) {
+      alert(err.response?.data?.detail || err.message || "Failed to generate setup link.")
+    } finally {
+      setIsResendingId(null)
+    }
+  }
+
   const columns = useMemo(
     () => [
       {
@@ -95,6 +123,37 @@ export function StaffList() {
         ),
       },
       {
+        id: "account_status",
+        header: "Account Status",
+        accessorFn: (row) => row.status || row.staff_profile?.status || "PENDING_ACTIVATION",
+        Cell: ({ cell }) => {
+          const status = cell.getValue()
+          const isPending = status === "PENDING_ACTIVATION"
+          return (
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                isPending
+                  ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+              }`}
+            >
+              <span className={`size-1.5 rounded-full ${isPending ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`} />
+              <span>{isPending ? "Pending Activation" : "Active"}</span>
+            </span>
+          )
+        },
+      },
+      {
+        id: "created_by_name",
+        header: "Created By",
+        accessorFn: (row) => row.created_by_name || "Principal",
+        Cell: ({ cell }) => (
+          <span className="text-foreground text-sm font-medium">
+            {cell.getValue()}
+          </span>
+        ),
+      },
+      {
         accessorKey: "login_mobile",
         header: "Login Mobile",
         Cell: ({ cell }) => (
@@ -114,7 +173,7 @@ export function StaffList() {
       },
       {
         accessorKey: "is_active",
-        header: "Status",
+        header: "Active Status",
         Cell: ({ row }) => {
           const s = row.original
           return (
@@ -240,6 +299,23 @@ export function StaffList() {
           const s = row.original
           return (
             <div className="flex items-center justify-end gap-1.5">
+              {s.status === "PENDING_ACTIVATION" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Resend Setup Email or Copy Setup Link"
+                  disabled={isResendingId === s.id}
+                  onClick={() => handleResendSetup(s)}
+                  className="h-8 px-2.5 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-lg gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  {isResendingId === s.id ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Send className="size-3.5" />
+                  )}
+                  <span className="hidden sm:inline">Setup Link</span>
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -248,7 +324,7 @@ export function StaffList() {
                   setViewingStaff(s)
                   setIsDetailsOpen(true)
                 }}
-                className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
               >
                 <Eye className="size-4" />
               </Button>
@@ -260,7 +336,7 @@ export function StaffList() {
                   setEditingStaff(s)
                   setIsFormOpen(true)
                 }}
-                className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
               >
                 <Edit2 className="size-4" />
               </Button>
@@ -272,7 +348,7 @@ export function StaffList() {
                   setDeletingStaff(s)
                   setIsDeleteOpen(true)
                 }}
-                className="size-8 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+                className="size-8 text-destructive/80 hover:text-destructive hover:bg-destructive/10 cursor-pointer"
               >
                 <Trash2 className="size-4" />
               </Button>
@@ -319,6 +395,69 @@ export function StaffList() {
         onClose={() => setIsDeleteOpen(false)}
         staff={deletingStaff}
       />
+
+      {/* Resend / Share Setup Link Modal */}
+      {setupModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-background/80 backdrop-blur-xs animate-in fade-in-0 duration-200"
+            onClick={() => setSetupModalData(null)}
+          />
+          <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 text-center z-10 animate-in fade-in-0 zoom-in-95 duration-200 space-y-4">
+            <div className="size-14 mx-auto rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-sm">
+              <Send className="size-7" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Staff Setup Link</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {setupModalData.emailSent
+                  ? `A fresh setup invitation has been sent to ${setupModalData.staffName}'s email address.`
+                  : `Outgoing email was not sent (Email Setup not active). Please copy and share this link manually.`}
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-muted/60 border border-border text-left space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">
+                  One-Time Setup Link:
+                </label>
+                <span className="text-[10px] text-muted-foreground">Expires in 48 hours</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={setupModalData.setupUrl}
+                  className="flex-1 h-9 px-3 text-xs bg-background border border-border rounded-lg text-foreground font-mono truncate"
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(setupModalData.setupUrl)
+                    setIsCopiedLink(true)
+                    setTimeout(() => setIsCopiedLink(false), 2000)
+                  }}
+                  className="h-9 px-3 text-xs font-semibold rounded-lg shrink-0 gap-1.5 cursor-pointer"
+                >
+                  {isCopiedLink ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+                  <span>{isCopiedLink ? "Copied!" : "Copy"}</span>
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                The staff member will use this link to set their master password and 4-digit PIN.
+              </p>
+            </div>
+
+            <Button
+              type="button"
+              onClick={() => setSetupModalData(null)}
+              className="w-full h-10 text-sm font-semibold rounded-xl cursor-pointer"
+            >
+              Done & Close
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

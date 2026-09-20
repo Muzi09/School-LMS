@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, ForeignKey, Index, SmallInteger, String
+from sqlalchemy import Date, DateTime, ForeignKey, Index, SmallInteger, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
@@ -10,6 +10,7 @@ from app.models.base import Base
 from app.models.enums import Gender
 
 if TYPE_CHECKING:
+    from app.models.school import School
     from app.models.user import User
 
 
@@ -29,6 +30,15 @@ class StaffProfile(Base):
         ),
         unique=True,
         nullable=False,
+    )
+
+    school_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey(
+            "schools.id",
+            ondelete="CASCADE",
+        ),
+        nullable=True,
     )
 
     roll_no: Mapped[str] = mapped_column(
@@ -56,10 +66,42 @@ class StaffProfile(Base):
         nullable=False,
     )
 
+    pin_hash: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="PENDING_ACTIVATION",
+        server_default="PENDING_ACTIVATION",
+    )
+
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    department: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    designation: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
     # Relationships
     user: Mapped["User"] = relationship(
         "User",
         back_populates="staff_profile",
+    )
+
+    school: Mapped["School | None"] = relationship(
+        "School",
+        foreign_keys=[school_id],
     )
 
     @declared_attr
@@ -68,5 +110,13 @@ class StaffProfile(Base):
             Index(
                 "idx_staff_profiles_roll_no",
                 cls.roll_no,
+            ),
+            Index(
+                "idx_staff_profiles_status",
+                cls.status,
+            ),
+            Index(
+                "idx_staff_profiles_school_id",
+                cls.school_id,
             ),
         )

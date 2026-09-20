@@ -2,32 +2,9 @@ import {
   GraduationCap,
   Briefcase,
 } from "lucide-react"
+import { Permission } from "@/lib/permissions"
 
 export const sidebarNavGroups = [
-  // {
-  //   id: "overview",
-  //   label: "Overview",
-  //   items: [
-  //     {
-  //       title: "Dashboard",
-  //       description: "Welcome back to Apex Academy LMS. Overview of academic sessions and attendance.",
-  //       url: "/",
-  //       icon: LayoutDashboard,
-  //     },
-  //     {
-  //       title: "Courses",
-  //       description: "Explore curriculum catalogs, student enrollments, and syllabus milestones.",
-  //       url: "/courses",
-  //       icon: BookOpen,
-  //     },
-  //     {
-  //       title: "Calendar",
-  //       description: "View and manage daily class schedules, lecture halls, and timetables.",
-  //       url: "/schedule",
-  //       icon: Calendar,
-  //     },
-  //   ],
-  // },
   {
     id: "management",
     label: "User Management",
@@ -37,12 +14,14 @@ export const sidebarNavGroups = [
         description: "Manage teaching and administrative staff, credentials, and staff profiles.",
         url: "/staff",
         icon: Briefcase,
+        permission: Permission.MANAGE_STAFF,
       },
       {
         title: "Manage Students",
         description: "Register students, academic placement, sections, and guardian contact details.",
         url: "/students",
         icon: GraduationCap,
+        permission: Permission.VIEW_STUDENT,
       },
     ],
   },

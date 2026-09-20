@@ -30,20 +30,6 @@ export const getStaffValidationSchema = (isEdit = false) => {
       .matches(EMAIL_REGEX, "Please enter a valid email address")
       .max(100, "Email cannot exceed 100 characters"),
 
-    password: isEdit
-      ? Yup.string()
-          .trim()
-          .transform((value) => (value === "" ? undefined : value))
-          .nullable()
-          .notRequired()
-          .min(8, "Password must be at least 8 characters")
-          .max(100, "Password cannot exceed 100 characters")
-      : Yup.string()
-          .trim()
-          .required("Password is required")
-          .min(8, "Password must be at least 8 characters")
-          .max(100, "Password cannot exceed 100 characters"),
-
     roll_no: Yup.string()
       .trim()
       .required("Staff ID is required")

@@ -28,3 +28,16 @@ export const quickValidationSchema = Yup.object().shape({
 })
 
 export const getQuickLoginValidationSchema = () => quickValidationSchema
+
+/**
+ * Yup validation schema for Principal Email Setup Modal
+ */
+export const principalEmailSetupValidationSchema = Yup.object().shape({
+  email: Yup.string()
+    .trim()
+    .matches(SIMPLE_EMAIL_REGEX, "Invalid email format")
+    .required("Email address is required"),
+  app_password: Yup.string().trim().required("App Password is required"),
+})
+
+export const getPrincipalEmailSetupValidationSchema = () => principalEmailSetupValidationSchema

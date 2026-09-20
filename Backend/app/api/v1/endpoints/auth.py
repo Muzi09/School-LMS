@@ -82,6 +82,15 @@ def login(
             detail="Invalid email or password",
         )
 
+    # Check if Staff is in pending activation state
+    if user.role == UserRole.STAFF:
+        staff_profile = getattr(user, "staff_profile", None)
+        if (staff_profile and staff_profile.status == "PENDING_ACTIVATION") or not user.password_hash:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your account has not been activated yet. Please use the setup link sent to your email to create your password and PIN.",
+            )
+
     if not user.password_hash or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -97,7 +106,7 @@ def quick_login(
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Quick login using Email + PIN (Principal only).
+    Quick login using Email + PIN (Principal and active Staff).
     """
     email_clean = payload.email.strip().lower()
     user = (
@@ -115,10 +124,18 @@ def quick_login(
             detail="Invalid email or PIN",
         )
 
-    if user.role != UserRole.PRINCIPAL:
+    # Check if Staff is in pending activation state
+    if user.role == UserRole.STAFF:
+        staff_profile = getattr(user, "staff_profile", None)
+        if (staff_profile and staff_profile.status == "PENDING_ACTIVATION") or not user.pin_hash:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your account has not been activated yet. Please use the setup link sent to your email to create your password and PIN.",
+            )
+    elif user.role != UserRole.PRINCIPAL:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Quick PIN login is exclusively available for School Principals",
+            detail="Quick PIN login is exclusively available for School Principals and Staff",
         )
 
     if not user.pin_hash or not verify_pin(payload.pin, user.pin_hash):

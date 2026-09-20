@@ -1,5 +1,6 @@
-import React, { useState } from "react"
-import { useLocation, Link } from "react-router-dom"
+import { useState, useRef } from "react"
+import { useLocation } from "react-router-dom"
+import { cn } from "@/lib/utils"
 import {
   Search,
   Bell,
@@ -12,7 +13,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Sparkles,
   LogOut,
 } from "lucide-react"
 
@@ -22,7 +22,6 @@ import {
   Breadcrumb,
   BreadcrumbList,
   BreadcrumbItem,
-  BreadcrumbLink,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
@@ -36,16 +35,34 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useTheme } from "@/context/ThemeContext"
 import { useAuth } from "@/context/AuthContext"
 import { getRouteMeta } from "@/constants/nav-items"
+import { useQuery } from "@tanstack/react-query"
+import { getPrincipalEmailSetupApi } from "@/api/principalEmailService"
+import { PrincipalEmailSetupModal } from "@/pages/principal/PrincipalEmailSetupModal"
+import { PopoverTrigger } from "@/components/ui/popover"
 
 export function AppHeader() {
   const location = useLocation()
   const { user, logout } = useAuth()
   const { resolvedTheme, toggleTheme } = useTheme()
   const [searchQuery, setSearchQuery] = useState("")
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false)
+
+  const isPrincipal = user?.role === 1
+  const { data: emailSetupData } = useQuery({
+    queryKey: ["principalEmailSetup"],
+    queryFn: async () => {
+      const res = await getPrincipalEmailSetupApi()
+      return res?.data ?? res
+    },
+    enabled: isPrincipal,
+    staleTime: 30000,
+  })
+
+  const isEmailConfigured = Boolean(emailSetupData?.is_configured)
 
   const currentRouteInfo = getRouteMeta(location.pathname)
 
@@ -148,6 +165,56 @@ export function AppHeader() {
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenu>
+
+        {/* Principal Email Setup Status Indicator */}
+        {isPrincipal && (
+          <PopoverTrigger
+            isOpen={isEmailModalOpen}
+            onOpenChange={setIsEmailModalOpen}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-8 px-2.5 text-xs font-semibold rounded-xl border inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all cursor-pointer shadow-xs",
+                isEmailConfigured
+                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                  : "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20",
+                isEmailModalOpen &&
+                  (isEmailConfigured
+                    ? "ring-2 ring-emerald-500/40 bg-emerald-500/20"
+                    : "ring-2 ring-amber-500/40 bg-amber-500/20")
+              )}
+              title={
+                isEmailConfigured
+                  ? "Email Setup Active: Outgoing staff invitations configured"
+                  : "Email Setup Required: Configure your school email account to send staff invitations"
+              }
+            >
+              {isEmailConfigured ? (
+                <>
+                  <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="hidden sm:inline">Email Setup</span>
+                  <span className="sm:hidden">Email</span>
+                </>
+              ) : (
+                <>
+                  <span className="relative flex size-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full size-2 bg-amber-500"></span>
+                  </span>
+                  <span className="hidden sm:inline">Email Setup Required</span>
+                  <span className="sm:hidden">Email Setup</span>
+                </>
+              )}
+            </Button>
+            <PrincipalEmailSetupModal
+              isOpen={isEmailModalOpen}
+              onClose={() => setIsEmailModalOpen(false)}
+              existingConfig={emailSetupData}
+            />
+          </PopoverTrigger>
+        )}
 
         {/* Theme Toggle Button */}
         <Button

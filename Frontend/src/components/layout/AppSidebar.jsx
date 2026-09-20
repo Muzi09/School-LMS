@@ -37,6 +37,7 @@ import {
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { sidebarNavGroups } from "@/constants/nav-items"
 import { useAuth } from "@/context/AuthContext"
+import { hasPermission } from "@/lib/permissions"
 
 export function AppSidebar({ ...props }) {
   const location = useLocation()
@@ -99,17 +100,24 @@ export function AppSidebar({ ...props }) {
 
       {/* Sidebar Content (Iterated dynamically from sidebarNavGroups) */}
       <SidebarContent className="gap-2 p-2 group-data-[collapsible=icon]:p-1">
-        {sidebarNavGroups.map((group) => (
-          <SidebarGroup key={group.id}>
-            {group.label && (
-              <SidebarGroupLabel className="px-2 text-[11px] font-medium text-muted-foreground/80 tracking-wider uppercase">
-                {group.label}
-              </SidebarGroupLabel>
-            )}
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => {
-                  const active = isRouteActive(item.url)
+        {sidebarNavGroups.map((group) => {
+          const visibleItems = group.items.filter((item) => {
+            if (!item.permission) return true
+            return hasPermission(user?.role, item.permission)
+          })
+          if (visibleItems.length === 0) return null
+
+          return (
+            <SidebarGroup key={group.id}>
+              {group.label && (
+                <SidebarGroupLabel className="px-2 text-[11px] font-medium text-muted-foreground/80 tracking-wider uppercase">
+                  {group.label}
+                </SidebarGroupLabel>
+              )}
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleItems.map((item) => {
+                    const active = isRouteActive(item.url)
                   return (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton
@@ -153,7 +161,8 @@ export function AppSidebar({ ...props }) {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        ))}
+          )
+        })}
       </SidebarContent>
 
       {/* Sidebar Footer with User Profile Dropdown */}

@@ -6,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.permissions import Permission, get_role_permissions, has_permission
 from app.core.security import decode_access_token
 from app.models.enums import UserRole
 from app.models.user import User
@@ -117,6 +118,36 @@ class RoleChecker:
         return current_user
 
 
+class PermissionChecker:
+    """
+    Fine-grained permission check dependency.
+    Enforces that the current authenticated user's role has the required permission.
+    """
+
+    def __init__(self, required_permission: Permission, require_setup_completed: bool = True):
+        self.required_permission = required_permission
+        self.require_setup_completed = require_setup_completed
+
+    def __call__(
+        self,
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        if not has_permission(current_user.role, self.required_permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operation not permitted: missing permission '{self.required_permission.value}'",
+            )
+
+        if self.require_setup_completed and current_user.role == UserRole.PRINCIPAL:
+            if not current_user.school_setup_completed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="School setup has not been completed. Please complete the onboarding wizard first.",
+                )
+
+        return current_user
+
+
 # Convenience role dependencies
 require_admin = RoleChecker([UserRole.ADMIN])
 require_principal = RoleChecker([UserRole.PRINCIPAL], require_setup_completed=True)
@@ -129,6 +160,15 @@ require_any_authenticated = RoleChecker([
     UserRole.STUDENT,
     UserRole.SALES_PERSON,
 ])
+
+# Convenience permission dependencies
+require_manage_staff = PermissionChecker(Permission.MANAGE_STAFF)
+require_create_staff = PermissionChecker(Permission.CREATE_STAFF)
+require_view_staff = PermissionChecker(Permission.VIEW_STAFF)
+require_update_staff = PermissionChecker(Permission.UPDATE_STAFF)
+require_delete_staff = PermissionChecker(Permission.DELETE_STAFF)
+require_resend_staff_setup = PermissionChecker(Permission.RESEND_STAFF_SETUP)
+require_manage_email_setup = PermissionChecker(Permission.MANAGE_EMAIL_SETUP)
 
 # Backward compatibility aliases
 require_super_admin = require_admin

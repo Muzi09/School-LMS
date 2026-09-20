@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from app.models.principal import PrincipalProfile
     from app.models.smtp_configuration import SmtpConfiguration
     from app.models.staff import StaffProfile
+    from app.models.staff_onboarding_token import StaffOnboardingToken
     from app.models.student import StudentProfile
 
 
@@ -98,6 +99,12 @@ class User(Base, AuditMixin):
         cascade="all, delete-orphan",
     )
 
+    staff_onboarding_tokens: Mapped[List["StaffOnboardingToken"]] = relationship(
+        "StaffOnboardingToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
     smtp_configuration: Mapped["SmtpConfiguration | None"] = relationship(
         "SmtpConfiguration",
         back_populates="admin",
@@ -109,14 +116,18 @@ class User(Base, AuditMixin):
     # Backward compatibility properties
     @property
     def school_id(self) -> UUID | None:
-        if self.principal_profile:
+        if self.principal_profile and self.principal_profile.school_id:
             return self.principal_profile.school_id
+        if self.staff_profile and self.staff_profile.school_id:
+            return self.staff_profile.school_id
         return None
 
     @property
     def pin_hash(self) -> str | None:
-        if self.principal_profile:
+        if self.principal_profile and self.principal_profile.pin_hash:
             return self.principal_profile.pin_hash
+        if self.staff_profile and self.staff_profile.pin_hash:
+            return self.staff_profile.pin_hash
         return None
 
     @property
@@ -124,6 +135,24 @@ class User(Base, AuditMixin):
         if self.principal_profile:
             return self.principal_profile.school_setup_completed
         return False
+
+    @property
+    def staff_status(self) -> str | None:
+        if self.staff_profile:
+            return self.staff_profile.status
+        return None
+
+    @property
+    def status(self) -> str:
+        if self.staff_profile and self.staff_profile.status:
+            return self.staff_profile.status
+        return "ACTIVE" if self.is_active else "INACTIVE"
+
+    @property
+    def created_by_name(self) -> str | None:
+        if self.created_by_user:
+            return f"{self.created_by_user.first_name} {self.created_by_user.last_name}".strip()
+        return None
 
     @declared_attr
     def __table_args__(cls):

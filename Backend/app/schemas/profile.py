@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,11 +50,18 @@ class StaffProfileUpdate(BaseModel):
     date_of_birth: date | None = None
     father_first_name: str | None = Field(default=None, min_length=1, max_length=100)
     father_last_name: str | None = Field(default=None, min_length=1, max_length=100)
+    department: str | None = Field(default=None, max_length=100)
+    designation: str | None = Field(default=None, max_length=100)
 
 
 class StaffProfileRead(StaffProfileBase):
     id: UUID
     user_id: UUID
+    status: str = "PENDING_ACTIVATION"
+    school_id: UUID | None = None
+    activated_at: datetime | None = None
+    department: str | None = None
+    designation: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
