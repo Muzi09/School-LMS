@@ -22,7 +22,7 @@ import { PrincipalsManagement } from "@/pages/admin/PrincipalsManagement"
 import { PlatformUsersManagement } from "@/pages/admin/UsersManagement"
 
 // Principal & Onboarding Pages
-import { PrincipalLogin } from "@/pages/principal/PrincipalLogin"
+import { PrincipalLogin } from "@/pages/principal/Login"
 import { SchoolSetupWizard } from "@/pages/principal/SchoolSetupWizard"
 
 // School User Management Pages

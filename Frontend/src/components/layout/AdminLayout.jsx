@@ -203,7 +203,5 @@ export function AdminLayout() {
   )
 }
 
-// Backward compatibility alias
-export const SuperAdminLayout = AdminLayout
 
 export default AdminLayout

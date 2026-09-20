@@ -1,2 +1,2 @@
 export * from "./nav-items"
-export * from "./schoolSetup.constants"
+export * from "./schoolSetup"
