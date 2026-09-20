@@ -1,19 +1,11 @@
 import React, { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useFormik } from "formik"
-import * as Yup from "yup"
 import { ShieldCheck, Lock, Mail, Eye, EyeOff, ArrowRight, AlertCircle } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-
-const validationSchema = Yup.object().shape({
-  email: Yup.string()
-    .trim()
-    .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email format")
-    .required("Email is required"),
-  password: Yup.string().required("Password is required"),
-})
+import { adminLoginValidationSchema } from "@/validations"
 
 export function AdminLogin() {
   const { login } = useAuth()
@@ -27,7 +19,7 @@ export function AdminLogin() {
       email: "",
       password: "",
     },
-    validationSchema,
+    validationSchema: adminLoginValidationSchema,
     onSubmit: async (values) => {
       setServerError(null)
       setIsSubmitting(true)

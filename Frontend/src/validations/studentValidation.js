@@ -1,14 +1,11 @@
 import * as Yup from "yup"
-
-// Standard regex patterns
-export const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-export const PHONE_REGEX = /^[0-9]{10,15}$/
+import { EMAIL_REGEX, PHONE_REGEX } from "./patterns"
 
 /**
  * Creates Yup validation schema for Student form (Create / Edit mode)
  * In Student form, everything except middle_name is required.
  */
-export const getStudentValidationSchema = (isEdit = false) => {
+export const getStudentValidationSchema = () => {
   return Yup.object().shape({
     first_name: Yup.string()
       .trim()
@@ -84,3 +81,5 @@ export const getStudentValidationSchema = (isEdit = false) => {
       .max(50, "Father's last name cannot exceed 50 characters"),
   })
 }
+
+export default getStudentValidationSchema

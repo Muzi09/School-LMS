@@ -18,7 +18,7 @@ import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "@/context/ThemeContext"
 import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
-import { SmtpConfigModal } from "@/components/admin/SmtpConfigModal"
+import { SmtpConfigModal } from "@/pages/admin/SmtpConfigModal"
 
 export function AdminLayout() {
   const { user, logout } = useAuth()

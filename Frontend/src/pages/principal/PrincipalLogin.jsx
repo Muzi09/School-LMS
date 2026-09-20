@@ -1,7 +1,6 @@
 import React, { useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useFormik } from "formik"
-import * as Yup from "yup"
 import {
   GraduationCap,
   KeyRound,
@@ -16,24 +15,7 @@ import {
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-
-const generalValidationSchema = Yup.object().shape({
-  email: Yup.string()
-    .trim()
-    .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email format")
-    .required("Email is required"),
-  password: Yup.string().required("Password is required"),
-})
-
-const quickValidationSchema = Yup.object().shape({
-  email: Yup.string()
-    .trim()
-    .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email format")
-    .required("Email is required"),
-  pin: Yup.string()
-    .matches(/^\d{4,10}$/, "PIN must be 4 to 10 digits")
-    .required("PIN is required"),
-})
+import { generalValidationSchema, quickValidationSchema } from "@/validations"
 
 export function PrincipalLogin() {
   const { login, quickLogin } = useAuth()

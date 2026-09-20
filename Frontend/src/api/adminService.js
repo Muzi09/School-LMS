@@ -38,7 +38,4 @@ export const adminService = {
   },
 }
 
-// Backward compatibility alias
-export const superAdminService = adminService
-
 export default adminService

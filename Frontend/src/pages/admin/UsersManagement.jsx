@@ -1,7 +1,6 @@
 import React, { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useFormik } from "formik"
-import * as Yup from "yup"
 import {
   Users,
   ShieldCheck,
@@ -25,22 +24,7 @@ import { Badge } from "@/components/ui/badge"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { PageHeader } from "@/components/common/PageHeader"
 import { formatDateTime } from "@/lib/utils"
-
-const userValidationSchema = Yup.object().shape({
-  first_name: Yup.string().trim().max(50, "Max 50 characters").required("First name is required"),
-  last_name: Yup.string().trim().max(50, "Max 50 characters").required("Last name is required"),
-  email: Yup.string()
-    .trim()
-    .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email format")
-    .required("Email is required"),
-  login_mobile: Yup.string()
-    .trim()
-    .matches(/^\d{5,20}$/, "Mobile must be between 5 and 20 digits")
-    .required("Mobile number is required"),
-  password: Yup.string()
-    .min(8, "Password must be at least 8 characters")
-    .required("Password is required"),
-})
+import { userValidationSchema } from "@/validations"
 
 export function PlatformUsersManagement() {
   const queryClient = useQueryClient()

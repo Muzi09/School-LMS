@@ -16,10 +16,10 @@ import {
 } from "@/components/auth/ProtectedRoute"
 
 // Admin Pages
-import { AdminLogin } from "@/pages/admin/AdminLogin"
-import { AdminDashboard } from "@/pages/admin/AdminDashboard"
+import { AdminLogin } from "@/pages/admin/Login"
+import { AdminDashboard } from "@/pages/admin/Dashboard"
 import { PrincipalsManagement } from "@/pages/admin/PrincipalsManagement"
-import { PlatformUsersManagement } from "@/pages/admin/PlatformUsersManagement"
+import { PlatformUsersManagement } from "@/pages/admin/UsersManagement"
 
 // Principal & Onboarding Pages
 import { PrincipalLogin } from "@/pages/principal/PrincipalLogin"

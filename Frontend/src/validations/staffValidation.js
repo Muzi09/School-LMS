@@ -1,8 +1,5 @@
 import * as Yup from "yup"
-
-// Standard regex patterns
-export const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-export const PHONE_REGEX = /^[0-9]{10,15}$/
+import { EMAIL_REGEX, PHONE_REGEX } from "./patterns"
 
 /**
  * Creates Yup validation schema for Staff form (Create / Edit mode)
@@ -73,3 +70,5 @@ export const getStaffValidationSchema = (isEdit = false) => {
       .max(50, "Father's last name cannot exceed 50 characters"),
   })
 }
+
+export default getStaffValidationSchema

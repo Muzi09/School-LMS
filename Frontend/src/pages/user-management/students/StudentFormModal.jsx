@@ -16,7 +16,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { useCreateStudent, useUpdateStudent } from "@/hooks/useStudents"
 import { schoolConfigService } from "@/api/schoolConfigService"
 import { calculateStudentRollNoApi } from "@/api/studentService"
-import { getStudentValidationSchema } from "./studentValidation"
+import { getStudentValidationSchema } from "@/validations"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { cn } from "@/lib/utils"
 

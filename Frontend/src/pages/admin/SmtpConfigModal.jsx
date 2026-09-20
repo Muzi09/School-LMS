@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from "react"
+import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useFormik } from "formik"
-import * as Yup from "yup"
 import {
   Mail,
   Server,
@@ -10,7 +9,6 @@ import {
   EyeOff,
   CheckCircle2,
   AlertCircle,
-  X,
   Loader2,
   Sparkles,
   ArrowRight,
@@ -22,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { cn } from "@/lib/utils"
+import { smtpConfigValidationSchema } from "@/validations"
 
 export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
   const queryClient = useQueryClient()
@@ -43,22 +42,6 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
     .join(" ")
   const defaultSenderName = existingConfig?.from_name || userFullName || "School LMS Platform"
 
-  const validationSchema = Yup.object().shape({
-    smtp_host: Yup.string().trim().required("SMTP Host is required"),
-    smtp_port: Yup.number()
-      .typeError("Port must be a valid number")
-      .integer("Port must be an integer")
-      .min(1, "Minimum port is 1")
-      .max(999, "Maximum port is 3 digits (999)")
-      .required("Port is required"),
-    from_email: Yup.string()
-      .trim()
-      .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email format")
-      .required("From Email Address is required"),
-    smtp_password: Yup.string().trim().required("App Password is required"),
-    from_name: Yup.string().trim().required("From Sender Name is required"),
-  })
-
   const formik = useFormik({
     initialValues: {
       smtp_host: existingConfig?.smtp_host || "smtp.gmail.com",
@@ -67,7 +50,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
       smtp_password: existingConfig?.smtp_password || "",
       from_name: defaultSenderName,
     },
-    validationSchema,
+    validationSchema: smtpConfigValidationSchema,
     enableReinitialize: true,
     onSubmit: async (values) => {
       setServerError("")
@@ -172,6 +155,13 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
         {/* Form Body */}
         <form onSubmit={formik.handleSubmit} className="p-6 space-y-4.5 overflow-y-auto flex-1">
           
+
+          {successMessage && (
+            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs flex items-start gap-2.5 animate-in fade-in-50">
+              <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-500" />
+              <span className="leading-relaxed">{successMessage}</span>
+            </div>
+          )}
 
           {serverError && (
             <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2.5 animate-in fade-in-50">

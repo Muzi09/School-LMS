@@ -55,401 +55,29 @@ import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-
-const INDIAN_STATES = [
-  "Andaman and Nicobar Islands",
-  "Andhra Pradesh",
-  "Arunachal Pradesh",
-  "Assam",
-  "Bihar",
-  "Chandigarh",
-  "Chhattisgarh",
-  "Dadra and Nagar Haveli and Daman and Diu",
-  "Delhi",
-  "Goa",
-  "Gujarat",
-  "Haryana",
-  "Himachal Pradesh",
-  "Jammu and Kashmir",
-  "Jharkhand",
-  "Karnataka",
-  "Kerala",
-  "Ladakh",
-  "Lakshadweep",
-  "Madhya Pradesh",
-  "Maharashtra",
-  "Manipur",
-  "Meghalaya",
-  "Mizoram",
-  "Nagaland",
-  "Odisha",
-  "Puducherry",
-  "Punjab",
-  "Rajasthan",
-  "Sikkim",
-  "Tamil Nadu",
-  "Telangana",
-  "Tripura",
-  "Uttar Pradesh",
-  "Uttarakhand",
-  "West Bengal",
-]
-
-const THEME_COLOR_PRESETS = [
-  { label: "Default", value: "#FFFFFF" },
-  { label: "Royal Blue", value: "#2563EB" },
-  { label: "Emerald Green", value: "#059669" },
-  { label: "Crimson Red", value: "#DC2626" },
-  { label: "Amethyst Purple", value: "#7C3AED" },
-  { label: "Indigo Slate", value: "#4F46E5" },
-  { label: "Teal Cyan", value: "#0D9488" },
-  { label: "Amber Gold", value: "#D97706" },
-]
-
-const CURATED_HOUSE_PALETTE = [
-  { name: "Red", hex: "#EF4444" },
-  { name: "Blue", hex: "#3B82F6" },
-  { name: "Green", hex: "#10B981" },
-  { name: "Yellow", hex: "#F59E0B" },
-  { name: "Orange", hex: "#F97316" },
-  { name: "Purple", hex: "#8B5CF6" },
-  { name: "Pink", hex: "#EC4899" },
-  { name: "Maroon", hex: "#991B1B" },
-  { name: "Navy", hex: "#1E3A8A" },
-  { name: "Cyan", hex: "#06B6D4" },
-  { name: "Slate", hex: "#64748B" },
-]
-
-const INITIAL_DEFAULT_CLASSES = [
-  "Nursery",
-  "LKG",
-  "UKG",
-  "Class 1",
-  "Class 2",
-  "Class 3",
-  "Class 4",
-  "Class 5",
-  "Class 6",
-  "Class 7",
-  "Class 8",
-  "Class 9",
-  "Class 10",
-  "Class 11",
-  "Class 12",
-]
-
-const INITIAL_DEFAULT_SECTIONS = [
-  "Section A",
-  "Section B",
-  "Section C",
-]
-
-const SENIOR_SECONDARY_DEFAULT_SECTIONS = [
-  "Science",
-  "Commerce",
-  "Arts/Humanities",
-]
-
-const STREAM_DEFAULT_SUBJECTS = {
-  Science: {
-    academic: [
-      "English",
-      "Physics",
-      "Chemistry",
-      "Mathematics",
-      "Biology",
-      "Computer Science/Informatics Practices",
-    ],
-    nonAcademic: ["Physical Education"],
-  },
-  Commerce: {
-    academic: [
-      "English",
-      "Accountancy",
-      "Business Studies",
-      "Economics",
-      "Mathematics",
-      "Computer Science/Informatics Practices",
-    ],
-    nonAcademic: ["Physical Education"],
-  },
-  "Arts/Humanities": {
-    academic: [
-      "English",
-      "History",
-      "Political Science",
-      "Geography",
-      "Economics",
-      "Sociology",
-    ],
-    nonAcademic: ["Physical Education"],
-  },
-  Arts: {
-    academic: [
-      "English",
-      "History",
-      "Political Science",
-      "Geography",
-      "Economics",
-      "Sociology",
-    ],
-    nonAcademic: ["Physical Education"],
-  },
-  Humanities: {
-    academic: [
-      "English",
-      "History",
-      "Political Science",
-      "Geography",
-      "Economics",
-      "Sociology",
-    ],
-    nonAcademic: ["Physical Education"],
-  },
-}
-
-const isSeniorSecondaryClass = (className) => {
-  const trimmed = (className || "").trim().toLowerCase()
-  return (
-    trimmed === "class 11" ||
-    trimmed === "class 12" ||
-    trimmed === "11" ||
-    trimmed === "12" ||
-    trimmed === "grade 11" ||
-    trimmed === "grade 12" ||
-    /^(class\s*|grade\s*)?(11|12)(th)?$/i.test(trimmed)
-  )
-}
-
-const getDefaultSectionsForClass = (className) => {
-  if (isSeniorSecondaryClass(className)) {
-    return [...SENIOR_SECONDARY_DEFAULT_SECTIONS]
-  }
-  return [...INITIAL_DEFAULT_SECTIONS]
-}
-
-const getDefaultSubjectsForStreamSection = (sectionName) => {
-  const sec = (sectionName || "").trim()
-  if (STREAM_DEFAULT_SUBJECTS[sec]) {
-    return {
-      academic: [...STREAM_DEFAULT_SUBJECTS[sec].academic],
-      nonAcademic: [...STREAM_DEFAULT_SUBJECTS[sec].nonAcademic],
-    }
-  }
-  const lower = sec.toLowerCase()
-  if (lower.includes("sci")) {
-    return {
-      academic: [...STREAM_DEFAULT_SUBJECTS.Science.academic],
-      nonAcademic: [...STREAM_DEFAULT_SUBJECTS.Science.nonAcademic],
-    }
-  }
-  if (lower.includes("comm")) {
-    return {
-      academic: [...STREAM_DEFAULT_SUBJECTS.Commerce.academic],
-      nonAcademic: [...STREAM_DEFAULT_SUBJECTS.Commerce.nonAcademic],
-    }
-  }
-  if (lower.includes("art") || lower.includes("hum")) {
-    return {
-      academic: [...STREAM_DEFAULT_SUBJECTS["Arts/Humanities"].academic],
-      nonAcademic: [...STREAM_DEFAULT_SUBJECTS["Arts/Humanities"].nonAcademic],
-    }
-  }
-  return {
-    academic: [
-      "English",
-      "Physics",
-      "Chemistry",
-      "Mathematics",
-      "Biology",
-      "Computer Science/Informatics Practices",
-    ],
-    nonAcademic: ["Physical Education"],
-  }
-}
-
-const INITIAL_CLASS_SUBJECTS_MAP = {
-  "Nursery": {
-    academic: ["English", "Hindi", "Mathematics", "General Awareness"],
-    nonAcademic: ["Drawing", "Rhymes", "Art & Craft"],
-  },
-  "LKG": {
-    academic: ["English", "Hindi", "Mathematics", "Environmental Studies", "General Awareness"],
-    nonAcademic: ["Drawing", "Rhymes", "Art & Craft"],
-  },
-  "UKG": {
-    academic: ["English", "Hindi", "Mathematics", "Environmental Studies", "General Awareness"],
-    nonAcademic: ["Drawing", "Rhymes", "Art & Craft"],
-  },
-  "Class 1": {
-    academic: ["English", "Hindi", "Mathematics", "Environmental Studies (EVS)", "General Knowledge", "Computer"],
-    nonAcademic: [],
-  },
-  "Class 2": {
-    academic: ["English", "Hindi", "Mathematics", "Environmental Studies (EVS)", "General Knowledge", "Computer"],
-    nonAcademic: [],
-  },
-  "Class 3": {
-    academic: ["English", "Hindi", "Mathematics", "Environmental Studies (EVS)", "General Knowledge", "Computer"],
-    nonAcademic: [],
-  },
-  "Class 4": {
-    academic: ["English", "Hindi", "Mathematics", "Environmental Studies (EVS)", "General Knowledge", "Computer"],
-    nonAcademic: [],
-  },
-  "Class 5": {
-    academic: ["English", "Hindi", "Mathematics", "Environmental Studies (EVS)", "General Knowledge", "Computer"],
-    nonAcademic: [],
-  },
-  "Class 6": {
-    academic: ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer", "Sanskrit/Third Language"],
-    nonAcademic: [],
-  },
-  "Class 7": {
-    academic: ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer", "Sanskrit/Third Language"],
-    nonAcademic: [],
-  },
-  "Class 8": {
-    academic: ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer", "Sanskrit/Third Language"],
-    nonAcademic: [],
-  },
-  "Class 9": {
-    academic: ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer/Information Technology", "Third Language"],
-    nonAcademic: [],
-  },
-  "Class 10": {
-    academic: ["English", "Hindi", "Mathematics", "Science", "Social Science", "Computer/Information Technology", "Third Language"],
-    nonAcademic: [],
-  },
-  "Class 11": {
-    academic: ["English", "Physics", "Chemistry", "Mathematics", "Biology", "Computer Science/Informatics Practices"],
-    nonAcademic: ["Physical Education"],
-  },
-  "Class 12": {
-    academic: ["English", "Physics", "Chemistry", "Mathematics", "Biology", "Computer Science/Informatics Practices"],
-    nonAcademic: ["Physical Education"],
-  },
-}
-
-const getDefaultSubjectsForClass = (className) => {
-  if (INITIAL_CLASS_SUBJECTS_MAP[className]) {
-    return {
-      academic: [...INITIAL_CLASS_SUBJECTS_MAP[className].academic],
-      nonAcademic: [...INITIAL_CLASS_SUBJECTS_MAP[className].nonAcademic],
-    }
-  }
-  return {
-    academic: ["English", "Hindi", "Mathematics", "Science", "Social Science"],
-    nonAcademic: ["Art & Craft", "Physical Education"],
-  }
-}
-
-const getInitialClassSubjectConfig = (classList = INITIAL_DEFAULT_CLASSES, sectionMap = {}) => {
-  const config = {}
-  classList.forEach((cls) => {
-    const isSenior = isSeniorSecondaryClass(cls)
-    const defaults = getDefaultSubjectsForClass(cls)
-    const sections = sectionMap[cls] && sectionMap[cls].length > 0 ? sectionMap[cls] : getDefaultSectionsForClass(cls)
-    const sectionObj = {}
-
-    if (isSenior) {
-      sections.forEach((sec) => {
-        const streamDefaults = getDefaultSubjectsForStreamSection(sec)
-        sectionObj[sec] = {
-          academic: [...streamDefaults.academic],
-          nonAcademic: [...streamDefaults.nonAcademic],
-        }
-      })
-      config[cls] = {
-        isSameForAllSections: false,
-        shared: {
-          academic: [...defaults.academic],
-          nonAcademic: [...defaults.nonAcademic],
-        },
-        sections: sectionObj,
-      }
-    } else {
-      sections.forEach((sec) => {
-        sectionObj[sec] = {
-          academic: [...defaults.academic],
-          nonAcademic: [...defaults.nonAcademic],
-        }
-      })
-      config[cls] = {
-        isSameForAllSections: true,
-        shared: {
-          academic: [...defaults.academic],
-          nonAcademic: [...defaults.nonAcademic],
-        },
-        sections: sectionObj,
-      }
-    }
-  })
-  return config
-}
-
-const INITIAL_DEFAULT_WINGS = [
-  { id: "pre-primary", name: "Pre-Primary", classes: ["Nursery", "LKG", "UKG"] },
-  { id: "primary", name: "Primary", classes: ["Class 1", "Class 2", "Class 3", "Class 4", "Class 5"] },
-  { id: "middle", name: "Middle", classes: ["Class 6", "Class 7", "Class 8"] },
-  { id: "secondary", name: "Secondary", classes: ["Class 9", "Class 10"] },
-  { id: "senior-secondary", name: "Senior Secondary", classes: ["Class 11", "Class 12"] },
-]
-
-const INITIAL_DEFAULT_HOUSES = [
-  { name: "Red House", color: "#EF4444", emblem_url: "" },
-  { name: "Blue House", color: "#3B82F6", emblem_url: "" },
-  { name: "Green House", color: "#10B981", emblem_url: "" },
-  { name: "Yellow House", color: "#F59E0B", emblem_url: "" },
-]
-
-const getInitialWingsForClasses = (classList = INITIAL_DEFAULT_CLASSES) => {
-  const wings = [
-    { id: "pre-primary", name: "Pre-Primary", classes: [] },
-    { id: "primary", name: "Primary", classes: [] },
-    { id: "middle", name: "Middle", classes: [] },
-    { id: "secondary", name: "Secondary", classes: [] },
-    { id: "senior-secondary", name: "Senior Secondary", classes: [] },
-  ]
-
-  classList.forEach((c) => {
-    const lower = c.toLowerCase().trim()
-    if (
-      lower.includes("nursery") ||
-      lower.includes("lkg") ||
-      lower.includes("ukg") ||
-      lower.includes("kg") ||
-      lower.includes("play") ||
-      lower.includes("pre")
-    ) {
-      wings[0].classes.push(c)
-    } else if (
-      /^(class\s*|grade\s*)?(1|2|3|4|5)(st|nd|rd|th)?$/i.test(lower) ||
-      /^[1-5]$/.test(lower)
-    ) {
-      wings[1].classes.push(c)
-    } else if (
-      /^(class\s*|grade\s*)?(6|7|8)(th)?$/i.test(lower) ||
-      /^[6-8]$/.test(lower)
-    ) {
-      wings[2].classes.push(c)
-    } else if (
-      /^(class\s*|grade\s*)?(9|10)(th)?$/i.test(lower) ||
-      /^(9|10)$/.test(lower)
-    ) {
-      wings[3].classes.push(c)
-    } else if (
-      /^(class\s*|grade\s*)?(11|12)(th)?$/i.test(lower) ||
-      /^(11|12)$/.test(lower)
-    ) {
-      wings[4].classes.push(c)
-    } else {
-      wings[1].classes.push(c)
-    }
-  })
-
-  return wings.filter((w) => w.classes.length > 0)
-}
+import {
+  validateEmblemFile,
+  validateSetupWizardStep,
+  validateHouseInlineEdit,
+} from "@/validations"
+import {
+  INDIAN_STATES,
+  THEME_COLOR_PRESETS,
+  CURATED_HOUSE_PALETTE,
+  INITIAL_DEFAULT_CLASSES,
+  INITIAL_DEFAULT_SECTIONS,
+  SENIOR_SECONDARY_DEFAULT_SECTIONS,
+  STREAM_DEFAULT_SUBJECTS,
+  isSeniorSecondaryClass,
+  getDefaultSectionsForClass,
+  getDefaultSubjectsForStreamSection,
+  INITIAL_CLASS_SUBJECTS_MAP,
+  getDefaultSubjectsForClass,
+  getInitialClassSubjectConfig,
+  INITIAL_DEFAULT_WINGS,
+  INITIAL_DEFAULT_HOUSES,
+  getInitialWingsForClasses,
+} from "@/constants"
 
 export function SchoolSetupWizard() {
   const [searchParams] = useSearchParams()
@@ -888,14 +516,9 @@ export function SchoolSetupWizard() {
 
     setEmblemUploadError(null)
 
-    if (file.size > 5 * 1024 * 1024) {
-      setEmblemUploadError("Image size must be 5 MB or less.")
-      return
-    }
-
-    const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
-    if (!validTypes.includes(file.type)) {
-      setEmblemUploadError("Supported image formats: PNG, JPG, JPEG, WEBP.")
+    const fileValidation = validateEmblemFile(file)
+    if (!fileValidation.isValid) {
+      setEmblemUploadError(fileValidation.error)
       return
     }
 
@@ -2293,13 +1916,16 @@ export function SchoolSetupWizard() {
   const handleSaveHouseInline = () => {
     if (editingHouseIdx === null) return
     const trimmed = houseFormName.trim()
-    if (!trimmed) {
-      setSubmitError("House name is required.")
-      return
-    }
 
-    if (isColorUsedByOtherHouse(houseFormColor, editingHouseIdx)) {
-      setSubmitError("This color is already used by another house. Please select a unique color.")
+    const validationError = validateHouseInlineEdit({
+      name: trimmed,
+      color: houseFormColor,
+      editingIdx: editingHouseIdx,
+      isColorUsedByOtherHouse,
+    })
+
+    if (validationError) {
+      setSubmitError(validationError)
       return
     }
 
@@ -2330,8 +1956,9 @@ export function SchoolSetupWizard() {
     if (!file) return
 
     setHouseEmblemError(null)
-    if (file.size > 5 * 1024 * 1024) {
-      setHouseEmblemError("Emblem size must be 5 MB or less.")
+    const fileValidation = validateEmblemFile(file)
+    if (!fileValidation.isValid) {
+      setHouseEmblemError(fileValidation.error)
       return
     }
 
@@ -2365,121 +1992,29 @@ export function SchoolSetupWizard() {
   const handleNextStep = () => {
     setSubmitError(null)
 
-    // Step 1: School Profile
-    if (currentStep === 1) {
-      if (!schoolName.trim()) {
-        setSubmitError("Please enter the School Name.")
-        return
-      }
-      if (!schoolCode.trim()) {
-        setSubmitError("Please enter the Affiliation Code.")
-        return
-      }
-      if (!addressStreet.trim()) {
-        setSubmitError("Please provide the Street / Building / Area address.")
-        return
-      }
-      if (!addressCity.trim()) {
-        setSubmitError("Please provide the City / District.")
-        return
-      }
-      if (!addressState.trim()) {
-        setSubmitError("Please select the State / Union Territory.")
-        return
-      }
-      if (!addressPincode.trim() || !/^\d{6}$/.test(addressPincode.trim())) {
-        setSubmitError("Please enter a valid 6-digit Indian PIN Code.")
-        return
-      }
-    }
+    const stepError = validateSetupWizardStep(currentStep, {
+      schoolName,
+      schoolCode,
+      addressStreet,
+      addressCity,
+      addressState,
+      addressPincode,
+      classesList,
+      classSectionMap,
+      classSubjectConfig,
+      wingsList,
+      housesList,
+      useHouses,
+      normalizeHexColor,
+      password,
+      confirmPassword,
+      pin,
+      confirmPin,
+    })
 
-    // Step 2: Classes
-    if (currentStep === 2) {
-      if (classesList.length === 0) {
-        setSubmitError("Please configure at least one class for your school.")
-        return
-      }
-    }
-
-    // Step 3: Sections
-    if (currentStep === 3) {
-      const hasEmptySection = classesList.some((c) => !classSectionMap[c] || classSectionMap[c].length === 0)
-      if (hasEmptySection) {
-        setSubmitError("Every class must have at least one section assigned.")
-        return
-      }
-    }
-
-    // Step 4: Subjects
-    if (currentStep === 4) {
-      const unconfiguredClass = classesList.find((cls) => {
-        const conf = classSubjectConfig[cls]
-        if (!conf) return true
-        if (conf.isSameForAllSections) {
-          const count = (conf.shared?.academic?.length || 0) + (conf.shared?.nonAcademic?.length || 0)
-          return count === 0
-        } else {
-          const sections = classSectionMap[cls] || []
-          return sections.some((sec) => {
-            const secConf = conf.sections?.[sec]
-            if (!secConf) return true
-            const count = (secConf.academic?.length || 0) + (secConf.nonAcademic?.length || 0)
-            return count === 0
-          })
-        }
-      })
-      if (unconfiguredClass) {
-        setSubmitError(`Please assign at least one subject to ${unconfiguredClass} before proceeding.`)
-        return
-      }
-    }
-
-    // Step 5: Wings
-    if (currentStep === 5) {
-      if (wingsList.length === 0) {
-        setSubmitError("Please configure at least one academic wing.")
-        return
-      }
-      const emptyWing = wingsList.find((w) => !w.name || !w.name.trim())
-      if (emptyWing) {
-        setSubmitError("All wings must have a valid name.")
-        return
-      }
-    }
-
-    // Step 6: Houses
-    if (currentStep === 6 && useHouses) {
-      if (housesList.length > 4) {
-        setSubmitError("Maximum 4 houses allowed.")
-        return
-      }
-      // Check for duplicate colors
-      const colors = housesList.map((h) => normalizeHexColor(h.color)).filter(Boolean)
-      const uniqueColors = new Set(colors)
-      if (colors.length !== uniqueColors.size) {
-        setSubmitError("Each house must have a unique color.")
-        return
-      }
-    }
-
-    // Step 7: Credentials (Password & PIN)
-    if (currentStep === 7) {
-      if (password.length < 8) {
-        setSubmitError("Password must be at least 8 characters.")
-        return
-      }
-      if (password !== confirmPassword) {
-        setSubmitError("Password and Confirm Password do not match.")
-        return
-      }
-      if (!/^\d{4,10}$/.test(pin)) {
-        setSubmitError("Quick Login PIN must be 4 to 10 numeric digits.")
-        return
-      }
-      if (pin !== confirmPin) {
-        setSubmitError("PIN and Confirm PIN do not match.")
-        return
-      }
+    if (stepError) {
+      setSubmitError(stepError)
+      return
     }
 
     setCurrentStep((prev) => prev + 1)

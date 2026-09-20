@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { useCreateStaff, useUpdateStaff } from "@/hooks/useStaff"
-import { getStaffValidationSchema } from "./staffValidation"
+import { getStaffValidationSchema } from "@/validations"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { cn } from "@/lib/utils"
 

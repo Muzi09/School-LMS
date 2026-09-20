@@ -1,14 +1,6 @@
 import {
-  LayoutDashboard,
-  BookOpen,
-  Calendar,
   GraduationCap,
   Briefcase,
-  FileCheck2,
-  Award,
-  Clock,
-  BarChart3,
-  ShieldCheck,
 } from "lucide-react"
 
 export const sidebarNavGroups = [
