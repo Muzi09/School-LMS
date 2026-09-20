@@ -10,6 +10,7 @@ from app.models.base import Base
 from app.models.enums import Gender
 
 if TYPE_CHECKING:
+    from app.models.school import School
     from app.models.user import User
 
 
@@ -29,6 +30,15 @@ class StudentProfile(Base):
         ),
         unique=True,
         nullable=False,
+    )
+
+    school_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey(
+            "schools.id",
+            ondelete="CASCADE",
+        ),
+        nullable=True,
     )
 
     middle_name: Mapped[str | None] = mapped_column(
@@ -82,9 +92,18 @@ class StudentProfile(Base):
         back_populates="student_profile",
     )
 
+    school: Mapped["School | None"] = relationship(
+        "School",
+        foreign_keys=[school_id],
+    )
+
     @declared_attr
     def __table_args__(cls):
         return (
+            Index(
+                "idx_student_profiles_school_id",
+                cls.school_id,
+            ),
             Index(
                 "idx_student_profiles_roll_no",
                 cls.roll_no,

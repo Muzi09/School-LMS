@@ -35,6 +35,9 @@ import { StaffAccountSetup } from "@/pages/staff/StaffAccountSetup"
 import { StaffList } from "@/pages/user-management/staff/StaffList"
 import { StudentList } from "@/pages/user-management/students/StudentList"
 
+// Chat Page
+import { ChatPage } from "@/pages/chat/ChatPage"
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -86,6 +89,7 @@ export function App() {
                     <Route path="manage-staff" element={<Navigate to="/staff" replace />} />
                   </Route>
                   <Route path="students" element={<StudentList />} />
+                  <Route path="chat" element={<ChatPage />} />
                 </Route>
               </Route>
 

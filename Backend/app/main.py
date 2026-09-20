@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -55,8 +55,15 @@ app.add_middleware(
 os.makedirs("uploads/emblems", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
+from app.api.v1.endpoints.chat import handle_chat_websocket
+
 # Mount API Routers
 app.include_router(api_router, prefix="/api")
+
+# Mount native WebSocket chat endpoint
+@app.websocket("/ws/chat")
+async def root_chat_websocket(websocket: WebSocket):
+    await handle_chat_websocket(websocket)
 
 
 @app.get("/", tags=["Health"])

@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     staff,
     students,
     super_admin,
+    chat,
 )
 
 api_router = APIRouter(prefix="/v1")
@@ -22,3 +23,4 @@ api_router.include_router(principal_email.router)
 api_router.include_router(school_config.router)
 api_router.include_router(staff.router)
 api_router.include_router(students.router)
+api_router.include_router(chat.router)

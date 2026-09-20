@@ -111,9 +111,10 @@ class School(Base, AuditMixin):
         cascade="all, delete-orphan",
     )
 
-    principals: Mapped[List["PrincipalProfile"]] = relationship(
+    principal: Mapped["PrincipalProfile | None"] = relationship(
         "PrincipalProfile",
         back_populates="school",
+        uselist=False,
         foreign_keys="PrincipalProfile.school_id",
     )
 

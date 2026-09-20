@@ -59,7 +59,7 @@ class PrincipalProfile(Base):
 
     school: Mapped["School | None"] = relationship(
         "School",
-        back_populates="principals",
+        back_populates="principal",
         foreign_keys=[school_id],
     )
 
@@ -67,8 +67,10 @@ class PrincipalProfile(Base):
     def __table_args__(cls):
         return (
             Index(
-                "idx_principal_profiles_school_id",
+                "uq_principal_profiles_school_id",
                 cls.school_id,
+                unique=True,
+                postgresql_where=cls.school_id.is_not(None),
             ),
             Index(
                 "idx_principal_profiles_setup_completed",

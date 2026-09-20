@@ -417,6 +417,7 @@ class UserService:
 
             student_profile = StudentProfile(
                 user_id=user.id,
+                school_id=school_id,
                 **profile_dict,
             )
             self.user_repo.add_student_profile(student_profile, autocommit=False)

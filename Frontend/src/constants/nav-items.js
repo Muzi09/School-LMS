@@ -1,10 +1,23 @@
 import {
   GraduationCap,
   Briefcase,
+  MessageSquare,
 } from "lucide-react"
 import { Permission } from "@/lib/permissions"
 
 export const sidebarNavGroups = [
+  {
+    id: "communication",
+    label: "Communication",
+    items: [
+      {
+        title: "Chat",
+        description: "Real-time direct messaging with school teachers, students, and staff.",
+        url: "/chat",
+        icon: MessageSquare,
+      },
+    ],
+  },
   {
     id: "management",
     label: "User Management",

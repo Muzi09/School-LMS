@@ -6,6 +6,7 @@ from app.models.base import (
     UserAuditMixin,
 )
 from app.models.enums import Gender, UserRole
+from app.models.chat import Conversation, ConversationParticipant, Message
 from app.models.house import House
 from app.models.onboarding_token import PrincipalOnboardingToken
 from app.models.principal import PrincipalProfile
@@ -45,4 +46,7 @@ __all__ = [
     "StaffProfile",
     "StaffOnboardingToken",
     "StudentProfile",
+    "Conversation",
+    "ConversationParticipant",
+    "Message",
 ]

@@ -10,8 +10,10 @@ from app.core.permissions import Permission, get_role_permissions, has_permissio
 from app.core.security import decode_access_token
 from app.models.enums import UserRole
 from app.models.user import User
+from app.repositories.chat_repository import ChatRepository
 from app.repositories.school_repository import SchoolRepository
 from app.repositories.user_repository import UserRepository
+from app.services.chat_service import ChatService
 from app.services.user_service import UserService
 
 security_bearer = HTTPBearer(auto_error=False)
@@ -32,6 +34,12 @@ def get_user_repository(
     return UserRepository(db=db)
 
 
+def get_chat_repository(
+    db: Annotated[Session, Depends(get_db)],
+) -> ChatRepository:
+    return ChatRepository(db=db)
+
+
 # ---------------------------------------------------------
 # Service Providers
 # ---------------------------------------------------------
@@ -40,6 +48,14 @@ def get_user_service(
     db: Annotated[Session, Depends(get_db)],
 ) -> UserService:
     return UserService(user_repo=user_repo, db=db)
+
+
+def get_chat_service(
+    chat_repo: Annotated[ChatRepository, Depends(get_chat_repository)],
+    user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ChatService:
+    return ChatService(chat_repo=chat_repo, user_repo=user_repo, db=db)
 
 
 # ---------------------------------------------------------
