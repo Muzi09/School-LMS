@@ -24,13 +24,19 @@ from app.core.connection_manager import chat_connection_manager
 from app.core.security import decode_access_token
 from app.models.user import User
 from app.schemas.chat import (
+    AddParticipantsRequest,
     ChatUserRead,
+    ConversationDetailsResponse,
     ConversationMessagesResponse,
     ConversationRead,
+    CreateBroadcastRequest,
     CreateConversationRequest,
+    CreateGroupRequest,
     MarkReadResponse,
     MessageRead,
     SendMessageRequest,
+    TransferOwnershipRequest,
+    UpdateConversationRequest,
 )
 from app.services.chat_service import ChatService
 
@@ -57,7 +63,7 @@ def search_chat_users(
     "/conversations",
     response_model=list[ConversationRead],
     summary="List Conversations",
-    description="Retrieve all 1-to-1 conversations for the current user.",
+    description="Retrieve all conversations (direct, group, broadcast) for the current user.",
 )
 def list_conversations(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -70,7 +76,7 @@ def list_conversations(
     "/conversations",
     response_model=ConversationRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Get or Create Conversation",
+    summary="Get or Create Direct Conversation",
     description="Retrieve existing or create a new 1-to-1 conversation with another school member.",
 )
 def create_conversation(
@@ -82,6 +88,196 @@ def create_conversation(
         current_user=current_user,
         target_user_id=data.user_id,
     )
+
+
+@router.post(
+    "/conversations/groups",
+    response_model=ConversationRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Group Conversation",
+    description="Create a new group conversation with multiple school members.",
+)
+async def create_group_conversation(
+    data: CreateGroupRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+):
+    conv = service.create_group(
+        current_user=current_user,
+        name=data.name,
+        participant_ids=data.participant_ids,
+    )
+    participant_ids = service.chat_repo.get_participant_ids(conv.id)
+    # Notify active members about new group
+    await chat_connection_manager.broadcast_to_users(
+        participant_ids,
+        {
+            "type": "conversation_created",
+            "conversation_id": str(conv.id),
+        },
+    )
+    return conv
+
+
+@router.post(
+    "/conversations/broadcasts",
+    response_model=ConversationRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Broadcast List",
+    description="Create a new one-way broadcast announcement list.",
+)
+async def create_broadcast_conversation(
+    data: CreateBroadcastRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+):
+    conv = service.create_broadcast(
+        current_user=current_user,
+        name=data.name,
+        recipient_ids=data.recipient_ids,
+    )
+    participant_ids = service.chat_repo.get_participant_ids(conv.id)
+    await chat_connection_manager.broadcast_to_users(
+        participant_ids,
+        {
+            "type": "conversation_created",
+            "conversation_id": str(conv.id),
+        },
+    )
+    return conv
+
+
+@router.get(
+    "/conversations/{conversation_id}/details",
+    response_model=ConversationDetailsResponse,
+    summary="Get Conversation Details",
+    description="Get metadata and full participant roster for a conversation.",
+)
+def get_conversation_details(
+    conversation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+):
+    return service.get_conversation_details(
+        current_user=current_user,
+        conversation_id=conversation_id,
+    )
+
+
+@router.patch(
+    "/conversations/{conversation_id}",
+    response_model=dict,
+    summary="Update Conversation Name",
+    description="Rename a group or broadcast list (Admin/Owner only).",
+)
+async def update_conversation(
+    conversation_id: UUID,
+    data: UpdateConversationRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+):
+    service.update_group_name(
+        current_user=current_user,
+        conversation_id=conversation_id,
+        name=data.name,
+    )
+    participant_ids = service.chat_repo.get_participant_ids(conversation_id)
+    await chat_connection_manager.broadcast_to_users(
+        participant_ids,
+        {
+            "type": "conversation_updated",
+            "conversation_id": str(conversation_id),
+        },
+    )
+    return {"success": True, "name": data.name}
+
+
+@router.post(
+    "/conversations/{conversation_id}/participants",
+    response_model=dict,
+    summary="Add Group Participants",
+    description="Add new participants to a group or broadcast (Admin/Owner only).",
+)
+async def add_participants(
+    conversation_id: UUID,
+    data: AddParticipantsRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+):
+    added = service.add_group_participants(
+        current_user=current_user,
+        conversation_id=conversation_id,
+        user_ids=data.user_ids,
+    )
+    participant_ids = service.chat_repo.get_participant_ids(conversation_id)
+    await chat_connection_manager.broadcast_to_users(
+        participant_ids,
+        {
+            "type": "conversation_updated",
+            "conversation_id": str(conversation_id),
+        },
+    )
+    return {"success": True, "added_count": len(added)}
+
+
+@router.delete(
+    "/conversations/{conversation_id}/participants/{user_id}",
+    response_model=dict,
+    summary="Remove Group Participant",
+    description="Remove a participant from a group or broadcast (Admin/Owner only).",
+)
+async def remove_participant(
+    conversation_id: UUID,
+    user_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+):
+    participant_ids_before = service.chat_repo.get_participant_ids(conversation_id)
+    service.remove_group_participant(
+        current_user=current_user,
+        conversation_id=conversation_id,
+        target_user_id=user_id,
+    )
+    # Notify remaining participants and removed user
+    await chat_connection_manager.broadcast_to_users(
+        participant_ids_before,
+        {
+            "type": "conversation_updated",
+            "conversation_id": str(conversation_id),
+            "removed_user_id": str(user_id),
+        },
+    )
+    return {"success": True}
+
+
+@router.post(
+    "/conversations/{conversation_id}/leave",
+    response_model=dict,
+    summary="Leave Group",
+    description="Leave a group conversation, assigning a new admin if the current owner leaves.",
+)
+async def leave_group(
+    conversation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
+    data: TransferOwnershipRequest | None = None,
+):
+    participant_ids_before = service.chat_repo.get_participant_ids(conversation_id)
+    new_owner = data.new_owner_id if data else None
+    service.leave_group(
+        current_user=current_user,
+        conversation_id=conversation_id,
+        new_owner_id=new_owner,
+    )
+    await chat_connection_manager.broadcast_to_users(
+        participant_ids_before,
+        {
+            "type": "conversation_updated",
+            "conversation_id": str(conversation_id),
+            "left_user_id": str(current_user.id),
+        },
+    )
+    return {"success": True}
 
 
 @router.get(
@@ -124,7 +320,6 @@ async def send_message_rest(
         content=data.content,
     )
 
-    # Broadcast to active WebSockets for participants
     participant_ids = service.chat_repo.get_participant_ids(conversation_id)
     event_payload = {
         "type": "message",
@@ -174,11 +369,10 @@ async def handle_chat_websocket(
     db: Session | None = None,
 ):
     """
-    Core WebSocket handler for real-time messaging.
+    Core WebSocket handler for real-time messaging, presence, and typing.
     Validates JWT token, attaches to ConnectionManager, and processes events.
     """
     if not token:
-        # Check if token in query string
         query_token = websocket.query_params.get("token")
         if query_token:
             token = query_token
@@ -199,7 +393,6 @@ async def handle_chat_websocket(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    # Verify user in database
     close_db_on_exit = False
     if db is None:
         from app.core.database import SessionLocal
@@ -294,7 +487,9 @@ async def handle_chat_websocket(
                 if conv_id_str:
                     try:
                         conv_id = UUID(conv_id_str)
-                        if chat_repo.is_participant(conv_id, user.id):
+                        conv = chat_repo.get_conversation_by_id(conv_id)
+                        # Suppress typing indicators for broadcast lists
+                        if conv and conv.type != "BROADCAST" and chat_repo.is_participant(conv_id, user.id):
                             active_typing_conversations.add(conv_id)
                             participant_ids = chat_repo.get_participant_ids(conv_id)
                             recipients = [uid for uid in participant_ids if uid != user.id]
@@ -305,6 +500,7 @@ async def handle_chat_websocket(
                                         "type": "typing",
                                         "conversation_id": str(conv_id),
                                         "user_id": str(user.id),
+                                        "user_name": f"{user.first_name} {user.last_name}".strip(),
                                         "is_typing": True,
                                     },
                                 )
@@ -317,7 +513,8 @@ async def handle_chat_websocket(
                     try:
                         conv_id = UUID(conv_id_str)
                         active_typing_conversations.discard(conv_id)
-                        if chat_repo.is_participant(conv_id, user.id):
+                        conv = chat_repo.get_conversation_by_id(conv_id)
+                        if conv and conv.type != "BROADCAST" and chat_repo.is_participant(conv_id, user.id):
                             participant_ids = chat_repo.get_participant_ids(conv_id)
                             recipients = [uid for uid in participant_ids if uid != user.id]
                             if recipients:
@@ -327,6 +524,7 @@ async def handle_chat_websocket(
                                         "type": "typing",
                                         "conversation_id": str(conv_id),
                                         "user_id": str(user.id),
+                                        "user_name": f"{user.first_name} {user.last_name}".strip(),
                                         "is_typing": False,
                                     },
                                 )
@@ -373,6 +571,7 @@ async def handle_chat_websocket(
                                 "type": "typing",
                                 "conversation_id": str(c_id),
                                 "user_id": str(user.id),
+                                "user_name": f"{user.first_name} {user.last_name}".strip(),
                                 "is_typing": False,
                             },
                         )
@@ -391,3 +590,4 @@ async def chat_websocket_route(
 ):
     """Router-mounted WebSocket endpoint: /api/v1/chat/ws"""
     await handle_chat_websocket(websocket, token=token, db=db)
+

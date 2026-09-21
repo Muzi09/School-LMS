@@ -371,6 +371,67 @@ def test_chat_suite():
         assert pong["type"] == "pong"
         print("[PASS] Malformed typing event handled safely without disconnecting")
 
+    print("--- 15. Testing Online Status, Last Seen After Disconnect & Reconnect ---")
+    # Verify never-seen user (e.g. Charlie before connecting)
+    db = SessionLocal()
+    try:
+        user_c = db.query(User).filter(User.id == data["u_a3_id"]).first()
+        assert user_c.last_seen_at is None, f"Expected Charlie last_seen_at to be None, got {user_c.last_seen_at}"
+        print("[PASS] Never-seen user has null last_seen_at")
+    finally:
+        db.close()
+
+    # Bob connects and listens for presence events
+    with client.websocket_connect(f"/ws/chat?token={token_a2}") as ws_bob:
+        # Alice connects: Bob receives presence online event
+        with client.websocket_connect(f"/ws/chat?token={token_a1}") as ws_alice:
+            event_online = ws_bob.receive_json()
+            assert event_online["type"] == "presence"
+            assert event_online["user_id"] == str(data["u_a1_id"])
+            assert event_online["is_online"] is True
+            print("[PASS] Online presence event received when Alice connects")
+
+            # Check Alice's status via REST API: is_online should be True
+            resp = client.get("/api/v1/chat/conversations", headers=headers_a2)
+            assert resp.status_code == 200
+            conv = next(c for c in resp.json() if c["other_participant"]["id"] == str(data["u_a1_id"]))
+            assert conv["other_participant"]["is_online"] is True
+            print("[PASS] REST API reports Alice as is_online=True")
+
+        # Alice disconnected: Bob receives presence offline event with last_seen_at
+        event_offline = ws_bob.receive_json()
+        assert event_offline["type"] == "presence"
+        assert event_offline["user_id"] == str(data["u_a1_id"])
+        assert event_offline["is_online"] is False
+        assert event_offline["last_seen_at"] is not None
+        print(f"[PASS] Offline presence event received with last_seen_at: {event_offline['last_seen_at']}")
+
+        # Verify DB updated Alice's last_seen_at
+        db = SessionLocal()
+        try:
+            alice_db = db.query(User).filter(User.id == data["u_a1_id"]).first()
+            assert alice_db.last_seen_at is not None
+            assert isinstance(alice_db.last_seen_at, datetime)
+            print(f"[PASS] Alice last_seen_at persisted in DB: {alice_db.last_seen_at}")
+        finally:
+            db.close()
+
+        # Check REST API for Bob: Alice is now offline with last_seen_at populated
+        resp = client.get("/api/v1/chat/conversations", headers=headers_a2)
+        assert resp.status_code == 200
+        conv = next(c for c in resp.json() if c["other_participant"]["id"] == str(data["u_a1_id"]))
+        assert conv["other_participant"]["is_online"] is False
+        assert conv["other_participant"]["last_seen_at"] is not None
+        print("[PASS] REST API reports Alice as is_online=False with last_seen_at populated")
+
+        # Alice reconnects: Bob receives presence online event (reconnection changing Last Seen back to Online)
+        with client.websocket_connect(f"/ws/chat?token={token_a1}") as ws_alice_reconnect:
+            event_reconnect = ws_bob.receive_json()
+            assert event_reconnect["type"] == "presence"
+            assert event_reconnect["user_id"] == str(data["u_a1_id"])
+            assert event_reconnect["is_online"] is True
+            print("[PASS] Reconnection event changed presence back to is_online=True")
+
     print("\n==========================================")
     print("ALL BACKEND CHAT & ISOLATION TESTS PASSED!")
     print("==========================================\n")

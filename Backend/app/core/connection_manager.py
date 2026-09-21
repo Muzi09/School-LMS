@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import logging
 from uuid import UUID
 from fastapi import WebSocket
@@ -53,7 +54,24 @@ class ConnectionManager:
         logger.info(f"User {user_id} disconnected (remaining: {len(self._connections.get(user_id, set()))})")
 
         if last_connection and school_id:
-            await self.broadcast_presence(user_id, school_id, is_online=False)
+            now = datetime.now(timezone.utc)
+            try:
+                from app.core.database import SessionLocal
+                from app.models.user import User
+                with SessionLocal() as db:
+                    db_user = db.query(User).filter(User.id == user_id).first()
+                    if db_user:
+                        db_user.last_seen_at = now
+                        db.commit()
+            except Exception as e:
+                logger.error(f"Failed to update last_seen_at for user {user_id}: {e}", exc_info=True)
+
+            try:
+                import anyio
+                with anyio.CancelScope(shield=True):
+                    await self.broadcast_presence(user_id, school_id, is_online=False, last_seen_at=now)
+            except Exception:
+                await self.broadcast_presence(user_id, school_id, is_online=False, last_seen_at=now)
 
     def is_user_online(self, user_id: UUID) -> bool:
         """Check if a user has at least one active connection."""
@@ -93,7 +111,13 @@ class ConnectionManager:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def broadcast_presence(self, user_id: UUID, school_id: UUID, is_online: bool) -> None:
+    async def broadcast_presence(
+        self,
+        user_id: UUID,
+        school_id: UUID,
+        is_online: bool,
+        last_seen_at: datetime | None = None,
+    ) -> None:
         """Broadcast a user's presence change to all active users within their school."""
         school_online_users = [
             uid for uid, sid in self._user_schools.items()
@@ -106,6 +130,7 @@ class ConnectionManager:
             "type": "presence",
             "user_id": str(user_id),
             "is_online": is_online,
+            "last_seen_at": last_seen_at.isoformat() if last_seen_at else None,
         }
         await self.broadcast_to_users(school_online_users, payload)
 

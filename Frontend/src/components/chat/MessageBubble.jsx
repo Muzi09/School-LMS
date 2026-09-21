@@ -3,10 +3,27 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { formatMessageTime } from "@/lib/chatDate"
 
-export function MessageBubble({ message, isOutgoing, onRetry }) {
+export function MessageBubble({ message, isOutgoing, isGroup = false, onRetry }) {
   const isFailed = message.status === "failed"
   const isSending = message.status === "sending"
+  const isSystem = message.message_type === "SYSTEM"
   const timeFormatted = formatMessageTime(message.created_at)
+
+  // 1. Render SYSTEM messages as centered subtle info chips
+  if (isSystem) {
+    return (
+      <div className="flex items-center justify-center my-2.5 px-4 w-full">
+        <span className="text-[11px] font-medium text-muted-foreground bg-muted/70 border border-border/50 rounded-full px-3.5 py-1 text-center max-w-[85%] leading-relaxed select-none">
+          {message.content}
+        </span>
+      </div>
+    )
+  }
+
+  // 2. Regular User Messages
+  const senderName = message.sender
+    ? `${message.sender.first_name || ""} ${message.sender.last_name || ""}`.trim()
+    : null
 
   return (
     <div
@@ -15,6 +32,13 @@ export function MessageBubble({ message, isOutgoing, onRetry }) {
         isOutgoing ? "ml-auto items-end" : "mr-auto items-start"
       )}
     >
+      {/* Show sender name for incoming messages in group chats */}
+      {!isOutgoing && isGroup && senderName && (
+        <span className="text-[11px] font-semibold text-primary/80 mb-1 px-1">
+          {senderName}
+        </span>
+      )}
+
       <div
         className={cn(
           "px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-xs transition-all",
@@ -79,3 +103,5 @@ export function MessageBubble({ message, isOutgoing, onRetry }) {
     </div>
   )
 }
+
+export default MessageBubble

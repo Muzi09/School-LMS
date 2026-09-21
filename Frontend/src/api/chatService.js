@@ -46,6 +46,59 @@ export const chatService = {
   async markAsRead(conversationId) {
     return apiClient.post(`chat/conversations/${conversationId}/read`)
   },
+
+  /**
+   * Create a new group conversation
+   */
+  async createGroup({ name, participant_ids }) {
+    return apiClient.post("chat/conversations/groups", { name, participant_ids })
+  },
+
+  /**
+   * Create a new broadcast conversation
+   */
+  async createBroadcast({ name, recipient_ids }) {
+    return apiClient.post("chat/conversations/broadcasts", { name, recipient_ids })
+  },
+
+  /**
+   * Get detailed info for a group or broadcast conversation
+   */
+  async getConversationDetails(conversationId) {
+    return apiClient.get(`chat/conversations/${conversationId}/details`)
+  },
+
+  /**
+   * Update conversation metadata (e.g. rename group/broadcast)
+   */
+  async updateConversation(conversationId, data) {
+    return apiClient.patch(`chat/conversations/${conversationId}`, data)
+  },
+
+  /**
+   * Add participants to an existing group or broadcast
+   */
+  async addParticipants(conversationId, participantIds) {
+    return apiClient.post(`chat/conversations/${conversationId}/participants`, {
+      participant_ids: participantIds,
+    })
+  },
+
+  /**
+   * Remove a participant from a group or broadcast
+   */
+  async removeParticipant(conversationId, userId) {
+    return apiClient.delete(`chat/conversations/${conversationId}/participants/${userId}`)
+  },
+
+  /**
+   * Leave a group (optionally transferring ownership)
+   */
+  async leaveGroup(conversationId, newOwnerId = null) {
+    return apiClient.post(`chat/conversations/${conversationId}/leave`, {
+      new_owner_id: newOwnerId,
+    })
+  },
 }
 
 export default chatService

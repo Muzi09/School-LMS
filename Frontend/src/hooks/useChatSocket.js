@@ -12,6 +12,7 @@ export function useChatSocket({
   onPresenceChange,
   onReadReceipt,
   onTyping,
+  onConversationUpdated,
   onReconnect,
 } = {}) {
   const { token, user } = useAuth()
@@ -31,6 +32,7 @@ export function useChatSocket({
     onPresenceChange,
     onReadReceipt,
     onTyping,
+    onConversationUpdated,
     onReconnect,
   })
 
@@ -42,9 +44,10 @@ export function useChatSocket({
       onPresenceChange,
       onReadReceipt,
       onTyping,
+      onConversationUpdated,
       onReconnect,
     }
-  }, [onMessage, onMessageSent, onMessageFailed, onPresenceChange, onReadReceipt, onTyping, onReconnect])
+  }, [onMessage, onMessageSent, onMessageFailed, onPresenceChange, onReadReceipt, onTyping, onConversationUpdated, onReconnect])
 
   const connect = useCallback(() => {
     if (!token || !user) {
@@ -103,11 +106,13 @@ export function useChatSocket({
           } else if (data.type === "message_failed") {
             callbacksRef.current.onMessageFailed?.(data.error, data.temp_id, data.conversation_id)
           } else if (data.type === "presence") {
-            callbacksRef.current.onPresenceChange?.(data.user_id, data.is_online)
+            callbacksRef.current.onPresenceChange?.(data.user_id, data.is_online, data.last_seen_at)
           } else if (data.type === "read_receipt") {
             callbacksRef.current.onReadReceipt?.(data.conversation_id, data.reader_id, data.last_read_at)
           } else if (data.type === "typing") {
-            callbacksRef.current.onTyping?.(data.conversation_id, data.user_id, data.is_typing)
+            callbacksRef.current.onTyping?.(data.conversation_id, data.user_id, data.is_typing, data.user_name)
+          } else if (data.type === "conversation_updated") {
+            callbacksRef.current.onConversationUpdated?.(data)
           }
         } catch (err) {
           console.error("Error parsing WebSocket message:", err)

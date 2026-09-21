@@ -6,6 +6,9 @@ import { ConversationList } from "@/components/chat/ConversationList"
 import { ChatWindow } from "@/components/chat/ChatWindow"
 import { EmptyChatState } from "@/components/chat/EmptyChatState"
 import { UserSearchModal } from "@/components/chat/UserSearchModal"
+import { CreateGroupModal } from "@/components/chat/CreateGroupModal"
+import { CreateBroadcastModal } from "@/components/chat/CreateBroadcastModal"
+import { GroupDetailsSheet } from "@/components/chat/GroupDetailsSheet"
 
 export function ChatPage() {
   const { user } = useAuth()
@@ -14,8 +17,15 @@ export function ChatPage() {
   const [messages, setMessages] = useState([])
   const [isLoadingConversations, setIsLoadingConversations] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+
+  // Modals & Sheets
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false)
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false)
+  const [isDetailsSheetOpen, setIsDetailsSheetOpen] = useState(false)
+
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768)
+  // Structure: { [conversationId]: { [userId]: userName } }
   const [typingByConversation, setTypingByConversation] = useState({})
   const socketMarkReadRef = useRef(null)
   const safetyTimeoutsRef = useRef({})
@@ -101,17 +111,18 @@ export function ChatPage() {
         chatService.markAsRead(activeConversationId).catch(() => {})
       }
 
-      // 2. Message received from sender clears any active typing indicator for that conversation
+      // 2. Message received from sender clears active typing indicator for that user
       if (message.sender_id !== user?.id) {
-        if (safetyTimeoutsRef.current[message.conversation_id]) {
-          clearTimeout(safetyTimeoutsRef.current[message.conversation_id])
-          delete safetyTimeoutsRef.current[message.conversation_id]
+        const key = `${message.conversation_id}:${message.sender_id}`
+        if (safetyTimeoutsRef.current[key]) {
+          clearTimeout(safetyTimeoutsRef.current[key])
+          delete safetyTimeoutsRef.current[key]
         }
         setTypingByConversation((prev) => {
-          if (!prev[message.conversation_id]) return prev
-          const next = { ...prev }
-          delete next[message.conversation_id]
-          return next
+          if (!prev[message.conversation_id]?.[message.sender_id]) return prev
+          const nextConv = { ...prev[message.conversation_id] }
+          delete nextConv[message.sender_id]
+          return { ...prev, [message.conversation_id]: nextConv }
         })
       }
 
@@ -176,15 +187,21 @@ export function ChatPage() {
     )
   }, [])
 
-  const handlePresenceChange = useCallback((userId, isOnline) => {
+  const handlePresenceChange = useCallback((userId, isOnline, lastSeenAt) => {
+    const normalizedUserId = String(userId || "").toLowerCase()
     setConversations((prev) =>
       prev.map((c) => {
-        if (c.other_participant?.id === userId) {
+        const participantId = String(c.other_participant?.id || "").toLowerCase()
+        if (participantId === normalizedUserId) {
+          const resolvedLastSeen = isOnline
+            ? c.other_participant?.last_seen_at
+            : (lastSeenAt || c.other_participant?.last_seen_at || new Date().toISOString())
           return {
             ...c,
             other_participant: {
               ...c.other_participant,
               is_online: isOnline,
+              last_seen_at: resolvedLastSeen,
             },
           }
         }
@@ -237,42 +254,72 @@ export function ChatPage() {
   )
 
   const handleTyping = useCallback(
-    (conversationId, userId, isTyping) => {
+    (conversationId, userId, isTyping, userName) => {
       // Ignore typing events from self
       if (userId === user?.id) return
 
+      const key = `${conversationId}:${userId}`
+
       if (isTyping) {
-        // Clear any previous safety timer for this conversation
-        if (safetyTimeoutsRef.current[conversationId]) {
-          clearTimeout(safetyTimeoutsRef.current[conversationId])
+        if (safetyTimeoutsRef.current[key]) {
+          clearTimeout(safetyTimeoutsRef.current[key])
         }
 
-        setTypingByConversation((prev) => ({ ...prev, [conversationId]: true }))
+        setTypingByConversation((prev) => ({
+          ...prev,
+          [conversationId]: {
+            ...(prev[conversationId] || {}),
+            [userId]: userName || "Someone",
+          },
+        }))
 
-        // Set a 4-second safety auto-clear timer in case typing_stop packet was dropped
-        safetyTimeoutsRef.current[conversationId] = setTimeout(() => {
+        // Set a 5-second safety auto-clear timer in case typing_stop packet was dropped
+        // The sender emits heartbeats every 2s while actively typing, continuously refreshing this timer
+        safetyTimeoutsRef.current[key] = setTimeout(() => {
           setTypingByConversation((prev) => {
-            if (!prev[conversationId]) return prev
-            const next = { ...prev }
-            delete next[conversationId]
-            return next
+            if (!prev[conversationId]?.[userId]) return prev
+            const nextConv = { ...prev[conversationId] }
+            delete nextConv[userId]
+            return { ...prev, [conversationId]: nextConv }
           })
-          delete safetyTimeoutsRef.current[conversationId]
-        }, 4000)
+          delete safetyTimeoutsRef.current[key]
+        }, 5000)
       } else {
-        if (safetyTimeoutsRef.current[conversationId]) {
-          clearTimeout(safetyTimeoutsRef.current[conversationId])
-          delete safetyTimeoutsRef.current[conversationId]
+        if (safetyTimeoutsRef.current[key]) {
+          clearTimeout(safetyTimeoutsRef.current[key])
+          delete safetyTimeoutsRef.current[key]
         }
         setTypingByConversation((prev) => {
-          if (!prev[conversationId]) return prev
-          const next = { ...prev }
-          delete next[conversationId]
-          return next
+          if (!prev[conversationId]?.[userId]) return prev
+          const nextConv = { ...prev[conversationId] }
+          delete nextConv[userId]
+          return { ...prev, [conversationId]: nextConv }
         })
       }
     },
     [user?.id]
+  )
+
+  const handleConversationUpdatedEvent = useCallback(
+    (eventData) => {
+      if (
+        eventData.action === "participant_removed" &&
+        eventData.user_id === user?.id
+      ) {
+        // Current user was removed from the group
+        setConversations((prev) => prev.filter((c) => c.id !== eventData.conversation_id))
+        if (activeConversationId === eventData.conversation_id) {
+          setActiveConversationId(null)
+          setMessages([])
+        }
+      } else {
+        reloadConversations()
+        if (activeConversationId === eventData.conversation_id) {
+          loadActiveMessages(activeConversationId)
+        }
+      }
+    },
+    [user?.id, activeConversationId, reloadConversations, loadActiveMessages]
   )
 
   // Clear all safety timers on unmount
@@ -307,6 +354,7 @@ export function ChatPage() {
     onPresenceChange: handlePresenceChange,
     onReadReceipt: handleReadReceipt,
     onTyping: handleTyping,
+    onConversationUpdated: handleConversationUpdatedEvent,
     onReconnect: handleReconnect,
   })
 
@@ -337,6 +385,11 @@ export function ChatPage() {
         temp_id: tempId,
         conversation_id: activeConversationId,
         sender_id: user.id,
+        sender: {
+          id: user.id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+        },
         content,
         created_at: new Date().toISOString(),
         status: "sending",
@@ -378,7 +431,7 @@ export function ChatPage() {
     [socketSend, handleMessageSent, handleMessageFailed]
   )
 
-  // Starting a conversation from user search
+  // Starting a direct conversation from user search
   const handleStartConversationWithUser = useCallback(
     async (selectedUser) => {
       try {
@@ -396,13 +449,83 @@ export function ChatPage() {
     [loadActiveMessages]
   )
 
+  // Handling new group created
+  const handleGroupCreated = useCallback(
+    (group) => {
+      setConversations((prev) => [group, ...prev.filter((c) => c.id !== group.id)])
+      setActiveConversationId(group.id)
+      loadActiveMessages(group.id)
+    },
+    [loadActiveMessages]
+  )
+
+  // Handling new broadcast created
+  const handleBroadcastCreated = useCallback(
+    (broadcast) => {
+      setConversations((prev) => [broadcast, ...prev.filter((c) => c.id !== broadcast.id)])
+      setActiveConversationId(broadcast.id)
+      loadActiveMessages(broadcast.id)
+    },
+    [loadActiveMessages]
+  )
+
+  // Handling conversation updated (e.g. rename or participant added)
+  const handleConversationUpdated = useCallback((updatedConv) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === updatedConv.id ? { ...c, ...updatedConv } : c))
+    )
+  }, [])
+
+  // Handling leaving a group
+  const handleLeaveSuccess = useCallback(
+    (convId) => {
+      setConversations((prev) => prev.filter((c) => c.id !== convId))
+      if (activeConversationId === convId) {
+        setActiveConversationId(null)
+        setMessages([])
+      }
+    },
+    [activeConversationId]
+  )
+
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeConversationId) || null,
     [conversations, activeConversationId]
   )
 
+  // Calculate typing status & formatted text for active conversation
+  const { isTypingActive, typingText } = useMemo(() => {
+    if (!activeConversation || activeConversation.type === "BROADCAST") {
+      return { isTypingActive: false, typingText: null }
+    }
+
+    const convTyping = typingByConversation[activeConversation.id] || {}
+    const usersList = Object.values(convTyping).filter(Boolean)
+
+    if (usersList.length === 0) {
+      return { isTypingActive: false, typingText: null }
+    }
+
+    // DIRECT: show dots without name
+    if (activeConversation.type === "DIRECT" || !activeConversation.type) {
+      return { isTypingActive: true, typingText: null }
+    }
+
+    // GROUP: format user names
+    if (usersList.length === 1) {
+      return { isTypingActive: true, typingText: `${usersList[0]} is typing...` }
+    }
+    if (usersList.length === 2) {
+      return { isTypingActive: true, typingText: `${usersList[0]} and ${usersList[1]} are typing...` }
+    }
+    return {
+      isTypingActive: true,
+      typingText: `${usersList[0]}, ${usersList[1]} and ${usersList.length - 2} others are typing...`,
+    }
+  }, [activeConversation, typingByConversation])
+
   return (
-    <div className="flex h-[calc(100vh-4.1rem)] w-full overflow-hidden bg-background">
+    <div className="flex h-full w-full min-h-0 overflow-hidden bg-background">
       {/* Left / Conversation List (visible on desktop or on mobile when no active conversation) */}
       <div
         className={`h-full w-full md:w-[340px] lg:w-[380px] shrink-0 ${
@@ -414,15 +537,18 @@ export function ChatPage() {
           activeConversationId={activeConversationId}
           onSelectConversation={handleSelectConversation}
           onOpenNewChat={() => setIsSearchModalOpen(true)}
+          onOpenNewGroup={() => setIsGroupModalOpen(true)}
+          onOpenNewBroadcast={() => setIsBroadcastModalOpen(true)}
           isLoading={isLoadingConversations}
           socketStatus={socketStatus}
           onRetryConnect={reconnect}
+          currentUserId={user?.id}
         />
       </div>
 
       {/* Right / Chat Window (visible on desktop or on mobile when active conversation is selected) */}
       <div
-        className={`h-full flex-1 overflow-hidden ${
+        className={`h-full flex-1 min-h-0 overflow-hidden ${
           isMobile && !activeConversationId ? "hidden" : "flex flex-col"
         }`}
       >
@@ -432,12 +558,14 @@ export function ChatPage() {
             messages={messages}
             currentUserId={user?.id}
             isLoadingMessages={isLoadingMessages}
-            isTyping={Boolean(activeConversationId && typingByConversation[activeConversationId])}
+            isTyping={isTypingActive}
+            typingText={typingText}
             onSendMessage={handleSendMessage}
             onRetryMessage={handleRetryMessage}
             onTypingStart={handleTypingStart}
             onTypingStop={handleTypingStop}
             onBack={() => setActiveConversationId(null)}
+            onOpenDetails={() => setIsDetailsSheetOpen(true)}
             isMobile={isMobile}
           />
         ) : (
@@ -445,14 +573,43 @@ export function ChatPage() {
         )}
       </div>
 
-      {/* User Search & Discovery Modal */}
+      {/* User Search & Discovery Modal (Direct Message) */}
       <UserSearchModal
         isOpen={isSearchModalOpen}
         onOpenChange={setIsSearchModalOpen}
         onSelectUser={handleStartConversationWithUser}
       />
+
+      {/* Create Group Modal */}
+      <CreateGroupModal
+        isOpen={isGroupModalOpen}
+        onOpenChange={setIsGroupModalOpen}
+        onGroupCreated={handleGroupCreated}
+        currentUserId={user?.id}
+      />
+
+      {/* Create Broadcast Modal */}
+      <CreateBroadcastModal
+        isOpen={isBroadcastModalOpen}
+        onOpenChange={setIsBroadcastModalOpen}
+        onBroadcastCreated={handleBroadcastCreated}
+        currentUserId={user?.id}
+      />
+
+      {/* Group / Broadcast Details Sheet */}
+      {activeConversation && activeConversation.type !== "DIRECT" && (
+        <GroupDetailsSheet
+          isOpen={isDetailsSheetOpen}
+          onOpenChange={setIsDetailsSheetOpen}
+          conversation={activeConversation}
+          currentUserId={user?.id}
+          onConversationUpdated={handleConversationUpdated}
+          onLeaveSuccess={handleLeaveSuccess}
+        />
+      )}
     </div>
   )
 }
 
 export default ChatPage
+

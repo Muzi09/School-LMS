@@ -3,7 +3,8 @@ import { SendHorizonal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
-const TYPING_TIMEOUT = 2000
+const TYPING_HEARTBEAT_INTERVAL = 2000 // Send typing_start refresh every 2s while actively typing
+const TYPING_INACTIVITY_DELAY = 2500 // Stop typing after 2.5s of no keypresses
 
 export function MessageComposer({
   onSendMessage,
@@ -15,6 +16,7 @@ export function MessageComposer({
   const [content, setContent] = useState("")
   const textareaRef = useRef(null)
   const isTypingRef = useRef(false)
+  const lastTypingPingRef = useRef(0)
   const typingTimeoutRef = useRef(null)
   const onTypingStopRef = useRef(onTypingStop)
   const onTypingStartRef = useRef(onTypingStart)
@@ -33,6 +35,7 @@ export function MessageComposer({
       }
       if (isTypingRef.current) {
         isTypingRef.current = false
+        lastTypingPingRef.current = 0
         onTypingStopRef.current?.()
       }
     }
@@ -45,6 +48,7 @@ export function MessageComposer({
     }
     if (isTypingRef.current) {
       isTypingRef.current = false
+      lastTypingPingRef.current = 0
       onTypingStopRef.current?.()
     }
   }
@@ -84,21 +88,25 @@ export function MessageComposer({
       return
     }
 
-    // First keystroke: emit typing_start
-    if (!isTypingRef.current) {
+    const now = Date.now()
+
+    // Emit typing_start on first keystroke OR refresh every 2s while actively typing
+    if (!isTypingRef.current || now - lastTypingPingRef.current > TYPING_HEARTBEAT_INTERVAL) {
       isTypingRef.current = true
+      lastTypingPingRef.current = now
       onTypingStartRef.current?.()
     }
 
-    // Reset 2-second typing timeout on subsequent keystrokes
+    // Reset inactivity timeout on each keystroke
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current)
     }
     typingTimeoutRef.current = setTimeout(() => {
       isTypingRef.current = false
+      lastTypingPingRef.current = 0
       onTypingStopRef.current?.()
       typingTimeoutRef.current = null
-    }, TYPING_TIMEOUT)
+    }, TYPING_INACTIVITY_DELAY)
   }
 
   useEffect(() => {
@@ -108,7 +116,7 @@ export function MessageComposer({
   }, [disabled])
 
   return (
-    <div className="p-3 border-t border-border/80 bg-card/60 backdrop-blur-xs">
+    <div className="p-3 border-t border-border/80 bg-card/60 backdrop-blur-xs shrink-0">
       <div className="flex items-end gap-2 max-w-4xl mx-auto">
         <div className="flex-1 relative">
           <Textarea

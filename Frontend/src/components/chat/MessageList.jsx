@@ -9,15 +9,32 @@ export function MessageList({
   currentUserId,
   isLoading,
   isTyping = false,
+  typingText = null,
+  isGroup = false,
   onRetryMessage,
 }) {
   const containerRef = useRef(null)
   const scrollBottomRef = useRef(null)
+  const isInitialLoadRef = useRef(true)
+
+  useEffect(() => {
+    if (isLoading) {
+      isInitialLoadRef.current = true
+    }
+  }, [isLoading])
 
   // Scroll to bottom when message count changes or finishes loading
   useEffect(() => {
-    if (!isLoading && scrollBottomRef.current) {
-      scrollBottomRef.current.scrollIntoView({ behavior: "smooth" })
+    if (!isLoading && containerRef.current) {
+      if (isInitialLoadRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight
+        isInitialLoadRef.current = false
+      } else {
+        containerRef.current.scrollTo({
+          top: containerRef.current.scrollHeight,
+          behavior: "smooth",
+        })
+      }
     }
   }, [messages?.length, isLoading])
 
@@ -26,8 +43,11 @@ export function MessageList({
     if (!isLoading && isTyping && containerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = containerRef.current
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 120
-      if (isNearBottom && scrollBottomRef.current) {
-        scrollBottomRef.current.scrollIntoView({ behavior: "smooth" })
+      if (isNearBottom) {
+        containerRef.current.scrollTo({
+          top: containerRef.current.scrollHeight,
+          behavior: "smooth",
+        })
       }
     }
   }, [isTyping, isLoading])
@@ -61,7 +81,7 @@ export function MessageList({
 
   if (isLoading) {
     return (
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+      <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto">
         <div className="flex items-start gap-2 max-w-[60%]">
           <Skeleton className="h-10 w-48 rounded-2xl" />
         </div>
@@ -78,16 +98,16 @@ export function MessageList({
   if (!messages || messages.length === 0) {
     if (isTyping) {
       return (
-        <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           <div className="pt-1">
-            <TypingIndicator />
+            <TypingIndicator typingText={typingText} />
           </div>
           <div ref={scrollBottomRef} />
         </div>
       )
     }
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground select-none">
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-8 text-center text-muted-foreground select-none">
         <p className="text-sm">No messages yet.</p>
         <p className="text-xs text-muted-foreground/80 mt-1">
           Say hello to start the conversation!
@@ -97,7 +117,7 @@ export function MessageList({
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+    <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
       {itemsWithDividers.map((item) => {
         if (item.type === "divider") {
           return (
@@ -115,13 +135,14 @@ export function MessageList({
             key={item.id}
             message={item.message}
             isOutgoing={isOutgoing}
+            isGroup={isGroup}
             onRetry={onRetryMessage}
           />
         )
       })}
       {isTyping && (
         <div className="pt-1">
-          <TypingIndicator />
+          <TypingIndicator typingText={typingText} />
         </div>
       )}
       <div ref={scrollBottomRef} />

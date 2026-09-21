@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     Boolean,
+    DateTime,
     Index,
     SmallInteger,
     String,
@@ -69,6 +70,11 @@ class User(Base, AuditMixin):
         nullable=False,
         default=True,
         server_default="true",
+    )
+
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Relationships
