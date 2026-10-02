@@ -11,16 +11,18 @@ import {
   Check,
   Loader2,
   ShieldAlert,
+  FileSpreadsheet,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { useStaffList, useUpdateStaffStatus } from "@/hooks/useStaff"
+import { useStaffList } from "@/hooks/useStaff"
 import { resendStaffSetupApi } from "@/api/staffService"
 import { PageHeader } from "@/components/common/PageHeader"
 import { DataTable } from "@/components/common/DataTable"
 import { StaffFormModal } from "./StaffFormModal"
 import { StaffDetailsModal } from "./StaffDetailsModal"
 import { StaffDeleteDialog } from "./StaffDeleteDialog"
+import { BulkStaffImportModal } from "./BulkStaffImportModal"
 import { formatDateTime } from "@/lib/utils"
 
 export function StaffList() {
@@ -43,7 +45,7 @@ export function StaffList() {
     error,
     refetch,
   } = useStaffList({
-    isActive: statusFilter === "" ? undefined : statusFilter === "true",
+    status: statusFilter || undefined,
     search: deferredSearch.trim() || undefined,
     page: pagination.pageIndex + 1,
     pageSize: pagination.pageSize,
@@ -52,8 +54,6 @@ export function StaffList() {
   const staffList = data?.items || []
   const total = data?.total || 0
 
-  const updateStatusMutation = useUpdateStaffStatus()
-
   // Modal states
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingStaff, setEditingStaff] = useState(null)
@@ -61,13 +61,7 @@ export function StaffList() {
   const [viewingStaff, setViewingStaff] = useState(null)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   const [deletingStaff, setDeletingStaff] = useState(null)
-
-  const handleToggleStatus = (staff) => {
-    updateStatusMutation.mutate({
-      staffId: staff.id,
-      isActive: !staff.is_active,
-    })
-  }
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false)
 
   const handleResendSetup = async (staff) => {
     try {
@@ -162,35 +156,6 @@ export function StaffList() {
           </span>
         ),
       },
-      {
-        id: "father_name",
-        header: "Father's Name",
-        accessorFn: (row) => {
-          const p = row.staff_profile || {}
-          return p.father_first_name ? `${p.father_first_name} ${p.father_last_name || ""}` : "—"
-        },
-        Cell: ({ cell }) => <span className="text-foreground text-sm">{cell.getValue()}</span>,
-      },
-      {
-        accessorKey: "is_active",
-        header: "Active Status",
-        Cell: ({ row }) => {
-          const s = row.original
-          return (
-            <button
-              onClick={() => handleToggleStatus(s)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
-                s.is_active
-                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
-                  : "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20"
-              }`}
-            >
-              <span className={`size-1.5 rounded-full ${s.is_active ? "bg-emerald-500" : "bg-destructive"}`} />
-              <span>{s.is_active ? "Active" : "Inactive"}</span>
-            </button>
-          )
-        },
-      },
       // Mixin Audit Columns (hidden by default)
       {
         accessorKey: "created_at",
@@ -259,6 +224,17 @@ export function StaffList() {
         description="Create, view, manage, and assign teaching and administrative staff members."
         onRefresh={() => refetch()}
         isRefreshing={isFetching}
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsBulkImportOpen(true)}
+            className="h-9 px-4 text-sm font-medium gap-2 shadow-2xs border-border/80 hover:bg-accent cursor-pointer"
+          >
+            <FileSpreadsheet className="size-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Bulk Import</span>
+          </Button>
+        }
         onCreate={() => {
           setEditingStaff(null)
           setIsFormOpen(true)
@@ -363,11 +339,11 @@ export function StaffList() {
                 setStatusFilter(e.target.value)
                 setPagination((prev) => ({ ...prev, pageIndex: 0 }))
               }}
-              className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
             >
               <option value="">All Status</option>
-              <option value="true">Active Only</option>
-              <option value="false">Inactive Only</option>
+              <option value="ACTIVE">Active</option>
+              <option value="PENDING_ACTIVATION">Pending Activation</option>
             </select>
           </div>
         )}
@@ -396,6 +372,15 @@ export function StaffList() {
         staff={deletingStaff}
       />
 
+      <BulkStaffImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => {
+          setIsBulkImportOpen(false)
+          refetch()
+        }}
+        onImportSuccess={() => refetch()}
+      />
+
       {/* Resend / Share Setup Link Modal */}
       {setupModalData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -420,7 +405,7 @@ export function StaffList() {
             <div className="p-3.5 rounded-xl bg-muted/60 border border-border text-left space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">
-                  One-Time Setup Link:
+                  One-Time Setup Link
                 </label>
                 <span className="text-[10px] text-muted-foreground">Expires in 48 hours</span>
               </div>

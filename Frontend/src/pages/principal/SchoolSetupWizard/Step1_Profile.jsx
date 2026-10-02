@@ -260,7 +260,7 @@ export function Step1Profile({
       </div>
 
       {/* 4. Theme Color */}
-      <div className="space-y-3 pt-2 border-t border-border">
+      <div className="space-y-3 pt-2 ">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Palette className="size-4 text-primary" />

@@ -156,7 +156,7 @@ export function StaffAccountSetup() {
           <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{tokenError}</p>
 
           <div className="mt-6 p-3.5 rounded-xl bg-muted/50 border border-border text-xs text-muted-foreground text-left space-y-1.5">
-            <p className="font-semibold text-foreground">Possible reasons:</p>
+            <p className="font-semibold text-foreground">Possible reasons</p>
             <ul className="list-disc list-inside space-y-1">
               <li>The setup link has exceeded its 48-hour expiration.</li>
               <li>Your account was already set up and activated.</li>
@@ -267,11 +267,8 @@ export function StaffAccountSetup() {
           <div className="p-4 rounded-2xl border border-border bg-card/60 space-y-3.5">
             <div className="flex items-center gap-2 font-bold text-xs sm:text-sm text-foreground">
               <Lock className="size-4 text-primary" />
-              <span>Create Master Password</span>
+              <span>Create Password</span>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Used for standard login across all browsers and devices (minimum 8 characters).
-            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
@@ -317,9 +314,6 @@ export function StaffAccountSetup() {
               <Hash className="size-4 text-primary" />
               <span>Create Quick Login PIN (4 digits)</span>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Used for rapid terminal sign-in via Email + PIN without typing your full password.
-            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>

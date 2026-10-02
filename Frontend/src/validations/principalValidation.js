@@ -13,6 +13,8 @@ export const generalValidationSchema = Yup.object().shape({
 })
 
 export const getGeneralLoginValidationSchema = () => generalValidationSchema
+export const loginValidationSchema = generalValidationSchema
+export const getLoginValidationSchema = () => generalValidationSchema
 
 /**
  * Yup validation schema for Principal Quick Login (Email + PIN)

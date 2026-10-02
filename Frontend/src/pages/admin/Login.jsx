@@ -135,9 +135,9 @@ export function AdminLogin() {
 
         <div className="mt-8 pt-6 border-t border-border text-center">
           <p className="text-xs text-muted-foreground">
-            School Principal?{" "}
-            <a href="/principal/login" className="text-primary font-semibold hover:underline">
-              Go to School Principal Login
+            School User?{" "}
+            <a href="/login" className="text-primary font-semibold hover:underline">
+              Go to School Login
             </a>
           </p>
         </div>

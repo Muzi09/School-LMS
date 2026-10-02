@@ -70,8 +70,6 @@ def run_tests():
                 roll_no=f"STF-ROL-{suffix}",
                 gender=Gender.FEMALE,
                 date_of_birth=date(1988, 4, 12),
-                father_first_name="John",
-                father_last_name="StaffMember",
             ),
         )
         staff_read = user_controller.create_staff(data=staff_req)
@@ -80,8 +78,6 @@ def run_tests():
         assert staff_read.staff_profile.roll_no == f"STF-ROL-{suffix}"
         assert staff_read.staff_profile.gender == Gender.FEMALE
         assert staff_read.staff_profile.date_of_birth == date(1988, 4, 12)
-        assert staff_read.staff_profile.father_first_name == "John"
-        assert staff_read.staff_profile.father_last_name == "StaffMember"
         print(f"   Staff created: {staff_read.id}, Roll No: {staff_read.staff_profile.roll_no}")
 
         print("4. Creating Student User (Role 3) via Controller...")

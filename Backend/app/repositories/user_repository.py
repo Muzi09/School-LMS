@@ -110,6 +110,7 @@ class UserRepository(BaseRepository[User]):
     def list_staff(
         self,
         is_active: bool | None = None,
+        status: str | None = None,
         search: str | None = None,
         skip: int = 0,
         limit: int = 20,
@@ -120,17 +121,21 @@ class UserRepository(BaseRepository[User]):
         if is_active is not None:
             stmt = stmt.where(User.is_active == is_active)
 
+        if status or search:
+            stmt = stmt.outerjoin(User.staff_profile)
+
+        if status:
+            stmt = stmt.where(StaffProfile.status == status)
+
         if search:
             search_term = f"%{search.strip()}%"
-            stmt = stmt.outerjoin(User.staff_profile).where(
+            stmt = stmt.where(
                 or_(
                     User.first_name.ilike(search_term),
                     User.last_name.ilike(search_term),
                     User.email.ilike(search_term),
                     User.login_mobile.ilike(search_term),
                     StaffProfile.roll_no.ilike(search_term),
-                    StaffProfile.father_first_name.ilike(search_term),
-                    StaffProfile.father_last_name.ilike(search_term),
                 )
             )
 

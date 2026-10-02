@@ -2,7 +2,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -16,20 +16,29 @@ from app.api.deps import (
     require_view_staff,
 )
 from app.core.config import settings
+from app.core.exceptions import BadRequestException
 from app.models.school import School
 from app.models.smtp_configuration import SmtpConfiguration
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.staff import (
+    BulkStaffCreationResponse,
+    BulkStaffPreviewResponse,
     CreateStaffRequest,
     StaffCompleteSetupRequest,
     StaffCreationResponse,
     StaffDetailRead,
+    StaffIdGenerateResponse,
     StaffResendSetupResponse,
     StaffSetupValidateResponse,
     StaffUpdate,
 )
 from app.schemas.user import UserStatusUpdate
+from app.services.bulk_staff_service import (
+    execute_bulk_import,
+    generate_sample_xlsx,
+    parse_and_validate_file,
+)
 from app.services.email_service import send_staff_invitation_email
 from app.services.user_service import UserService
 
@@ -168,6 +177,76 @@ def create_staff(
 
 
 @router.get(
+    "/bulk-import/sample",
+    summary="Download Staff Import Sample Template",
+    description="Download official sample XLSX template containing expected column headers and 3 mock records.",
+)
+def download_staff_import_sample(
+    current_user: Annotated[User, Depends(require_create_staff)],
+):
+    xlsx_bytes = generate_sample_xlsx()
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="staff_bulk_import_sample.xlsx"',
+        },
+    )
+
+
+@router.post(
+    "/bulk-import/preview",
+    response_model=BulkStaffPreviewResponse,
+    summary="Preview and Validate Bulk Staff Import",
+    description="Dry-run validation of uploaded XLSX file. Checks structure, headers, row-level constraints, and duplicates.",
+)
+async def preview_bulk_staff(
+    file: Annotated[UploadFile, File(description="Uploaded XLSX spreadsheet file")],
+    current_user: Annotated[User, Depends(require_create_staff)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    filename = file.filename or ""
+    if not filename.lower().endswith(".xlsx"):
+        raise BadRequestException("Invalid file type. Only Excel (.xlsx) files are supported.")
+
+    file_bytes = await file.read()
+    school_id = current_user.school_id
+
+    return parse_and_validate_file(
+        file_bytes=file_bytes,
+        school_id=school_id,
+        admin_id=current_user.id,
+        db=db,
+    )
+
+
+@router.post(
+    "/bulk-import",
+    response_model=BulkStaffCreationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Execute Bulk Staff Account Creation",
+    description="Authoritatively re-validate file, create accounts for valid rows, send invitations if SMTP configured, and return structured result.",
+)
+async def bulk_create_staff(
+    file: Annotated[UploadFile, File(description="Uploaded XLSX spreadsheet file")],
+    service: Annotated[UserService, Depends(get_user_service)],
+    current_user: Annotated[User, Depends(require_create_staff)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    filename = file.filename or ""
+    if not filename.lower().endswith(".xlsx"):
+        raise BadRequestException("Invalid file type. Only Excel (.xlsx) files are supported.")
+
+    file_bytes = await file.read()
+    return execute_bulk_import(
+        file_bytes=file_bytes,
+        current_user=current_user,
+        db=db,
+        user_service=service,
+    )
+
+
+@router.get(
     "",
     response_model=PaginatedResponse[StaffDetailRead],
     summary="List Staff Members",
@@ -177,12 +256,14 @@ def list_staff(
     service: Annotated[UserService, Depends(get_user_service)],
     current_user: Annotated[User, Depends(require_view_staff)],
     is_active: Annotated[bool | None, Query(description="Filter by Active Status")] = None,
+    status: Annotated[str | None, Query(description="Filter by Account Status (e.g. ACTIVE, PENDING_ACTIVATION)")] = None,
     search: Annotated[str | None, Query(description="Search in name, email, roll no, mobile")] = None,
     page: Annotated[int, Query(ge=1, description="Page number")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="Page size")] = 10,
 ):
     items, total = service.list_staff(
         is_active=is_active,
+        status=status,
         search=search,
         page=page,
         page_size=page_size,
@@ -193,6 +274,34 @@ def list_staff(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get(
+    "/generate-id",
+    response_model=StaffIdGenerateResponse,
+    summary="Generate Next Staff ID",
+    description="Calculate auto-generated staff ID in format [Year][RoleCode][PaddedSequence], e.g., 2026STF001.",
+)
+def generate_staff_id(
+    service: Annotated[UserService, Depends(get_user_service)],
+    current_user: Annotated[User, Depends(require_view_staff)],
+    joining_year: Annotated[int | None, Query(description="Joining year, defaults to current year")] = None,
+    role_code: Annotated[str, Query(description="Role code, defaults to STF")] = "STF",
+):
+    school_id = current_user.school_id
+    staff_id, seq = service.generate_staff_id(
+        school_id=school_id,
+        joining_year=joining_year,
+        role_code=role_code,
+    )
+    from datetime import datetime, timezone
+    year = joining_year or datetime.now(timezone.utc).year
+    return StaffIdGenerateResponse(
+        staff_id=staff_id,
+        joining_year=year,
+        role_code=role_code.strip().upper(),
+        sequence_number=seq,
     )
 
 

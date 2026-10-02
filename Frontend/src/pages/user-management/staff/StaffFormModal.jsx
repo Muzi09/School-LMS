@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react"
 import { useFormik } from "formik"
 import { useQuery } from "@tanstack/react-query"
 import {
-  Briefcase,
   Layers,
   AlertCircle,
   Loader2,
@@ -19,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { useCreateStaff, useUpdateStaff } from "@/hooks/useStaff"
 import { getPrincipalEmailSetupApi } from "@/api/principalEmailService"
+import { generateStaffIdApi } from "@/api/staffService"
 import { getStaffValidationSchema } from "@/validations"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { cn } from "@/lib/utils"
@@ -60,8 +60,6 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
       roll_no: profile.roll_no || "",
       gender: profile.gender ?? 1,
       date_of_birth: profile.date_of_birth || "",
-      father_first_name: profile.father_first_name || "",
-      father_last_name: profile.father_last_name || "",
     }
   }, [staff])
 
@@ -83,8 +81,6 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
               roll_no: values.roll_no.trim(),
               gender: Number(values.gender),
               date_of_birth: values.date_of_birth,
-              father_first_name: values.father_first_name.trim(),
-              father_last_name: values.father_last_name.trim(),
             },
           }
           await updateStaffMutation.mutateAsync({ staffId: staff.id, data: updatePayload })
@@ -99,8 +95,6 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
               roll_no: values.roll_no.trim(),
               gender: Number(values.gender),
               date_of_birth: values.date_of_birth,
-              father_first_name: values.father_first_name.trim(),
-              father_last_name: values.father_last_name.trim(),
             },
           }
 
@@ -150,13 +144,27 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
       createStaffMutation.reset?.()
       updateStaffMutation.reset?.()
       formik.resetForm({ values: initialValues })
+
+      // Auto-generate next Staff ID for new staff
+      if (!isEdit) {
+        generateStaffIdApi()
+          .then((res) => {
+            if (res?.staff_id) {
+              formik.setFieldValue("roll_no", res.staff_id)
+            }
+          })
+          .catch(() => {
+            const currentYear = new Date().getFullYear()
+            formik.setFieldValue("roll_no", `${currentYear}STF001`)
+          })
+      }
     } else {
       document.body.style.overflow = ""
     }
     return () => {
       document.body.style.overflow = ""
     }
-  }, [isOpen, staff])
+  }, [isOpen, staff, isEdit])
 
   if (!isOpen) return null
 
@@ -258,8 +266,8 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
             {/* Email Setup Status Warning/Notice for Staff Creation */}
             {!isEdit && (
               <>
-                {!isEmailConfigured ? (
-                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5">
+                {!isEmailConfigured && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-sm flex items-start gap-2.5">
                     <ShieldAlert className="size-4.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                     <div className="leading-relaxed">
                       <p className="font-semibold text-foreground">Email Setup is not completed</p>
@@ -267,13 +275,6 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                         The Staff member will not receive their first-login link automatically. You can still create the account, and you will be provided a secure setup link to share with them manually after creation.
                       </p>
                     </div>
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 text-xs flex items-start gap-2.5">
-                    <CheckCircle2 className="size-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <p className="leading-relaxed text-foreground">
-                      Email Setup is configured. The Staff member will automatically receive an invitation email containing a secure link to create their password and PIN.
-                    </p>
                   </div>
                 )}
               </>
@@ -288,7 +289,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     First Name
                   </label>
                   <Input
@@ -311,7 +312,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Last Name
                   </label>
                   <Input
@@ -334,7 +335,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Mobile Number
                   </label>
                   <Input
@@ -358,7 +359,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Email Address
                   </label>
                   <Input
@@ -393,21 +394,17 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Staff ID
                   </label>
                   <Input
                     id="roll_no"
                     name="roll_no"
-                    maxLength={50}
+                    readOnly
+                    tabIndex={-1}
                     value={formik.values.roll_no}
-                    onChange={formik.handleChange}
-                    onBlur={formik.handleBlur}
-                    placeholder="e.g. STF-001"
-                    className={cn(
-                      "h-10 text-sm font-mono rounded-xl px-3.5",
-                      formik.touched.roll_no && formik.errors.roll_no && "border-destructive/80 ring-1 ring-destructive/30"
-                    )}
+                    placeholder="Generating Staff ID..."
+                    className="h-10 text-sm font-mono rounded-xl px-3.5 bg-muted/40 cursor-not-allowed select-none text-muted-foreground focus-visible:ring-0 focus-visible:border-transparent"
                   />
                   {formik.touched.roll_no && formik.errors.roll_no && (
                     <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
@@ -417,7 +414,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Gender
                   </label>
                   <select
@@ -443,7 +440,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Date of Birth
                   </label>
                   <DatePicker
@@ -459,62 +456,6 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                   {formik.touched.date_of_birth && formik.errors.date_of_birth && (
                     <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
                       {formik.errors.date_of_birth}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Section 3: Guardian / Next of Kin */}
-            <div className="space-y-3.5">
-              <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 border-b border-border/60 pb-2">
-                <Briefcase className="size-4 text-primary" />
-                <span>3. Guardian / Next of Kin Information</span>
-              </h4>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="father_first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                    Father's First Name
-                  </label>
-                  <Input
-                    id="father_first_name"
-                    name="father_first_name"
-                    maxLength={50}
-                    value={formik.values.father_first_name}
-                    onChange={formik.handleChange}
-                    onBlur={formik.handleBlur}
-                    className={cn(
-                      "h-10 text-sm rounded-xl px-3.5",
-                      formik.touched.father_first_name && formik.errors.father_first_name && "border-destructive/80 ring-1 ring-destructive/30"
-                    )}
-                  />
-                  {formik.touched.father_first_name && formik.errors.father_first_name && (
-                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                      {formik.errors.father_first_name}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="father_last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
-                    Father's Last Name
-                  </label>
-                  <Input
-                    id="father_last_name"
-                    name="father_last_name"
-                    maxLength={50}
-                    value={formik.values.father_last_name}
-                    onChange={formik.handleChange}
-                    onBlur={formik.handleBlur}
-                    className={cn(
-                      "h-10 text-sm rounded-xl px-3.5",
-                      formik.touched.father_last_name && formik.errors.father_last_name && "border-destructive/80 ring-1 ring-destructive/30"
-                    )}
-                  />
-                  {formik.touched.father_last_name && formik.errors.father_last_name && (
-                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
-                      {formik.errors.father_last_name}
                     </p>
                   )}
                 </div>

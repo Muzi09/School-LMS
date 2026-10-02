@@ -85,13 +85,20 @@ def login(
     # Check if Staff is in pending activation state
     if user.role == UserRole.STAFF:
         staff_profile = getattr(user, "staff_profile", None)
-        if (staff_profile and staff_profile.status == "PENDING_ACTIVATION") or not user.password_hash:
+        if (staff_profile and staff_profile.status == "PENDING_ACTIVATION") or (not user.password_hash and not user.pin_hash):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Your account has not been activated yet. Please use the setup link sent to your email to create your password and PIN.",
             )
 
-    if not user.password_hash or not verify_password(payload.password, user.password_hash):
+    # Allow authentication via password OR quick PIN
+    is_valid = False
+    if user.password_hash and verify_password(payload.password, user.password_hash):
+        is_valid = True
+    elif user.pin_hash and verify_pin(payload.password, user.pin_hash):
+        is_valid = True
+
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

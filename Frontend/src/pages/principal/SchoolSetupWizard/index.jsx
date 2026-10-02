@@ -445,7 +445,7 @@ export function SchoolSetupWizard() {
       localStorage.removeItem(draftStorageKey)
     }
     logout()
-    navigate("/principal/login", { replace: true })
+    navigate("/login", { replace: true })
   }, [draftStorageKey, logout, navigate])
 
   // 7-second countdown auto-redirect after successful setup
@@ -2120,7 +2120,7 @@ export function SchoolSetupWizard() {
           <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{tokenError}</p>
           <div className="mt-6 flex flex-col gap-2">
             <Button asChild className="w-full">
-              <Link to="/principal/login">Go to Principal Login</Link>
+              <Link to="/login">Go to Login</Link>
             </Button>
           </div>
         </div>

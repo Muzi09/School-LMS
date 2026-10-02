@@ -89,6 +89,50 @@ class UserService:
     # ----------------------------------------------------
     # STAFF OPERATIONS
     # ----------------------------------------------------
+    def generate_staff_id(
+        self,
+        school_id: UUID | None = None,
+        joining_year: int | None = None,
+        role_code: str = "STF",
+    ) -> tuple[str, int]:
+        """
+        Auto-generate Staff ID in the format:
+        [Joining Year] + [Role Code] + [Padded Sequence Number]
+        Example: 2026STF001
+
+        Sequence resets each year and per role code.
+        Returns (generated_staff_id, sequence_number).
+        """
+        year = joining_year or datetime.now(timezone.utc).year
+        role = (role_code or "STF").strip().upper()
+        prefix = f"{year}{role}"
+
+        stmt = (
+            select(StaffProfile.roll_no)
+            .join(User, StaffProfile.user_id == User.id)
+            .where(
+                User.deleted_at.is_(None),
+                StaffProfile.roll_no.like(f"{prefix}%"),
+            )
+        )
+        if school_id:
+            stmt = stmt.where(StaffProfile.school_id == school_id)
+
+        existing_roll_nos = list(self.db.scalars(stmt).all())
+
+        max_seq = 0
+        prefix_len = len(prefix)
+        for r_no in existing_roll_nos:
+            suffix = r_no[prefix_len:]
+            if suffix.isdigit():
+                val = int(suffix)
+                if val > max_seq:
+                    max_seq = val
+
+        next_seq = max_seq + 1
+        staff_id = f"{prefix}{next_seq:03d}"
+        return staff_id, next_seq
+
     def create_staff(
         self,
         data: CreateStaffRequest,
@@ -120,6 +164,10 @@ class UserService:
 
             # 2. Create StaffProfile with PENDING_ACTIVATION status
             profile_data = data.profile.model_dump() if data.profile else {}
+            if not profile_data.get("roll_no"):
+                generated_id, _ = self.generate_staff_id(school_id=school_id)
+                profile_data["roll_no"] = generated_id
+
             staff_profile = StaffProfile(
                 user_id=user.id,
                 school_id=school_id,
@@ -242,6 +290,7 @@ class UserService:
     def list_staff(
         self,
         is_active: bool | None = None,
+        status: str | None = None,
         search: str | None = None,
         page: int = 1,
         page_size: int = 20,
@@ -250,6 +299,7 @@ class UserService:
         skip = (page - 1) * page_size
         return self.user_repo.list_staff(
             is_active=is_active,
+            status=status,
             search=search,
             skip=skip,
             limit=page_size,

@@ -40,7 +40,7 @@ class UserController:
     ) -> UserDetailRead:
         """Handle Staff creation."""
         created_by_id = current_user.id if current_user else None
-        user = self.user_service.create_staff(data=data, created_by_id=created_by_id)
+        user, _ = self.user_service.create_staff(data=data, created_by_id=created_by_id)
         return UserDetailRead.model_validate(user)
 
     def create_student(

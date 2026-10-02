@@ -3,9 +3,10 @@ import apiClient from "./client"
 /**
  * Fetch paginated and filtered staff list.
  */
-export async function getStaffListApi({ isActive, search, page = 1, pageSize = 10 } = {}) {
+export async function getStaffListApi({ isActive, status, search, page = 1, pageSize = 10 } = {}) {
   const params = {}
   if (isActive !== undefined && isActive !== null && isActive !== "") params.is_active = isActive
+  if (status) params.status = status
   if (search) params.search = search
   params.page = page
   params.page_size = pageSize
@@ -18,6 +19,16 @@ export async function getStaffListApi({ isActive, search, page = 1, pageSize = 1
  */
 export async function getStaffByIdApi(staffId) {
   return apiClient.get(`/staff/${staffId}`)
+}
+
+/**
+ * Auto-generate next Staff ID.
+ */
+export async function generateStaffIdApi({ joiningYear, roleCode = "STF" } = {}) {
+  const params = {}
+  if (joiningYear) params.joining_year = joiningYear
+  if (roleCode) params.role_code = roleCode
+  return apiClient.get("/staff/generate-id", { params })
 }
 
 /**
@@ -68,4 +79,40 @@ export async function validateStaffSetupTokenApi(token) {
 export async function completeStaffSetupApi({ token, password, pin }) {
   return apiClient.post("/staff/setup", { token, password, pin })
 }
+
+/**
+ * Download sample XLSX template for bulk staff import.
+ */
+export async function downloadStaffImportSampleApi() {
+  return apiClient.get("/staff/bulk-import/sample", {
+    responseType: "blob",
+  })
+}
+
+/**
+ * Preview and validate bulk staff XLSX file (dry-run).
+ */
+export async function previewBulkStaffImportApi(file) {
+  const formData = new FormData()
+  formData.append("file", file)
+  return apiClient.post("/staff/bulk-import/preview", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  })
+}
+
+/**
+ * Authoritatively create valid staff records from uploaded XLSX.
+ */
+export async function createBulkStaffImportApi(file) {
+  const formData = new FormData()
+  formData.append("file", file)
+  return apiClient.post("/staff/bulk-import", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  })
+}
+
 

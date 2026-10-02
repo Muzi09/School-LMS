@@ -56,16 +56,6 @@ class StaffProfile(Base):
         nullable=False,
     )
 
-    father_first_name: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-    )
-
-    father_last_name: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-    )
-
     pin_hash: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,

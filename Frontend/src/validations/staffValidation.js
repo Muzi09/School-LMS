@@ -32,8 +32,6 @@ export const getStaffValidationSchema = (isEdit = false) => {
 
     roll_no: Yup.string()
       .trim()
-      .required("Staff ID is required")
-      .min(1, "Staff ID cannot be empty")
       .max(50, "Staff ID cannot exceed 50 characters"),
 
     gender: Yup.number()
@@ -42,18 +40,6 @@ export const getStaffValidationSchema = (isEdit = false) => {
 
     date_of_birth: Yup.string()
       .required("Date of birth is required"),
-
-    father_first_name: Yup.string()
-      .trim()
-      .required("Father's first name is required")
-      .min(2, "Father's first name must be at least 2 characters")
-      .max(50, "Father's first name cannot exceed 50 characters"),
-
-    father_last_name: Yup.string()
-      .trim()
-      .required("Father's last name is required")
-      .min(1, "Father's last name must be at least 1 character")
-      .max(50, "Father's last name cannot exceed 50 characters"),
   })
 }
 

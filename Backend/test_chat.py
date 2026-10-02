@@ -80,8 +80,6 @@ def setup_test_environment():
             roll_no=f"STF_{uuid.uuid4().hex[:4]}",
             gender=Gender.MALE,
             date_of_birth=datetime(1990, 1, 1).date(),
-            father_first_name="GrandBob",
-            father_last_name="Teacher",
             status="ACTIVE",
         )
         db.add(sp_a2)
@@ -130,8 +128,6 @@ def setup_test_environment():
             roll_no=f"STF_{uuid.uuid4().hex[:4]}",
             gender=Gender.FEMALE,
             date_of_birth=datetime(1992, 2, 2).date(),
-            father_first_name="Peter",
-            father_last_name="Beta",
             status="ACTIVE",
         )
         db.add(sp_b1)

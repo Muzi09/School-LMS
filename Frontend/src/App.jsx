@@ -50,11 +50,11 @@ export function App() {
                 <Route path="/admin/login" element={<AdminLogin />} />
               </Route>
 
-              {/* Unified Login Route for Principal and Staff */}
+              {/* Common Login Route for Staff and Principal */}
               <Route element={<PrincipalLoginRoute />}>
                 <Route path="/login" element={<PrincipalLogin />} />
-                <Route path="/principal/login" element={<PrincipalLogin />} />
               </Route>
+              <Route path="/principal/login" element={<Navigate to="/login" replace />} />
 
               {/* Staff First-Login One-Time Setup */}
               <Route path="/login/setup" element={<StaffAccountSetup />} />

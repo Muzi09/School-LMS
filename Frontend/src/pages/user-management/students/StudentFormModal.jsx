@@ -401,7 +401,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               {/* Student Names */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     First Name
                   </label>
                   <Input
@@ -424,7 +424,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="middle_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="middle_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Middle Name <span className="text-muted-foreground font-normal text-xs">(Optional)</span>
                   </label>
                   <Input
@@ -447,7 +447,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Last Name
                   </label>
                   <Input
@@ -473,7 +473,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               {/* Father's Names */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="father_first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="father_first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Father First Name
                   </label>
                   <Input
@@ -496,7 +496,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="father_last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="father_last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Father Last Name
                   </label>
                   <Input
@@ -522,7 +522,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               {/* Contact Information */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Login Mobile
                   </label>
                   <Input
@@ -548,7 +548,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Email Address <span className="text-muted-foreground font-normal text-xs">(Optional)</span>
                   </label>
                   <Input
@@ -585,7 +585,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* 1. Gender */}
                 <div>
-                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Gender
                   </label>
                   <select
@@ -612,7 +612,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 2. Date of Birth */}
                 <div>
-                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Date of Birth
                   </label>
                   <DatePicker
@@ -636,7 +636,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 3. Class / Grade */}
                 <div>
-                  <label htmlFor="class_name" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="class_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Class / Grade
                   </label>
                   <select
@@ -689,7 +689,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 4. Section (Always Dropdown, Disabled if Class not selected) */}
                 <div>
-                  <label htmlFor="section" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="section" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Section
                   </label>
                   <select
@@ -726,7 +726,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 5. House */}
                 <div>
-                  <label htmlFor="house" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="house" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     House
                   </label>
                   {schoolHouses.length > 0 ? (
@@ -771,7 +771,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 6. Roll No */}
                 <div>
-                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-2">
+                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Roll Number <span className="text-muted-foreground font-normal text-xs">(Auto-generated)</span>
                   </label>
                   <Input

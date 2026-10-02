@@ -77,8 +77,6 @@ def setup_multiuser_environment():
             roll_no=f"STA_{uuid.uuid4().hex[:4]}",
             gender=Gender.MALE,
             date_of_birth=datetime(1985, 5, 12).date(),
-            father_first_name="John",
-            father_last_name="Brody",
             status="ACTIVE",
         )
         db.add(sp_a)
@@ -101,8 +99,6 @@ def setup_multiuser_environment():
             roll_no=f"STB_{uuid.uuid4().hex[:4]}",
             gender=Gender.FEMALE,
             date_of_birth=datetime(1988, 8, 20).date(),
-            father_first_name="Hippolyta",
-            father_last_name="Prince",
             status="ACTIVE",
         )
         db.add(sp_b)
@@ -151,8 +147,6 @@ def setup_multiuser_environment():
             roll_no=f"OUT_{uuid.uuid4().hex[:4]}",
             gender=Gender.MALE,
             date_of_birth=datetime(1980, 1, 1).date(),
-            father_first_name="VictorSr",
-            father_last_name="VonDoom",
             status="ACTIVE",
         )
         db.add(sp_out)

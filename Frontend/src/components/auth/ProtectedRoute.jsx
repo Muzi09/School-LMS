@@ -36,7 +36,7 @@ export function PrincipalRoute() {
 
   // If Admin is logged in, do not let them access school application routes directly
   if (!isAuthenticated || isAdmin) {
-    return <Navigate to="/principal/login" state={{ from: location }} replace />
+    return <Navigate to="/login" state={{ from: location }} replace />
   }
 
   // If user is a Principal and setup is pending, force them to onboarding wizard

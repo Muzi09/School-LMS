@@ -4,8 +4,6 @@ import {
   Briefcase,
   Phone,
   Layers,
-  CheckCircle,
-  XCircle,
   Edit2,
   Calendar,
 } from "lucide-react"
@@ -19,6 +17,8 @@ export function StaffDetailsModal({ isOpen, onClose, staff, onEdit }) {
 
   const profile = staff.staff_profile || {}
   const genderMap = { 1: "Male", 2: "Female", 3: "Other" }
+  const status = staff.status || profile.status || "PENDING_ACTIVATION"
+  const isPending = status === "PENDING_ACTIVATION"
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
@@ -58,14 +58,20 @@ export function StaffDetailsModal({ isOpen, onClose, staff, onEdit }) {
           {/* Status Bar */}
           <div className="grid grid-cols-2 gap-3.5 p-4.5 rounded-2xl border border-border bg-card">
             <div>
-              <span className="text-xs font-medium text-muted-foreground block mb-0.5">Account Status</span>
-              <span className={`text-sm font-semibold flex items-center gap-1.5 ${staff.is_active ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
-                {staff.is_active ? <CheckCircle className="size-4" /> : <XCircle className="size-4" />}
-                {staff.is_active ? "Active" : "Inactive"}
+              <span className="text-xs font-medium text-muted-foreground block mb-1">Account Status</span>
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                  isPending
+                    ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+                    : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                }`}
+              >
+                <span className={`size-1.5 rounded-full ${isPending ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`} />
+                <span>{isPending ? "Pending Activation" : "Active"}</span>
               </span>
             </div>
             <div>
-              <span className="text-xs font-medium text-muted-foreground block mb-0.5">Registered Date</span>
+              <span className="text-xs font-medium text-muted-foreground block mb-1">Registered Date</span>
               <span className="text-sm font-semibold text-foreground">
                 {staff.created_at ? formatDateTime(staff.created_at) : "N/A"}
               </span>
@@ -111,16 +117,6 @@ export function StaffDetailsModal({ isOpen, onClose, staff, onEdit }) {
                   <Calendar className="size-3.5 text-muted-foreground" />
                   <span>{profile.date_of_birth || "N/A"}</span>
                 </span>
-              </div>
-              <div className="col-span-2 pt-3 border-t border-border/60 grid grid-cols-2 gap-3">
-                <div>
-                  <span className="text-xs font-medium text-muted-foreground block mb-0.5">Father First Name</span>
-                  <span className="text-sm font-semibold text-foreground">{profile.father_first_name || "N/A"}</span>
-                </div>
-                <div>
-                  <span className="text-xs font-medium text-muted-foreground block mb-0.5">Father Last Name</span>
-                  <span className="text-sm font-semibold text-foreground">{profile.father_last_name || "N/A"}</span>
-                </div>
               </div>
             </div>
           </div>

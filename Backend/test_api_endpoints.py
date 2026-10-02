@@ -26,8 +26,6 @@ def test_api():
             "roll_no": f"STF-{suffix}",
             "gender": Gender.FEMALE,
             "date_of_birth": "1988-02-20",
-            "father_first_name": "James",
-            "father_last_name": "Johnson",
         },
     }
     res = client.post("/api/v1/staff", json=staff_payload)
@@ -37,7 +35,6 @@ def test_api():
     assert staff_data["role"] == UserRole.STAFF
     assert staff_data["staff_profile"]["roll_no"] == f"STF-{suffix}"
     assert staff_data["staff_profile"]["gender"] == Gender.FEMALE
-    assert staff_data["staff_profile"]["father_first_name"] == "James"
     print(f"   Staff created: ID={staff_id}, roll_no={staff_data['staff_profile']['roll_no']}")
 
     print("3. Testing GET /api/v1/staff (List Staff)...")

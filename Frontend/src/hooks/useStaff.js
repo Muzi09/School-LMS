@@ -6,6 +6,8 @@ import {
   updateStaffApi,
   updateStaffStatusApi,
   deleteStaffApi,
+  previewBulkStaffImportApi,
+  createBulkStaffImportApi,
 } from "@/api/staffService"
 
 export const staffKeys = {
@@ -95,3 +97,21 @@ export function useDeleteStaff() {
     },
   })
 }
+
+export function usePreviewBulkStaff() {
+  return useMutation({
+    mutationFn: (file) => previewBulkStaffImportApi(file),
+  })
+}
+
+export function useCreateBulkStaff() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (file) => createBulkStaffImportApi(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
+    },
+  })
+}
+

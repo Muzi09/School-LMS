@@ -18,11 +18,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
 
     # Admin Default Seed Credentials
-    ADMIN_DEFAULT_EMAIL: str
-    ADMIN_DEFAULT_PASSWORD: str
-    ADMIN_DEFAULT_FIRST_NAME: str = "Admin"
-    ADMIN_DEFAULT_LAST_NAME: str = "User"
-    ADMIN_DEFAULT_MOBILE: str = "9999999999"
+    ADMIN_DEFAULT_EMAIL: str = 'amzikhan711@gmail.com'
+    ADMIN_DEFAULT_PASSWORD: str = 'Admin@123'
+    ADMIN_DEFAULT_FIRST_NAME: str = "Muzammil"
+    ADMIN_DEFAULT_LAST_NAME: str = "Khan"
+    ADMIN_DEFAULT_MOBILE: str = "8234971938"
 
     model_config = SettingsConfigDict(
         env_file=[str(BASE_DIR / ".env"), ".env"],

@@ -320,7 +320,7 @@ export function AppHeader() {
             <DropdownMenuItem
               onClick={() => {
                 logout()
-                window.location.href = "/principal/login"
+                window.location.href = "/login"
               }}
               className="cursor-pointer gap-2 text-xs text-destructive hover:text-destructive focus:text-destructive"
             >
