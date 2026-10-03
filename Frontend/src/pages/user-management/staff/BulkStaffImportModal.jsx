@@ -219,7 +219,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
       <div className="relative w-full max-w-4xl bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-10 flex flex-col max-h-[92vh] animate-in fade-in-0 zoom-in-95 duration-200">
         <ModalHeader
           title="Bulk Staff Import"
-          description="Create multiple staff accounts simultaneously via an XLSX spreadsheet."
+          description="Create multiple staff accounts simultaneously via an excel spreadsheet."
           onClose={handleModalClose}
         />
 
@@ -335,7 +335,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
           {currentStep === 1 && (
             <div className="space-y-6 animate-in fade-in-0 duration-200">
               {/* Instructions and Download Template Box */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="p-2 sm:p-3   rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-semibold text-sm">
                     <FileSpreadsheet className="size-4" />
@@ -351,7 +351,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                   className="h-9 px-4 font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-950/70 border-blue-300 dark:border-blue-800 gap-2 shrink-0 cursor-pointer shadow-2xs"
                 >
                   {isDownloadingSample ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                  <span>Download Sample XLSX</span>
+                  <span>Download Sample Excel</span>
                 </Button>
               </div>
 
@@ -522,7 +522,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm font-semibold text-foreground">
-                        Click to select an XLSX file or drag & drop here
+                        Click to select an Excel file or drag & drop here
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Only <span className="font-semibold text-foreground">.xlsx</span> files are supported (up to 10 MB)

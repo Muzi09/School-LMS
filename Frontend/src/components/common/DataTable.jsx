@@ -526,7 +526,7 @@ export function DataTable({
       )}
 
       {/* Table Container */}
-      <div className="relative w-full overflow-x-auto min-h-[160px] max-h-[calc(100vh-280px)]">
+      <div className="relative w-full overflow-x-auto min-h-[160px] max-h-[calc(100vh-310px)]">
         <table className="w-full caption-bottom text-left border-collapse">
           {/* Table Header */}
           <thead className="bg-muted/40 sticky top-0 z-10 backdrop-blur-xs border-b border-border/80">
