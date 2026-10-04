@@ -185,7 +185,10 @@ require_update_staff = PermissionChecker(Permission.UPDATE_STAFF)
 require_delete_staff = PermissionChecker(Permission.DELETE_STAFF)
 require_resend_staff_setup = PermissionChecker(Permission.RESEND_STAFF_SETUP)
 require_manage_email_setup = PermissionChecker(Permission.MANAGE_EMAIL_SETUP)
+require_view_timetable = PermissionChecker(Permission.VIEW_TIMETABLE)
+require_manage_timetable = PermissionChecker(Permission.MANAGE_TIMETABLE)
 
 # Backward compatibility aliases
 require_super_admin = require_admin
 require_principal_or_super_admin = require_principal_or_admin
+

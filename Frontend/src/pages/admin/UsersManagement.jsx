@@ -21,6 +21,7 @@ import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { PageHeader } from "@/components/common/PageHeader"
 import { formatDateTime } from "@/lib/utils"
@@ -46,17 +47,14 @@ export function PlatformUsersManagement() {
       queryClient.invalidateQueries({ queryKey: ["adminStats"] })
       queryClient.invalidateQueries({ queryKey: ["superAdminPlatformUsers"] })
       queryClient.invalidateQueries({ queryKey: ["superAdminStats"] })
-      setSuccessMessage(
+      toast.success(
         `Successfully created ${selectedRole === 0 ? "Admin" : "Sales Person"} account for ${data.first_name} ${data.last_name}!`
       )
       formik.resetForm()
-      setTimeout(() => {
-        setIsModalOpen(false)
-        setSuccessMessage(null)
-      }, 1200)
+      setIsModalOpen(false)
     },
     onError: (err) => {
-      setServerError(err.message || "Failed to create user account.")
+      toast.error(err.message || "Failed to create user account.")
     },
   })
 
@@ -246,20 +244,6 @@ export function PlatformUsersManagement() {
 
             {/* Modal Body */}
             <div className="p-6 space-y-4">
-              {successMessage && (
-                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2.5">
-                  <CheckCircle2 className="size-4.5 shrink-0 text-emerald-500" />
-                  <span>{successMessage}</span>
-                </div>
-              )}
-
-              {serverError && (
-                <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2.5">
-                  <AlertCircle className="size-4 shrink-0 mt-0.5" />
-                  <span className="leading-tight">{serverError}</span>
-                </div>
-              )}
-
               {/* Role Selector */}
               <div>
                 <label className="text-xs font-semibold text-foreground block mb-2">Select User Role</label>

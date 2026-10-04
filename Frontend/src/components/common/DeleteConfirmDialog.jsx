@@ -1,6 +1,7 @@
 import React from "react"
 import { AlertTriangle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 /**
  * Common Delete / Destructive Confirmation Dialog
@@ -17,11 +18,12 @@ export function DeleteConfirmDialog({
   confirmText = "Delete",
   cancelText = "Cancel",
   isPending = false,
+  className,
 }) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
+    <div className={cn("fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200", className)}>
       <div
         className="relative w-full max-w-md bg-card border border-border shadow-2xl rounded-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200"
         role="dialog"

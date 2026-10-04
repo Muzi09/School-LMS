@@ -2,6 +2,7 @@ import {
   GraduationCap,
   Briefcase,
   MessageSquare,
+  CalendarDays,
 } from "lucide-react"
 import { Permission } from "@/lib/permissions"
 
@@ -15,6 +16,19 @@ export const sidebarNavGroups = [
         description: "Real-time direct messaging with school teachers, students, and staff.",
         url: "/chat",
         icon: MessageSquare,
+      },
+    ],
+  },
+  {
+    id: "academic",
+    label: "Academic",
+    items: [
+      {
+        title: "Time Table",
+        description: "Manage weekly class schedules and teacher assignments.",
+        url: "/timetable",
+        icon: CalendarDays,
+        permission: Permission.VIEW_TIMETABLE,
       },
     ],
   },

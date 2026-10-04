@@ -1,11 +1,13 @@
 import axios from "axios"
 
+const baseURL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "/api/v1" : "http://localhost:8000/api/v1")
+
 export const apiClient = axios.create({
-  baseURL: 'http://localhost:8000/api/v1/',
+  baseURL,
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 15000,
+  timeout: 30000,
 })
 
 // Request interceptor to inject Authorization Bearer token
@@ -14,6 +16,10 @@ apiClient.interceptors.request.use(
     const token = localStorage.getItem("school_lms_auth_token")
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+    // Let browser set multipart/form-data boundary automatically when sending FormData
+    if (config.data instanceof FormData) {
+      delete config.headers["Content-Type"]
     }
     return config
   },

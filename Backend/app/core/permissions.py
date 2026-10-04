@@ -21,6 +21,10 @@ class Permission(str, Enum):
     # Staff Application
     STAFF_DASHBOARD_ACCESS = "STAFF_DASHBOARD_ACCESS"
 
+    # Timetable
+    VIEW_TIMETABLE = "VIEW_TIMETABLE"
+    MANAGE_TIMETABLE = "MANAGE_TIMETABLE"
+
 
 ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
     UserRole.ADMIN: {
@@ -34,6 +38,8 @@ ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
         Permission.MANAGE_STUDENTS,
         Permission.VIEW_STUDENTS,
         Permission.STAFF_DASHBOARD_ACCESS,
+        Permission.VIEW_TIMETABLE,
+        Permission.MANAGE_TIMETABLE,
     },
     UserRole.PRINCIPAL: {
         Permission.MANAGE_STAFF,
@@ -46,11 +52,14 @@ ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
         Permission.MANAGE_STUDENTS,
         Permission.VIEW_STUDENTS,
         Permission.STAFF_DASHBOARD_ACCESS,
+        Permission.VIEW_TIMETABLE,
+        Permission.MANAGE_TIMETABLE,
     },
     UserRole.STAFF: {
         Permission.STAFF_DASHBOARD_ACCESS,
         Permission.VIEW_STUDENTS,
-        # NOTE: Staff has ZERO Staff Management and ZERO Email Setup permissions!
+        Permission.VIEW_TIMETABLE,
+        # NOTE: Staff has VIEW_TIMETABLE but ZERO MANAGE_TIMETABLE permissions
     },
     UserRole.STUDENT: set(),
     UserRole.SALES_PERSON: set(),

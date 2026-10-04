@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import (
     get_db,
     get_user_service,
+    require_any_authenticated,
     require_create_staff,
     require_delete_staff,
     require_manage_staff,
@@ -181,15 +182,14 @@ def create_staff(
     summary="Download Staff Import Sample Template",
     description="Download official sample XLSX template containing expected column headers and 3 mock records.",
 )
-def download_staff_import_sample(
-    current_user: Annotated[User, Depends(require_create_staff)],
-):
+def download_staff_import_sample():
     xlsx_bytes = generate_sample_xlsx()
     return Response(
         content=xlsx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": 'attachment; filename="staff_bulk_import_sample.xlsx"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
         },
     )
 
@@ -200,7 +200,7 @@ def download_staff_import_sample(
     summary="Preview and Validate Bulk Staff Import",
     description="Dry-run validation of uploaded XLSX file. Checks structure, headers, row-level constraints, and duplicates.",
 )
-async def preview_bulk_staff(
+def preview_bulk_staff(
     file: Annotated[UploadFile, File(description="Uploaded XLSX spreadsheet file")],
     current_user: Annotated[User, Depends(require_create_staff)],
     db: Annotated[Session, Depends(get_db)],
@@ -209,7 +209,7 @@ async def preview_bulk_staff(
     if not filename.lower().endswith(".xlsx"):
         raise BadRequestException("Invalid file type. Only Excel (.xlsx) files are supported.")
 
-    file_bytes = await file.read()
+    file_bytes = file.file.read()
     school_id = current_user.school_id
 
     return parse_and_validate_file(
@@ -227,7 +227,7 @@ async def preview_bulk_staff(
     summary="Execute Bulk Staff Account Creation",
     description="Authoritatively re-validate file, create accounts for valid rows, send invitations if SMTP configured, and return structured result.",
 )
-async def bulk_create_staff(
+def bulk_create_staff(
     file: Annotated[UploadFile, File(description="Uploaded XLSX spreadsheet file")],
     service: Annotated[UserService, Depends(get_user_service)],
     current_user: Annotated[User, Depends(require_create_staff)],
@@ -237,7 +237,7 @@ async def bulk_create_staff(
     if not filename.lower().endswith(".xlsx"):
         raise BadRequestException("Invalid file type. Only Excel (.xlsx) files are supported.")
 
-    file_bytes = await file.read()
+    file_bytes = file.file.read()
     return execute_bulk_import(
         file_bytes=file_bytes,
         current_user=current_user,

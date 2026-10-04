@@ -18,6 +18,7 @@ import { adminService } from "@/api/adminService"
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { toast } from "sonner"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { cn } from "@/lib/utils"
 import { smtpConfigValidationSchema } from "@/validations"
@@ -71,12 +72,12 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
         await adminService.saveSmtpConfig(payload)
         await queryClient.invalidateQueries({ queryKey: ["adminSmtpConfig"] })
         await queryClient.invalidateQueries({ queryKey: ["superAdminSmtpConfig"] })
-        setSuccessMessage("SMTP configuration saved successfully!")
+        toast.success("SMTP configuration saved successfully!")
         setTimeout(() => {
           onClose()
-        }, 1200)
+        }, 1000)
       } catch (err) {
-        setServerError(err?.message || "Failed to save SMTP configuration.")
+        toast.error(err?.message || "Failed to save SMTP configuration.")
       }
     },
   })
@@ -100,13 +101,12 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
         smtp_password: true,
         from_name: true,
       })
+      toast.warning("Please fill all required SMTP fields before testing.")
       return
     }
 
-    setServerError("")
-    setSuccessMessage("")
     setTestState("testing")
-    setTestMessage("Connecting to SMTP server and validating credentials...")
+    const toastId = toast.loading("Testing SMTP connection...")
 
     try {
       const payload = {
@@ -121,17 +121,26 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
       const res = await adminService.testSmtpConfig(payload)
       if (res.success) {
         setTestState("succeeded")
-        setTestMessage(res.message || "SMTP connection and authentication succeeded!")
         setIsTestedSuccess(true)
+        toast.success("SMTP Connection Verified", {
+          id: toastId,
+          description: res.message || "Connection and authentication succeeded!",
+        })
       } else {
         setTestState("failed")
-        setTestMessage(res.message || "SMTP connection test failed. Please verify credentials.")
         setIsTestedSuccess(false)
+        toast.error("SMTP Connection Failed", {
+          id: toastId,
+          description: res.message || "Please verify credentials.",
+        })
       }
     } catch (err) {
       setTestState("failed")
-      setTestMessage(err?.message || "Failed to connect to SMTP server.")
       setIsTestedSuccess(false)
+      toast.error("SMTP Connection Failed", {
+        id: toastId,
+        description: err?.message || "Failed to connect to SMTP server.",
+      })
     }
   }
 
@@ -154,50 +163,6 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
 
         {/* Form Body */}
         <form onSubmit={formik.handleSubmit} className="p-6 space-y-4.5 overflow-y-auto flex-1">
-          
-
-          {successMessage && (
-            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs flex items-start gap-2.5 animate-in fade-in-50">
-              <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-500" />
-              <span className="leading-relaxed">{successMessage}</span>
-            </div>
-          )}
-
-          {serverError && (
-            <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2.5 animate-in fade-in-50">
-              <AlertCircle className="size-4 shrink-0 mt-0.5" />
-              <span className="leading-relaxed whitespace-pre-line">{serverError}</span>
-            </div>
-          )}
-
-          {testState !== "idle" && (
-            <div
-              className={cn(
-                "p-3.5 rounded-xl text-xs flex items-start gap-2.5 border transition-all duration-300 animate-in fade-in-50",
-                testState === "testing" && "bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300",
-                testState === "succeeded" && "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300",
-                testState === "failed" && "bg-destructive/10 border-destructive/20 text-destructive"
-              )}
-            >
-              {testState === "testing" ? (
-                <Loader2 className="size-4 shrink-0 animate-spin mt-0.5 text-amber-600 dark:text-amber-400" />
-              ) : testState === "succeeded" ? (
-                <CheckCircle2 className="size-4.5 shrink-0 mt-0.5 text-emerald-500" />
-              ) : (
-                <AlertCircle className="size-4 shrink-0 mt-0.5 text-destructive" />
-              )}
-              <div className="space-y-1">
-                <p className="font-semibold">
-                  {testState === "succeeded"
-                    ? "Connection Verified Successfully"
-                    : testState === "testing"
-                    ? "Testing Connection..."
-                    : "Connection Test Failed"}
-                </p>
-                <p className="leading-relaxed text-[11.5px] whitespace-pre-line">{testMessage}</p>
-              </div>
-            </div>
-          )}
 
           {/* Row 1: Equal Width Host & Port */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

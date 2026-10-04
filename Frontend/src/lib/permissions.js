@@ -30,6 +30,10 @@ export const Permission = {
   // Dashboard & general
   STAFF_DASHBOARD_ACCESS: "STAFF_DASHBOARD_ACCESS",
   PRINCIPAL_DASHBOARD_ACCESS: "PRINCIPAL_DASHBOARD_ACCESS",
+
+  // Timetable
+  VIEW_TIMETABLE: "VIEW_TIMETABLE",
+  MANAGE_TIMETABLE: "MANAGE_TIMETABLE",
 }
 
 export const ROLE_PERMISSIONS = {
@@ -46,11 +50,14 @@ export const ROLE_PERMISSIONS = {
     Permission.VIEW_STUDENT,
     Permission.PRINCIPAL_DASHBOARD_ACCESS,
     Permission.STAFF_DASHBOARD_ACCESS,
+    Permission.VIEW_TIMETABLE,
+    Permission.MANAGE_TIMETABLE,
   ],
   [UserRole.STAFF]: [
     Permission.STAFF_DASHBOARD_ACCESS,
     Permission.VIEW_STUDENT,
     Permission.MANAGE_STUDENT,
+    Permission.VIEW_TIMETABLE,
   ],
   [UserRole.STUDENT]: [],
 }

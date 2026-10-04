@@ -18,6 +18,7 @@ from app.models.staff import StaffProfile
 from app.models.staff_onboarding_token import StaffOnboardingToken
 from app.models.student import StudentProfile
 from app.models.subject import ClassSubject, Subject
+from app.models.timetable import DayOfWeek, TimetableEntry, TimetablePeriod
 from app.models.user import User
 from app.models.wing import Wing, WingClass
 
@@ -49,4 +50,8 @@ __all__ = [
     "Conversation",
     "ConversationParticipant",
     "Message",
+    "DayOfWeek",
+    "TimetablePeriod",
+    "TimetableEntry",
 ]
+

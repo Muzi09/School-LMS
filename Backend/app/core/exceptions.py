@@ -49,3 +49,17 @@ class ForbiddenException(AppException):
 
     def __init__(self, message: str = "Forbidden", payload: dict[str, Any] | None = None):
         super().__init__(message=message, status_code=403, payload=payload)
+
+
+class ScheduleConflictException(AppException):
+    """Exception raised when a timetable schedule conflict occurs (teacher or section conflict)."""
+
+    def __init__(self, code: str, message: str, details: dict[str, Any] | None = None):
+        super().__init__(
+            message=message,
+            status_code=409,
+            payload={"code": code, "message": message, "details": details or {}},
+        )
+        self.code = code
+        self.details = details or {}
+

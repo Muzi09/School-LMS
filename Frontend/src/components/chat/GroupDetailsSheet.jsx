@@ -12,6 +12,7 @@ import {
   Crown,
   Search,
   Loader2,
+  AlertCircle,
 } from "lucide-react"
 import {
   Sheet,
@@ -19,6 +20,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet"
+import { toast } from "sonner"
 import {
   Dialog,
   DialogHeader,
@@ -58,7 +60,6 @@ export function GroupDetailsSheet({
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
   const [selectedNewOwnerId, setSelectedNewOwnerId] = useState("")
   const [isLeaving, setIsLeaving] = useState(false)
-  const [errorMsg, setErrorMsg] = useState("")
 
   const isGroup = conversation?.type === "GROUP"
   const isBroadcast = conversation?.type === "BROADCAST"
@@ -82,7 +83,7 @@ export function GroupDetailsSheet({
       .catch((err) => {
         console.error("Failed to load conversation details:", err)
         if (isSubscribed) {
-          setErrorMsg("Failed to load details.")
+          toast.error("Failed to load conversation details.")
           setIsLoading(false)
         }
       })
@@ -112,9 +113,10 @@ export function GroupDetailsSheet({
       setDetails((prev) => ({ ...prev, name: updated.name }))
       setIsEditingName(false)
       onConversationUpdated?.(updated)
+      toast.success("Name updated successfully!")
     } catch (err) {
       console.error("Failed to update name:", err)
-      setErrorMsg("Failed to update conversation name.")
+      toast.error("Failed to update conversation name.")
     } finally {
       setIsSavingName(false)
     }
@@ -156,9 +158,10 @@ export function GroupDetailsSheet({
       setSelectedToAdd([])
       setIsAddModalOpen(false)
       onConversationUpdated?.(updated)
+      toast.success("Participants added successfully!")
     } catch (err) {
       console.error("Failed to add participants:", err)
-      setErrorMsg(err.response?.data?.detail || "Failed to add participants.")
+      toast.error(err.response?.data?.detail || "Failed to add participants.")
     } finally {
       setIsSubmittingAdd(false)
     }
@@ -172,9 +175,10 @@ export function GroupDetailsSheet({
       const updated = await chatService.removeParticipant(conversation.id, userId)
       setDetails(updated)
       onConversationUpdated?.(updated)
+      toast.success("Member removed.")
     } catch (err) {
       console.error("Failed to remove participant:", err)
-      setErrorMsg(err.response?.data?.detail || "Failed to remove member.")
+      toast.error(err.response?.data?.detail || "Failed to remove member.")
     }
   }
 
@@ -191,7 +195,7 @@ export function GroupDetailsSheet({
       onLeaveSuccess?.(conversation.id)
     } catch (err) {
       console.error("Failed to leave group:", err)
-      setErrorMsg(err.response?.data?.detail || "Failed to leave group.")
+      toast.error(err.response?.data?.detail || "Failed to leave group.")
     } finally {
       setIsLeaving(false)
     }
@@ -235,19 +239,6 @@ export function GroupDetailsSheet({
             </div>
           ) : (
             <>
-              {errorMsg && (
-                <div className="p-3 rounded-xl bg-destructive/10 text-destructive text-xs font-medium border border-destructive/20 flex items-center justify-between">
-                  <span>{errorMsg}</span>
-                  <button
-                    type="button"
-                    onClick={() => setErrorMsg("")}
-                    className="size-4 hover:opacity-75"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              )}
-
               {/* Group Name & Rename */}
               <div className="p-4 rounded-2xl bg-muted/40 border border-border/60 space-y-2">
                 <div className="flex items-center justify-between">

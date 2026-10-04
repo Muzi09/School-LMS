@@ -38,6 +38,10 @@ import { StudentList } from "@/pages/user-management/students/StudentList"
 // Chat Page
 import { ChatPage } from "@/pages/chat/ChatPage"
 
+// Timetable Page
+import { TimeTable } from "@/pages/timetable/TimeTable"
+import { Toaster } from "@/components/ui/sonner"
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -90,6 +94,9 @@ export function App() {
                   </Route>
                   <Route path="students" element={<StudentList />} />
                   <Route path="chat" element={<ChatPage />} />
+                  <Route element={<PermissionRoute permission={Permission.VIEW_TIMETABLE} redirectTo="/" />}>
+                    <Route path="timetable" element={<TimeTable />} />
+                  </Route>
                 </Route>
               </Route>
 
@@ -97,6 +104,7 @@ export function App() {
               <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
           </BrowserRouter>
+          <Toaster />
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

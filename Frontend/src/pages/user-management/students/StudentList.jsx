@@ -15,6 +15,7 @@ import { DataTable } from "@/components/common/DataTable"
 import { StudentFormModal } from "./StudentFormModal"
 import { StudentDetailsModal } from "./StudentDetailsModal"
 import { StudentDeleteDialog } from "./StudentDeleteDialog"
+import { Combobox } from "@/components/ui/combobox"
 import { formatDateTime } from "@/lib/utils"
 
 export function StudentList() {
@@ -303,18 +304,22 @@ export function StudentList() {
         }}
         renderTopToolbarCustomActions={() => (
           <div className="flex items-center gap-2">
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value)
-                setPagination((prev) => ({ ...prev, pageIndex: 0 }))
-              }}
-              className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="">All Status</option>
-              <option value="true">Active Only</option>
-              <option value="false">Inactive Only</option>
-            </select>
+            <div className="w-[160px]">
+              <Combobox
+                value={statusFilter}
+                onValueChange={(val) => {
+                  setStatusFilter(val)
+                  setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+                }}
+                options={[
+                  { value: "", label: "All Status" },
+                  { value: "true", label: "Active Only" },
+                  { value: "false", label: "Inactive Only" },
+                ]}
+                placeholder="All Status"
+                className="h-8 rounded-lg border-input bg-card px-2.5 text-xs shadow-xs"
+              />
+            </div>
           </div>
         )}
       />

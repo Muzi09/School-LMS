@@ -21,6 +21,9 @@ import { getPrincipalEmailSetupApi } from "@/api/principalEmailService"
 import { generateStaffIdApi } from "@/api/staffService"
 import { getStaffValidationSchema } from "@/validations"
 import { ModalHeader } from "@/components/common/ModalHeader"
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
+import { toast } from "sonner"
+import { Combobox } from "@/components/ui/combobox"
 import { cn } from "@/lib/utils"
 
 export function StaffFormModal({ isOpen, onClose, staff = null }) {
@@ -110,7 +113,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
           }
         }
       } catch (err) {
-        setServerError(err.message || "An error occurred while saving staff.")
+        toast.error(err.message || "An error occurred while saving staff.")
       }
     },
   })
@@ -256,26 +259,19 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
         ) : (
           /* Main Staff Form */
           <form onSubmit={formik.handleSubmit} noValidate className="flex-1 overflow-y-auto p-6 sm:p-7 space-y-6">
-            {error && (
-              <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive text-sm flex items-center gap-2.5">
-                <AlertCircle className="size-4.5 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
             {/* Email Setup Status Warning/Notice for Staff Creation */}
             {!isEdit && (
               <>
                 {!isEmailConfigured && (
-                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-sm flex items-start gap-2.5">
-                    <ShieldAlert className="size-4.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                    <div className="leading-relaxed">
-                      <p className="font-semibold text-foreground">Email Setup is not completed</p>
-                      <p className="text-muted-foreground mt-0.5">
-                        The Staff member will not receive their first-login link automatically. You can still create the account, and you will be provided a secure setup link to share with them manually after creation.
-                      </p>
-                    </div>
-                  </div>
+                  <Alert variant="warning">
+                    <ShieldAlert className="size-4" />
+                    <AlertTitle className="font-semibold text-foreground">
+                      Email Setup is not completed
+                    </AlertTitle>
+                    <AlertDescription className="text-muted-foreground mt-0.5">
+                      The Staff member will not receive their first-login link automatically. You can still create the account, and you will be provided a secure setup link to share with them manually after creation.
+                    </AlertDescription>
+                  </Alert>
                 )}
               </>
             )}
@@ -417,21 +413,24 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                   <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Gender
                   </label>
-                  <select
+                  <Combobox
                     id="gender"
                     name="gender"
                     value={formik.values.gender}
-                    onChange={formik.handleChange}
-                    onBlur={formik.handleBlur}
+                    onValueChange={(val) => {
+                      formik.setFieldValue("gender", Number(val))
+                      formik.setFieldTouched("gender", true)
+                    }}
+                    options={[
+                      { value: 1, label: "Male" },
+                      { value: 2, label: "Female" },
+                      { value: 3, label: "Other" },
+                    ]}
+                    placeholder="Select Gender"
                     className={cn(
-                      "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
                       formik.touched.gender && formik.errors.gender && "border-destructive/80 ring-1 ring-destructive/30"
                     )}
-                  >
-                    <option value={1} className="bg-popover text-popover-foreground">Male</option>
-                    <option value={2} className="bg-popover text-popover-foreground">Female</option>
-                    <option value={3} className="bg-popover text-popover-foreground">Other</option>
-                  </select>
+                  />
                   {formik.touched.gender && formik.errors.gender && (
                     <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
                       {formik.errors.gender}

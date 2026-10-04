@@ -20,6 +20,7 @@ import {
   ShieldAlert,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import {
@@ -29,6 +30,7 @@ import {
 } from "@/api/staffService"
 import {
   validateXlsxFileClient,
+  generateSampleStaffXlsx,
   downloadBlob,
   exportErrorReportXlsx,
   exportResultsXlsx,
@@ -80,13 +82,28 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
   const handleDownloadSample = async () => {
     try {
       setIsDownloadingSample(true)
-      const res = await downloadStaffImportSampleApi()
-      const blob = new Blob([res.data || res], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      })
-      downloadBlob(blob, "staff_bulk_import_sample.xlsx")
+      try {
+        // 1. Prioritize authentic styled OpenPyXL template from backend
+        const res = await downloadStaffImportSampleApi()
+        const blob = res instanceof Blob
+          ? res
+          : new Blob([res], {
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            })
+        downloadBlob(blob, "staff_bulk_import_sample.xlsx")
+        toast.success("Sample template downloaded successfully!")
+        return
+      } catch (apiErr) {
+        console.warn("Backend sample download failed, falling back to client XLSX generator:", apiErr)
+      }
+
+      // 2. Client-side fallback with genuine Excel Blob
+      generateSampleStaffXlsx("staff_bulk_import_sample.xlsx")
+      toast.success("Sample template downloaded successfully!")
     } catch (err) {
-      alert(err.response?.data?.detail || err.message || "Failed to download sample XLSX template.")
+      console.error("Failed to download sample template:", err)
+      const errDetail = err.response?.data?.detail || err.message || "Failed to download sample XLSX template."
+      toast.error(errDetail)
     } finally {
       setIsDownloadingSample(false)
     }
@@ -134,11 +151,15 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
     try {
       const res = await previewBulkStaffImportApi(selectedFile)
       const data = res?.data || res
+      if (!data || !data.rows) {
+        throw new Error("Server returned an invalid response structure for file review.")
+      }
       setPreviewData(data)
       setCurrentStep(2)
     } catch (err) {
+      console.error("Staff bulk import preview failed:", err)
       const errDetail = err.response?.data?.detail || err.message || "Failed to parse and validate file on server."
-      setGeneralError(errDetail)
+      toast.error(errDetail)
     } finally {
       setIsAnalyzing(false)
     }
@@ -149,7 +170,6 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
     if (!selectedFile || !previewData || previewData.valid_rows === 0) return
     setShowConfirmCreate(false)
     setIsCreating(true)
-    setGeneralError("")
     setCurrentStep(3)
 
     try {
@@ -161,7 +181,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
       }
     } catch (err) {
       const errDetail = err.response?.data?.detail || err.message || "Failed to execute bulk staff import."
-      setGeneralError(errDetail)
+      toast.error(errDetail)
     } finally {
       setIsCreating(false)
     }
@@ -313,22 +333,6 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
 
         {/* Modal Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
-          {/* Top Error Alert if server error */}
-          {generalError && (
-            <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm flex items-start gap-3 animate-in fade-in-0">
-              <AlertCircle className="size-5 shrink-0 mt-0.5" />
-              <div className="flex-1 whitespace-pre-line">{generalError}</div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setGeneralError("")}
-                className="size-6 text-destructive hover:bg-destructive/10"
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-          )}
-
           {/* ========================================================================= */}
           {/* STEP 1: UPLOAD XLSX */}
           {/* ========================================================================= */}

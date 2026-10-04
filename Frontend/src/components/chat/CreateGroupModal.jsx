@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Search, Loader2, Users, X, Check } from "lucide-react"
+import { Search, Loader2, Users, X, Check, AlertCircle } from "lucide-react"
 import {
   Dialog,
   DialogHeader,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { chatService } from "@/api/chatService"
@@ -72,30 +73,30 @@ export function CreateGroupModal({ isOpen, onOpenChange, onGroupCreated, current
     e?.preventDefault?.()
     const trimmedName = name.trim()
     if (!trimmedName) {
-      setError("Please enter a group name.")
+      toast.warning("Please enter a group name.")
       return
     }
     if (trimmedName.length > 100) {
-      setError("Group name must be 100 characters or less.")
+      toast.warning("Group name must be 100 characters or less.")
       return
     }
     if (selectedUsers.length === 0) {
-      setError("Please select at least one participant.")
+      toast.warning("Please select at least one participant.")
       return
     }
 
     setIsSubmitting(true)
-    setError("")
     try {
       const group = await chatService.createGroup({
         name: trimmedName,
         participant_ids: selectedUsers.map((u) => u.id),
       })
       onGroupCreated?.(group)
+      toast.success("Group created successfully!")
       handleOpenChange(false)
     } catch (err) {
       console.error("Failed to create group:", err)
-      setError(err.response?.data?.detail || "Failed to create group. Please try again.")
+      toast.error(err.response?.data?.detail || "Failed to create group. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
@@ -257,12 +258,6 @@ export function CreateGroupModal({ isOpen, onOpenChange, onGroupCreated, current
             )}
           </div>
         </div>
-
-        {error && (
-          <div className="p-2.5 rounded-xl bg-destructive/10 text-destructive text-xs font-medium border border-destructive/20">
-            {error}
-          </div>
-        )}
 
         <DialogFooter className="pt-2">
           <Button

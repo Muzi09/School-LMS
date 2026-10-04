@@ -22,6 +22,7 @@ import {
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { toast } from "sonner"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { Popover, PopoverDialog } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
@@ -78,12 +79,9 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
     onSubmit: async (values) => {
       // Guard: App Password must be successfully tested before saving
       if (!isTestedSuccess) {
-        setServerError("Please test and verify the email connection before saving.")
+        toast.warning("Please test and verify the email connection before saving.")
         return
       }
-
-      setServerError("")
-      setSuccessMessage("")
 
       try {
         const payload = {
@@ -95,12 +93,12 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
 
         await savePrincipalEmailSetupApi(payload)
         await queryClient.invalidateQueries({ queryKey: ["principalEmailSetup"] })
-        setSuccessMessage("Email setup configuration saved successfully!")
+        toast.success("Email setup configuration saved successfully!")
         setTimeout(() => {
           onClose?.()
-        }, 1200)
+        }, 1000)
       } catch (err) {
-        setServerError(err?.message || "Failed to save Email setup configuration.")
+        toast.error(err?.message || "Failed to save Email setup configuration.")
       }
     },
   })
@@ -146,13 +144,12 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
         email: true,
         app_password: true,
       })
+      toast.warning("Please enter your email and app password before testing.")
       return
     }
 
-    setServerError("")
-    setSuccessMessage("")
     setTestState("testing")
-    setTestMessage("Connecting to email server and validating credentials...")
+    const toastId = toast.loading("Testing email connection...")
 
     try {
       const payload = {
@@ -165,17 +162,26 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
       const res = await testPrincipalEmailSetupApi(payload)
       if (res?.success !== false) {
         setTestState("succeeded")
-        setTestMessage(res?.message || "Email server connected and authenticated successfully!")
         setIsTestedSuccess(true)
+        toast.success("Email Connection Verified", {
+          id: toastId,
+          description: res?.message || "Email server connected and authenticated successfully!",
+        })
       } else {
         setTestState("failed")
-        setTestMessage(res?.message || "Email connection test failed. Please verify credentials.")
         setIsTestedSuccess(false)
+        toast.error("Email Connection Failed", {
+          id: toastId,
+          description: res?.message || "Please verify credentials.",
+        })
       }
     } catch (err) {
       setTestState("failed")
-      setTestMessage(err?.message || "Failed to connect to email server. Please check your App Password.")
       setIsTestedSuccess(false)
+      toast.error("Email Connection Failed", {
+        id: toastId,
+        description: err?.message || "Failed to connect to email server.",
+      })
     }
   }
 
@@ -213,48 +219,6 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
 
             {/* Form Body */}
             <form onSubmit={formik.handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
-              {successMessage && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs flex items-start gap-2.5 animate-in fade-in-50">
-                  <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-500" />
-                  <span className="leading-relaxed">{successMessage}</span>
-                </div>
-              )}
-
-              {serverError && (
-                <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2.5 animate-in fade-in-50">
-                  <AlertCircle className="size-4 shrink-0 mt-0.5" />
-                  <span className="leading-relaxed whitespace-pre-line">{serverError}</span>
-                </div>
-              )}
-
-              {testState !== "idle" && (
-                <div
-                  className={cn(
-                    "p-3 rounded-xl text-xs flex items-start gap-2.5 border transition-all duration-300 animate-in fade-in-50",
-                    testState === "testing" && "bg-primary/10 border-primary/20 text-primary",
-                    testState === "succeeded" && "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300",
-                    testState === "failed" && "bg-destructive/10 border-destructive/20 text-destructive"
-                  )}
-                >
-                  {testState === "testing" ? (
-                    <Loader2 className="size-4 shrink-0 animate-spin mt-0.5 text-primary" />
-                  ) : testState === "succeeded" ? (
-                    <CheckCircle2 className="size-4.5 shrink-0 mt-0.5 text-emerald-500" />
-                  ) : (
-                    <AlertCircle className="size-4 shrink-0 mt-0.5 text-destructive" />
-                  )}
-                  <div className="space-y-0.5">
-                    <p className="font-semibold">
-                      {testState === "succeeded"
-                        ? "Connection Verified Successfully"
-                        : testState === "testing"
-                        ? "Testing Connection..."
-                        : "Connection Test Failed"}
-                    </p>
-                    <p className="leading-relaxed text-[11.5px] whitespace-pre-line">{testMessage}</p>
-                  </div>
-                </div>
-              )}
 
               {/* Sender Email Address */}
               <div>

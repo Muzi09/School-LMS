@@ -18,6 +18,8 @@ import { schoolConfigService } from "@/api/schoolConfigService"
 import { calculateStudentRollNoApi } from "@/api/studentService"
 import { getStudentValidationSchema } from "@/validations"
 import { ModalHeader } from "@/components/common/ModalHeader"
+import { toast } from "sonner"
+import { Combobox } from "@/components/ui/combobox"
 import { cn } from "@/lib/utils"
 
 const STREAM_FALLBACK_SUBJECTS = {
@@ -83,7 +85,6 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
   const createStudentMutation = useCreateStudent()
   const updateStudentMutation = useUpdateStudent()
-  const [serverError, setServerError] = useState("")
 
   const validationSchema = React.useMemo(() => getStudentValidationSchema(isEdit), [isEdit])
 
@@ -124,8 +125,6 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
     validationSchema,
     enableReinitialize: true,
     onSubmit: async (values) => {
-      setServerError("")
-
       try {
         if (isEdit) {
           const updatePayload = {
@@ -174,7 +173,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
         handleClose()
       } catch (err) {
-        setServerError(err?.message || "Operation failed. Please try again.")
+        toast.error(err?.message || "Operation failed. Please try again.")
       }
     },
   })
@@ -229,7 +228,6 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
   ])
 
   const handleClose = () => {
-    setServerError("")
     createStudentMutation.reset?.()
     updateStudentMutation.reset?.()
     formik.resetForm({ values: initialValues })
@@ -382,13 +380,6 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
         {/* Form */}
         <form onSubmit={formik.handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-6 sm:p-7 space-y-6">
-            {serverError && (
-              <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2.5">
-                <AlertCircle className="size-4 shrink-0 mt-0.5" />
-                <span className="leading-tight">{serverError}</span>
-              </div>
-            )}
-
             {/* Personal Info Section */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 border-b border-border/60 pb-2">
@@ -588,21 +579,24 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                   <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Gender
                   </label>
-                  <select
+                  <Combobox
                     id="gender"
                     name="gender"
                     value={formik.values.gender}
-                    onChange={formik.handleChange}
-                    onBlur={formik.handleBlur}
+                    onValueChange={(val) => {
+                      formik.setFieldValue("gender", Number(val))
+                      formik.setFieldTouched("gender", true)
+                    }}
+                    options={[
+                      { value: 1, label: "Male" },
+                      { value: 2, label: "Female" },
+                      { value: 3, label: "Other" },
+                    ]}
+                    placeholder="Select Gender"
                     className={cn(
-                      "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
                       formik.touched.gender && formik.errors.gender && "border-destructive/80 ring-1 ring-destructive/30"
                     )}
-                  >
-                    <option value={1} className="bg-popover text-popover-foreground">Male</option>
-                    <option value={2} className="bg-popover text-popover-foreground">Female</option>
-                    <option value={3} className="bg-popover text-popover-foreground">Other</option>
-                  </select>
+                  />
                   {formik.touched.gender && formik.errors.gender && (
                     <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
                       {formik.errors.gender}
@@ -639,47 +633,31 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                   <label htmlFor="class_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Class / Grade
                   </label>
-                  <select
+                  <Combobox
                     id="class_name"
                     name="class_name"
                     value={formik.values.class_name}
-                    onChange={(e) => {
-                      const selectedClass = e.target.value
+                    onValueChange={(selectedClass) => {
                       formik.setFieldValue("class_name", selectedClass)
+                      formik.setFieldTouched("class_name", true)
                       const cls = schoolClasses.find((c) => c.name === selectedClass)
                       const defaultSection = cls?.sections?.[0]?.name || "A"
                       formik.setFieldValue("section", defaultSection)
+                      formik.setFieldTouched("section", true)
                     }}
-                    onBlur={formik.handleBlur}
+                    options={
+                      schoolClasses.length > 0
+                        ? schoolClasses.map((c) => ({ value: c.name, label: c.name }))
+                        : Array.from({ length: 12 }, (_, i) => ({
+                            value: `Class ${i + 1}`,
+                            label: `Class ${i + 1}`,
+                          }))
+                    }
+                    placeholder="Select Class"
                     className={cn(
-                      "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
                       formik.touched.class_name && formik.errors.class_name && "border-destructive/80 ring-1 ring-destructive/30"
                     )}
-                  >
-                    <option value="" disabled className="bg-popover text-muted-foreground">Select Class</option>
-                    {schoolClasses.length > 0 ? (
-                      schoolClasses.map((c) => (
-                        <option key={c.id} value={c.name} className="bg-popover text-popover-foreground">
-                          {c.name}
-                        </option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="Class 1" className="bg-popover text-popover-foreground">Class 1</option>
-                        <option value="Class 2" className="bg-popover text-popover-foreground">Class 2</option>
-                        <option value="Class 3" className="bg-popover text-popover-foreground">Class 3</option>
-                        <option value="Class 4" className="bg-popover text-popover-foreground">Class 4</option>
-                        <option value="Class 5" className="bg-popover text-popover-foreground">Class 5</option>
-                        <option value="Class 6" className="bg-popover text-popover-foreground">Class 6</option>
-                        <option value="Class 7" className="bg-popover text-popover-foreground">Class 7</option>
-                        <option value="Class 8" className="bg-popover text-popover-foreground">Class 8</option>
-                        <option value="Class 9" className="bg-popover text-popover-foreground">Class 9</option>
-                        <option value="Class 10" className="bg-popover text-popover-foreground">Class 10</option>
-                        <option value="Class 11" className="bg-popover text-popover-foreground">Class 11</option>
-                        <option value="Class 12" className="bg-popover text-popover-foreground">Class 12</option>
-                      </>
-                    )}
-                  </select>
+                  />
                   {formik.touched.class_name && formik.errors.class_name && (
                     <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
                       {formik.errors.class_name}
@@ -692,31 +670,24 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                   <label htmlFor="section" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     Section
                   </label>
-                  <select
+                  <Combobox
                     id="section"
                     name="section"
                     disabled={!formik.values.class_name}
                     value={formik.values.section}
-                    onChange={formik.handleChange}
-                    onBlur={formik.handleBlur}
+                    onValueChange={(val) => {
+                      formik.setFieldValue("section", val)
+                      formik.setFieldTouched("section", true)
+                    }}
+                    options={availableSections.map((s) => ({
+                      value: s.name,
+                      label: s.name,
+                    }))}
+                    placeholder={!formik.values.class_name ? "Select class first" : "Select Section"}
                     className={cn(
-                      "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
                       formik.touched.section && formik.errors.section && "border-destructive/80 ring-1 ring-destructive/30"
                     )}
-                  >
-                    {!formik.values.class_name ? (
-                      <option value="" disabled className="bg-popover text-muted-foreground">Select class first</option>
-                    ) : (
-                      <>
-                        <option value="" disabled className="bg-popover text-muted-foreground">Select Section</option>
-                        {availableSections.map((s) => (
-                          <option key={s.id || s.name} value={s.name} className="bg-popover text-popover-foreground">
-                            {s.name}
-                          </option>
-                        ))}
-                      </>
-                    )}
-                  </select>
+                  />
                   {formik.touched.section && formik.errors.section && (
                     <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
                       {formik.errors.section}
@@ -729,39 +700,25 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                   <label htmlFor="house" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
                     House
                   </label>
-                  {schoolHouses.length > 0 ? (
-                    <select
+                  
+                    <Combobox
                       id="house"
                       name="house"
                       value={formik.values.house}
-                      onChange={formik.handleChange}
-                      onBlur={formik.handleBlur}
+                      onValueChange={(val) => {
+                        formik.setFieldValue("house", val)
+                        formik.setFieldTouched("house", true)
+                      }}
+                      options={schoolHouses.map((h) => ({
+                        value: h.name,
+                        label: h.name,
+                      }))}
+                      placeholder="Select House"
+                      clearable={true}
                       className={cn(
-                        "w-full h-10 rounded-xl border border-transparent bg-input/50 px-3.5 py-2 text-sm text-foreground transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 cursor-pointer",
-                        formik.touched.house && formik.errors.house && "border-destructive/80 ring-1 ring-destructive/30"
-                      )}
-                    >
-                      <option value="" disabled className="bg-popover text-muted-foreground">Select House</option>
-                      {schoolHouses.map((h) => (
-                        <option key={h.id} value={h.name} className="bg-popover text-popover-foreground">
-                          {h.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <Input
-                      id="house"
-                      name="house"
-                      maxLength={50}
-                      value={formik.values.house}
-                      onChange={formik.handleChange}
-                      onBlur={formik.handleBlur}
-                      className={cn(
-                        "h-10 text-sm rounded-xl px-3.5",
                         formik.touched.house && formik.errors.house && "border-destructive/80 ring-1 ring-destructive/30"
                       )}
                     />
-                  )}
                   {formik.touched.house && formik.errors.house && (
                     <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
                       {formik.errors.house}

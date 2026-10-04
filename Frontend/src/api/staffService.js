@@ -86,6 +86,7 @@ export async function completeStaffSetupApi({ token, password, pin }) {
 export async function downloadStaffImportSampleApi() {
   return apiClient.get("/staff/bulk-import/sample", {
     responseType: "blob",
+    timeout: 30000,
   })
 }
 
@@ -97,8 +98,9 @@ export async function previewBulkStaffImportApi(file) {
   formData.append("file", file)
   return apiClient.post("/staff/bulk-import/preview", formData, {
     headers: {
-      "Content-Type": "multipart/form-data",
+      "Content-Type": undefined,
     },
+    timeout: 60000,
   })
 }
 
@@ -110,8 +112,9 @@ export async function createBulkStaffImportApi(file) {
   formData.append("file", file)
   return apiClient.post("/staff/bulk-import", formData, {
     headers: {
-      "Content-Type": "multipart/form-data",
+      "Content-Type": undefined,
     },
+    timeout: 120000,
   })
 }
 

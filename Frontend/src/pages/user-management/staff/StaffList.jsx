@@ -23,6 +23,7 @@ import { StaffFormModal } from "./StaffFormModal"
 import { StaffDetailsModal } from "./StaffDetailsModal"
 import { StaffDeleteDialog } from "./StaffDeleteDialog"
 import { BulkStaffImportModal } from "./BulkStaffImportModal"
+import { Combobox } from "@/components/ui/combobox"
 import { formatDateTime } from "@/lib/utils"
 
 export function StaffList() {
@@ -333,18 +334,22 @@ export function StaffList() {
         }}
         renderTopToolbarCustomActions={() => (
           <div className="flex items-center gap-2">
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value)
-                setPagination((prev) => ({ ...prev, pageIndex: 0 }))
-              }}
-              className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
-            >
-              <option value="">All Status</option>
-              <option value="ACTIVE">Active</option>
-              <option value="PENDING_ACTIVATION">Pending Activation</option>
-            </select>
+            <div className="w-[170px]">
+              <Combobox
+                value={statusFilter}
+                onValueChange={(val) => {
+                  setStatusFilter(val)
+                  setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+                }}
+                options={[
+                  { value: "", label: "All Status" },
+                  { value: "ACTIVE", label: "Active" },
+                  { value: "PENDING_ACTIVATION", label: "Pending Activation" },
+                ]}
+                placeholder="All Status"
+                className="h-8 rounded-lg border-input bg-card px-2.5 text-xs shadow-xs"
+              />
+            </div>
           </div>
         )}
       />

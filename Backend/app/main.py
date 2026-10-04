@@ -19,9 +19,18 @@ app = FastAPI(
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
-    content = {"detail": exc.message}
+    content = {"detail": exc.message, "message": exc.message}
+    if hasattr(exc, "code"):
+        content["code"] = exc.code
+    if hasattr(exc, "details"):
+        content["details"] = exc.details
     if exc.payload:
         content["payload"] = exc.payload
+        if isinstance(exc.payload, dict):
+            if "code" in exc.payload and "code" not in content:
+                content["code"] = exc.payload["code"]
+            if "details" in exc.payload and "details" not in content:
+                content["details"] = exc.payload["details"]
     return JSONResponse(
         status_code=exc.status_code,
         content=content,

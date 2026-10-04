@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { INDIAN_STATES, THEME_COLOR_PRESETS } from "@/constants"
 
 export function Step1Profile({
@@ -56,13 +57,6 @@ export function Step1Profile({
             School Emblem / Crest (Optional)
           </span>
         </div>
-
-        {emblemUploadError && (
-          <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
-            <AlertCircle className="size-3.5 shrink-0" />
-            <span>{emblemUploadError}</span>
-          </div>
-        )}
 
         <input
           ref={emblemInputRef}

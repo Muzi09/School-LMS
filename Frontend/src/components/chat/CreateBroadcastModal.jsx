@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Search, Loader2, Megaphone, X, Check } from "lucide-react"
+import { Search, Loader2, Megaphone, X, Check, AlertCircle } from "lucide-react"
 import {
   Dialog,
   DialogHeader,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { chatService } from "@/api/chatService"
@@ -72,30 +73,30 @@ export function CreateBroadcastModal({ isOpen, onOpenChange, onBroadcastCreated,
     e?.preventDefault?.()
     const trimmedName = name.trim()
     if (!trimmedName) {
-      setError("Please enter a broadcast name.")
+      toast.warning("Please enter a broadcast name.")
       return
     }
     if (trimmedName.length > 100) {
-      setError("Broadcast name must be 100 characters or less.")
+      toast.warning("Broadcast name must be 100 characters or less.")
       return
     }
     if (selectedRecipients.length === 0) {
-      setError("Please select at least one recipient.")
+      toast.warning("Please select at least one recipient.")
       return
     }
 
     setIsSubmitting(true)
-    setError("")
     try {
       const broadcast = await chatService.createBroadcast({
         name: trimmedName,
         recipient_ids: selectedRecipients.map((u) => u.id),
       })
       onBroadcastCreated?.(broadcast)
+      toast.success("Broadcast channel created successfully!")
       handleOpenChange(false)
     } catch (err) {
       console.error("Failed to create broadcast:", err)
-      setError(err.response?.data?.detail || "Failed to create broadcast. Please try again.")
+      toast.error(err.response?.data?.detail || "Failed to create broadcast. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
@@ -257,12 +258,6 @@ export function CreateBroadcastModal({ isOpen, onOpenChange, onBroadcastCreated,
             )}
           </div>
         </div>
-
-        {error && (
-          <div className="p-2.5 rounded-xl bg-destructive/10 text-destructive text-xs font-medium border border-destructive/20">
-            {error}
-          </div>
-        )}
 
         <DialogFooter className="pt-2">
           <Button

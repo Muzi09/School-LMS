@@ -182,18 +182,103 @@ export async function validateXlsxFileClient(file) {
   }
 }
 
+export const MOCK_STAFF_RECORDS = [
+  {
+    first_name: "Rajesh",
+    last_name: "Sharma",
+    login_mobile: "9876543210",
+    email: "rajesh.sharma@school.edu",
+    gender: "Male",
+    date_of_birth: "1988-06-15",
+  },
+  {
+    first_name: "Priya",
+    last_name: "Patel",
+    login_mobile: "9876543211",
+    email: "priya.patel@school.edu",
+    gender: "Female",
+    date_of_birth: "1992-09-22",
+  },
+  {
+    first_name: "Amit",
+    last_name: "Verma",
+    login_mobile: "9876543212",
+    email: "amit.verma@school.edu",
+    gender: "Male",
+    date_of_birth: "1985-12-05",
+  },
+]
+
+export const INSTRUCTIONS_DATA = [
+  { "Column Name": "first_name", Required: "Yes", Description: "Staff member's first name", "Accepted Format / Values": "1-100 characters text", Example: "Rajesh" },
+  { "Column Name": "last_name", Required: "Yes", Description: "Staff member's last name", "Accepted Format / Values": "1-100 characters text", Example: "Sharma" },
+  { "Column Name": "login_mobile", Required: "Yes", Description: "Mobile phone number used for login", "Accepted Format / Values": "10-15 digits only, no spaces or special symbols", Example: "9876543210" },
+  { "Column Name": "email", Required: "Yes", Description: "Official email address (used for invitation link)", "Accepted Format / Values": "Valid email format, must be unique across all users", Example: "rajesh.sharma@school.edu" },
+  { "Column Name": "gender", Required: "Yes", Description: "Staff member gender", "Accepted Format / Values": "Text value: 'Male', 'Female', or 'Other'", Example: "Male" },
+  { "Column Name": "date_of_birth", Required: "Yes", Description: "Date of birth", "Accepted Format / Values": "YYYY-MM-DD format", Example: "1988-06-15" },
+]
+
+export const EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 /**
  * Trigger download of Blob data in the browser.
  */
 export function downloadBlob(blob, filename) {
-  const url = window.URL.createObjectURL(blob)
+  // Ensure the blob has the proper Excel MIME type
+  const fileBlob =
+    blob instanceof Blob && blob.type && blob.type.includes("sheet")
+      ? blob
+      : new Blob([blob], { type: EXCEL_MIME_TYPE })
+
+  const url = window.URL.createObjectURL(fileBlob)
   const a = document.createElement("a")
+  a.style.display = "none"
   a.href = url
   a.download = filename
   document.body.appendChild(a)
   a.click()
-  window.URL.revokeObjectURL(url)
-  document.body.removeChild(a)
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url)
+    if (a.parentNode) {
+      a.parentNode.removeChild(a)
+    }
+  }, 2000)
+}
+
+/**
+ * Generate official sample XLSX template on the client as a genuine Excel Blob.
+ */
+export function generateSampleStaffXlsx(filename = "staff_bulk_import_sample.xlsx") {
+  const workbook = XLSX.utils.book_new()
+
+  // Sheet 1: Staff_Import_Template with headers and 3 mock records
+  const templateSheet = XLSX.utils.json_to_sheet(MOCK_STAFF_RECORDS, {
+    header: EXPECTED_COLUMNS,
+  })
+  templateSheet["!cols"] = [
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 28 },
+    { wch: 16 },
+    { wch: 18 },
+  ]
+  XLSX.utils.book_append_sheet(workbook, templateSheet, "Staff_Import_Template")
+
+  // Sheet 2: Instructions
+  const instructionsSheet = XLSX.utils.json_to_sheet(INSTRUCTIONS_DATA)
+  instructionsSheet["!cols"] = [
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 45 },
+    { wch: 50 },
+    { wch: 28 },
+  ]
+  XLSX.utils.book_append_sheet(workbook, instructionsSheet, "Instructions")
+
+  const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
+  const blob = new Blob([wbout], { type: EXCEL_MIME_TYPE })
+  downloadBlob(blob, filename)
 }
 
 /**
@@ -218,7 +303,9 @@ export function exportErrorReportXlsx(rows = []) {
   const worksheet = XLSX.utils.json_to_sheet(data)
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, worksheet, "Rejected_Staff_Rows")
-  XLSX.writeFile(workbook, `staff_import_errors_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
+  const blob = new Blob([wbout], { type: EXCEL_MIME_TYPE })
+  downloadBlob(blob, `staff_import_errors_${new Date().toISOString().slice(0, 10)}.xlsx`)
 }
 
 /**
@@ -240,5 +327,7 @@ export function exportResultsXlsx(results = []) {
   const worksheet = XLSX.utils.json_to_sheet(data)
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, worksheet, "Staff_Import_Results")
-  XLSX.writeFile(workbook, `staff_import_results_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
+  const blob = new Blob([wbout], { type: EXCEL_MIME_TYPE })
+  downloadBlob(blob, `staff_import_results_${new Date().toISOString().slice(0, 10)}.xlsx`)
 }

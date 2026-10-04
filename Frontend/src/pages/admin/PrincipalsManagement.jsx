@@ -21,6 +21,7 @@ import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { PageHeader } from "@/components/common/PageHeader"
 import { formatDateTime } from "@/lib/utils"
@@ -59,7 +60,7 @@ export function PrincipalsManagement() {
       formik.resetForm()
     },
     onError: (err) => {
-      setServerError(err.message || "Failed to create principal account.")
+      toast.error(err.message || "Failed to create principal account.")
     },
   })
 
@@ -79,7 +80,7 @@ export function PrincipalsManagement() {
       setIsModalOpen(true)
     },
     onError: (err) => {
-      setServerError(err.message || "Failed to regenerate onboarding link.")
+      toast.error(err.message || "Failed to regenerate onboarding link.")
     },
     onSettled: () => {
       setRegeneratingId(null)
@@ -427,13 +428,6 @@ export function PrincipalsManagement() {
                 </div>
               ) : (
                 <form onSubmit={formik.handleSubmit} className="space-y-4">
-                  {serverError && (
-                    <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2">
-                      <AlertCircle className="size-4 shrink-0 mt-0.5" />
-                      <span className="leading-relaxed whitespace-pre-line">{serverError}</span>
-                    </div>
-                  )}
-
                   <div className="grid grid-cols-2 gap-3.5">
                     <div>
                       <label className="text-xs font-semibold text-foreground block mb-1">

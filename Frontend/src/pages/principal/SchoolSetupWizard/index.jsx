@@ -19,6 +19,7 @@ import { authService } from "@/api/authService"
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import {
   validateEmblemFile,
   validateSetupWizardStep,
@@ -477,7 +478,7 @@ export function SchoolSetupWizard() {
 
     const fileValidation = validateEmblemFile(file)
     if (!fileValidation.isValid) {
-      setEmblemUploadError(fileValidation.error)
+      toast.error(fileValidation.error)
       return
     }
 
@@ -488,8 +489,9 @@ export function SchoolSetupWizard() {
     try {
       const res = await authService.uploadSchoolEmblem(token, file)
       setEmblemUploadedUrl(res.emblem_url)
+      toast.success("School emblem uploaded successfully!")
     } catch (err) {
-      setEmblemUploadError(err.message || "Failed to upload emblem.")
+      toast.error(err.message || "Failed to upload emblem.")
       setEmblemPreviewUrl("")
       setEmblemUploadedUrl("")
     } finally {
@@ -2274,10 +2276,10 @@ export function SchoolSetupWizard() {
         {/* Wizard Main Content Card */}
         <div className="bg-card border border-border rounded-2xl p-5 sm:p-8 shadow-xs">
           {submitError && (
-            <div className="mb-6 p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-start gap-2.5">
-              <AlertCircle className="size-4 shrink-0 mt-0.5" />
-              <span className="leading-relaxed font-medium">{submitError}</span>
-            </div>
+            <Alert variant="destructive" className="mb-6">
+              <AlertCircle className="size-4" />
+              <AlertDescription className="font-medium leading-relaxed">{submitError}</AlertDescription>
+            </Alert>
           )}
 
           {/* ========================================== */}
