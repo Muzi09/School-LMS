@@ -33,13 +33,13 @@ export function Step7Security({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">Create Password</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Create Password</label>
             <div className="relative">
               <Input
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pr-10 h-10 text-sm"
+                className="pr-10 h-10 text-sm rounded-xl px-3.5"
               />
               <button
                 type="button"
@@ -52,12 +52,12 @@ export function Step7Security({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">Confirm Password</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Confirm Password</label>
             <Input
               type={showPassword ? "text" : "password"}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="h-10 text-sm"
+              className="h-10 text-sm rounded-xl px-3.5"
             />
           </div>
         </div>
@@ -72,14 +72,14 @@ export function Step7Security({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">Create PIN</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Create PIN</label>
             <div className="relative">
               <Input
                 type={showPin ? "text" : "password"}
                 maxLength={10}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-                className="pr-10 h-10 text-sm font-mono tracking-widest"
+                className="pr-10 h-10 text-sm font-mono tracking-widest rounded-xl px-3.5"
               />
               <button
                 type="button"
@@ -92,13 +92,13 @@ export function Step7Security({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">Confirm PIN</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Confirm PIN</label>
             <Input
               type={showPin ? "text" : "password"}
               maxLength={10}
               value={confirmPin}
               onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
-              className="h-10 text-sm font-mono tracking-widest"
+              className="h-10 text-sm font-mono tracking-widest rounded-xl px-3.5"
             />
           </div>
         </div>

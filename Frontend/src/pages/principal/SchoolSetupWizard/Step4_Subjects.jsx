@@ -830,13 +830,12 @@ export function Step4Subjects({
                 </button>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/80">
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
+                  variant="outline"
                   onClick={() => setUnifyModalState(null)}
-                  className="h-9 text-xs cursor-pointer"
+                  className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
                 >
                   Cancel (Keep Section-Specific)
                 </Button>
@@ -875,7 +874,7 @@ export function Step4Subjects({
               </div>
 
               <div className="space-y-2 pt-1">
-                <label className="text-xs font-semibold text-foreground block">
+                <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                   Select Source Class:
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[250px] overflow-y-auto p-1">
@@ -937,19 +936,17 @@ export function Step4Subjects({
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/80">
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
+                  variant="outline"
                   onClick={() => setCopyClassModal(null)}
-                  className="h-9 text-xs cursor-pointer"
+                  className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="button"
-                  size="sm"
                   disabled={!copyClassModal.selectedSourceClass}
                   onClick={() =>
                     handleCopySubjectsToTarget(
@@ -957,9 +954,9 @@ export function Step4Subjects({
                       copyClassModal.targetClass
                     )
                   }
-                  className="h-9 text-xs font-bold cursor-pointer gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer gap-1.5"
                 >
-                  <Copy className="size-3.5" />
+                  <Copy className="size-4" />
                   Copy into {copyClassModal.targetClass}
                 </Button>
               </div>

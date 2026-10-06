@@ -3,7 +3,6 @@ import {
   Upload,
   Image as ImageIcon,
   CheckCircle2,
-  AlertCircle,
   Loader2,
   RotateCcw,
   Mail,
@@ -11,11 +10,9 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { INDIAN_STATES, THEME_COLOR_PRESETS } from "@/constants"
 
 export function Step1Profile({
-  emblemUploadError,
   emblemInputRef,
   handleEmblemFileChange,
   emblemPreviewUrl,
@@ -135,18 +132,18 @@ export function Step1Profile({
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">School Name</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">School Name</label>
             <Input
               type="text"
               maxLength={255}
               value={schoolName}
               onChange={(e) => setSchoolName(e.target.value)}
-              className="h-10 text-sm"
+              className="h-10 text-sm rounded-xl px-3.5"
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">Affiliation Code</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Affiliation Code</label>
             <Input
               type="text"
               inputMode="numeric"
@@ -156,32 +153,32 @@ export function Step1Profile({
                 const numericOnly = e.target.value.replace(/\D/g, "").slice(0, 7)
                 setSchoolCode(numericOnly)
               }}
-              className="h-10 text-sm font-mono"
+              className="h-10 text-sm font-mono rounded-xl px-3.5"
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">Official School Email</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Official School Email</label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 type="email"
                 readOnly
                 value={schoolEmail}
-                className="pl-9 h-10 text-sm bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
+                className="pl-10 h-10 text-sm rounded-xl px-3.5 bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">Official Phone Number</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Official Phone Number</label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 type="tel"
                 readOnly
                 value={schoolPhone}
-                className="pl-9 h-10 text-sm font-mono bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
+                className="pl-10 h-10 text-sm font-mono rounded-xl px-3.5 bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
               />
             </div>
           </div>
@@ -192,41 +189,41 @@ export function Step1Profile({
       <div className="space-y-4 pt-1">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
-            <label className="text-xs font-semibold text-foreground block mb-1">Street / Building / Area</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Street / Building / Area</label>
             <Input
               type="text"
               value={addressStreet}
               onChange={(e) => setAddressStreet(e.target.value)}
-              className="h-10 text-sm"
+              className="h-10 text-sm rounded-xl px-3.5"
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">Landmark (Optional)</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Landmark (Optional)</label>
             <Input
               type="text"
               value={addressLandmark}
               onChange={(e) => setAddressLandmark(e.target.value)}
-              className="h-10 text-sm"
+              className="h-10 text-sm rounded-xl px-3.5"
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">City / District</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">City / District</label>
             <Input
               type="text"
               value={addressCity}
               onChange={(e) => setAddressCity(e.target.value)}
-              className="h-10 text-sm"
+              className="h-10 text-sm rounded-xl px-3.5"
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">State / Union Territory</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">State / Union Territory</label>
             <select
               value={addressState}
               onChange={(e) => setAddressState(e.target.value)}
-              className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm text-foreground cursor-pointer focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-none"
+              className="h-10 w-full rounded-xl border border-input bg-card px-3.5 text-sm text-foreground cursor-pointer focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-none"
             >
               {INDIAN_STATES.map((st) => (
                 <option key={st} value={st}>
@@ -237,7 +234,7 @@ export function Step1Profile({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-foreground block mb-1">PIN Code (6 Digits)</label>
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">PIN Code (6 Digits)</label>
             <Input
               type="text"
               inputMode="numeric"
@@ -247,7 +244,7 @@ export function Step1Profile({
                 const cleaned = e.target.value.replace(/\D/g, "").slice(0, 6)
                 setAddressPincode(cleaned)
               }}
-              className="h-10 text-sm font-mono tracking-wider"
+              className="h-10 text-sm font-mono tracking-wider rounded-xl px-3.5"
             />
           </div>
         </div>

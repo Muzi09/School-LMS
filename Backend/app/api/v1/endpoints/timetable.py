@@ -232,7 +232,7 @@ def create_timetable_entry(
             "roll_no": sp.roll_no if sp else None,
             "department": sp.department if sp else None,
             "designation": sp.designation if sp else None,
-        },
+        } if t else None,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
     )
@@ -285,7 +285,7 @@ def update_timetable_entry(
             "roll_no": sp.roll_no if sp else None,
             "department": sp.department if sp else None,
             "designation": sp.designation if sp else None,
-        },
+        } if t else None,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
     )

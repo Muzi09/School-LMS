@@ -12,7 +12,6 @@ import {
   Loader2,
   ShieldCheck,
   Building2,
-  UserCheck,
 } from "lucide-react"
 import { validateStaffSetupTokenApi, completeStaffSetupApi } from "@/api/staffService"
 import { Button } from "@/components/ui/button"
@@ -45,6 +44,7 @@ export function StaffAccountSetup() {
   // Token Validation on Mount
   useEffect(() => {
     if (!token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTokenError("No setup token provided in the URL. Please verify your invitation link.")
       setIsValidating(false)
       return
@@ -272,7 +272,7 @@ export function StaffAccountSetup() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="text-[11px] font-semibold text-foreground block mb-1">
+                <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                   Password
                 </label>
                 <div className="relative">
@@ -281,7 +281,7 @@ export function StaffAccountSetup() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Min 8 characters"
-                    className="pr-9 h-10 text-sm rounded-xl"
+                    className="pr-10 h-10 text-sm rounded-xl px-3.5"
                   />
                   <button
                     type="button"
@@ -294,7 +294,7 @@ export function StaffAccountSetup() {
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-foreground block mb-1">
+                <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                   Confirm Password
                 </label>
                 <Input
@@ -302,7 +302,7 @@ export function StaffAccountSetup() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat password"
-                  className="h-10 text-sm rounded-xl"
+                  className="h-10 text-sm rounded-xl px-3.5"
                 />
               </div>
             </div>
@@ -317,7 +317,7 @@ export function StaffAccountSetup() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="text-[11px] font-semibold text-foreground block mb-1">
+                <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                   4-Digit PIN
                 </label>
                 <div className="relative">
@@ -327,7 +327,7 @@ export function StaffAccountSetup() {
                     value={pin}
                     onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
                     placeholder="••••"
-                    className="pr-9 h-10 text-sm font-mono tracking-widest text-center rounded-xl"
+                    className="pr-10 h-10 text-sm font-mono tracking-widest text-center rounded-xl px-3.5"
                   />
                   <button
                     type="button"
@@ -340,7 +340,7 @@ export function StaffAccountSetup() {
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-foreground block mb-1">
+                <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                   Confirm PIN
                 </label>
                 <Input
@@ -349,7 +349,7 @@ export function StaffAccountSetup() {
                   value={confirmPin}
                   onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
                   placeholder="••••"
-                  className="h-10 text-sm font-mono tracking-widest text-center rounded-xl"
+                  className="h-10 text-sm font-mono tracking-widest text-center rounded-xl px-3.5"
                 />
               </div>
             </div>

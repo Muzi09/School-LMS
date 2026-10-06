@@ -340,16 +340,52 @@ class TimetableService:
             for p in periods
         ]
 
-        subjects_data = [
-            {
+        # Fetch ClassSubjects for this section to include assigned teacher from Manage School
+        class_subjects = (
+            self.db.query(ClassSubject)
+            .options(
+                joinedload(ClassSubject.teacher).joinedload(User.staff_profile),
+            )
+            .filter(
+                ClassSubject.school_id == school_id,
+                ClassSubject.class_id == section.class_id,
+                ClassSubject.deleted_at.is_(None),
+                or_(
+                    ClassSubject.section_id == section.id,
+                    ClassSubject.section_id.is_(None),
+                ),
+            )
+            .all()
+        )
+        subject_teacher_map = {}
+        for cs in class_subjects:
+            if cs.section_id == section.id:
+                subject_teacher_map[cs.subject_id] = cs.teacher
+            elif cs.subject_id not in subject_teacher_map:
+                subject_teacher_map[cs.subject_id] = cs.teacher
+
+        subjects_data = []
+        for s in subjects:
+            tch = subject_teacher_map.get(s.id)
+            sp = tch.staff_profile if tch else None
+            subjects_data.append({
                 "id": s.id,
                 "name": s.name,
                 "code": s.code,
                 "category": s.category,
                 "is_academic": s.is_academic,
-            }
-            for s in subjects
-        ]
+                "teacher_id": tch.id if tch else None,
+                "teacher": {
+                    "id": tch.id,
+                    "name": f"{tch.first_name} {tch.last_name}".strip(),
+                    "first_name": tch.first_name,
+                    "last_name": tch.last_name,
+                    "email": tch.email,
+                    "roll_no": sp.roll_no if sp else None,
+                    "department": sp.department if sp else None,
+                    "designation": sp.designation if sp else None,
+                } if tch else None,
+            })
 
         entries_data = []
         for e in entries:
@@ -460,22 +496,24 @@ class TimetableService:
         if not subject:
             raise NotFoundException("Subject not found in this school.")
 
-        # 4. Teacher exists in this school and is active teaching staff
-        teacher = (
-            self.db.query(User)
-            .join(StaffProfile, StaffProfile.user_id == User.id)
-            .options(joinedload(User.staff_profile))
-            .filter(
-                User.id == teacher_user_id,
-                StaffProfile.school_id == school_id,
-                User.is_active.is_(True),
-                User.deleted_at.is_(None),
-                User.role == UserRole.STAFF,
+        # 4. Teacher exists in this school and is active teaching staff (if assigned)
+        teacher = None
+        if teacher_user_id:
+            teacher = (
+                self.db.query(User)
+                .join(StaffProfile, StaffProfile.user_id == User.id)
+                .options(joinedload(User.staff_profile))
+                .filter(
+                    User.id == teacher_user_id,
+                    StaffProfile.school_id == school_id,
+                    User.is_active.is_(True),
+                    User.deleted_at.is_(None),
+                    User.role == UserRole.STAFF,
+                )
+                .first()
             )
-            .first()
-        )
-        if not teacher:
-            raise BadRequestException("Selected teacher is not an active teaching staff member of this school.")
+            if not teacher:
+                raise BadRequestException("Selected teacher is not an active teaching staff member of this school.")
 
         # 5. Subject assigned to section via ClassSubject
         is_assigned = (
@@ -500,7 +538,7 @@ class TimetableService:
 
         class_name = section.school_class.name if section.school_class else ""
         section_name = section.name
-        teacher_name = f"{teacher.first_name} {teacher.last_name}".strip()
+        teacher_name = f"{teacher.first_name} {teacher.last_name}".strip() if teacher else "Unassigned"
         day_display = _format_day_display(day_val)
 
         # 6. Check Section Conflict:
@@ -535,45 +573,46 @@ class TimetableService:
                 },
             )
 
-        # 7. Check Teacher Conflict:
+        # 7. Check Teacher Conflict (only if a teacher is assigned):
         # A teacher cannot teach two sections during the same period + day
-        teacher_conflict_query = (
-            self.db.query(TimetableEntry)
-            .options(
-                joinedload(TimetableEntry.section).joinedload(Section.school_class),
-                joinedload(TimetableEntry.subject),
+        if teacher_user_id:
+            teacher_conflict_query = (
+                self.db.query(TimetableEntry)
+                .options(
+                    joinedload(TimetableEntry.section).joinedload(Section.school_class),
+                    joinedload(TimetableEntry.subject),
+                )
+                .filter(
+                    TimetableEntry.school_id == school_id,
+                    TimetableEntry.teacher_user_id == teacher_user_id,
+                    TimetableEntry.day_of_week == day_val,
+                    TimetableEntry.period_id == period_id,
+                    TimetableEntry.deleted_at.is_(None),
+                )
             )
-            .filter(
-                TimetableEntry.school_id == school_id,
-                TimetableEntry.teacher_user_id == teacher_user_id,
-                TimetableEntry.day_of_week == day_val,
-                TimetableEntry.period_id == period_id,
-                TimetableEntry.deleted_at.is_(None),
-            )
-        )
-        if exclude_entry_id:
-            teacher_conflict_query = teacher_conflict_query.filter(TimetableEntry.id != exclude_entry_id)
+            if exclude_entry_id:
+                teacher_conflict_query = teacher_conflict_query.filter(TimetableEntry.id != exclude_entry_id)
 
-        tch_conflict = teacher_conflict_query.first()
-        if tch_conflict:
-            conf_sec = tch_conflict.section
-            conf_class_name = conf_sec.school_class.name if conf_sec and conf_sec.school_class else ""
-            conf_sec_name = conf_sec.name if conf_sec else ""
-            conf_sub_name = tch_conflict.subject.name if tch_conflict.subject else "a class"
+            tch_conflict = teacher_conflict_query.first()
+            if tch_conflict:
+                conf_sec = tch_conflict.section
+                conf_class_name = conf_sec.school_class.name if conf_sec and conf_sec.school_class else ""
+                conf_sec_name = conf_sec.name if conf_sec else ""
+                conf_sub_name = tch_conflict.subject.name if tch_conflict.subject else "a class"
 
-            raise ScheduleConflictException(
-                code="TEACHER_SCHEDULE_CONFLICT",
-                message=f"{teacher_name} is already assigned to Class {conf_class_name}-{conf_sec_name} ({conf_sub_name}) during {day_display} Period {period.period_number}.",
-                details={
-                    "teacher_name": teacher_name,
-                    "class_name": conf_class_name,
-                    "section_name": conf_sec_name,
-                    "day": day_val,
-                    "period": period.period_number,
-                    "subject_name": conf_sub_name,
-                    "existing_entry_id": str(tch_conflict.id),
-                },
-            )
+                raise ScheduleConflictException(
+                    code="TEACHER_SCHEDULE_CONFLICT",
+                    message=f"{teacher_name} is already assigned to Class {conf_class_name}-{conf_sec_name} ({conf_sub_name}) during {day_display} Period {period.period_number}.",
+                    details={
+                        "teacher_name": teacher_name,
+                        "class_name": conf_class_name,
+                        "section_name": conf_sec_name,
+                        "day": day_val,
+                        "period": period.period_number,
+                        "subject_name": conf_sub_name,
+                        "existing_entry_id": str(tch_conflict.id),
+                    },
+                )
 
         return section, subject, teacher, period
 
@@ -588,6 +627,28 @@ class TimetableService:
         user_id: UUID,
     ) -> TimetableEntry:
         """Create new timetable entry after validation and conflict checks, or overwrite if requested."""
+        # Auto-resolve teacher from ClassSubject if not explicitly provided
+        if not data.teacher_user_id:
+            sec = self.db.query(Section).filter(Section.id == data.section_id, Section.school_id == school_id).first()
+            if sec:
+                cs = (
+                    self.db.query(ClassSubject)
+                    .filter(
+                        ClassSubject.school_id == school_id,
+                        ClassSubject.class_id == sec.class_id,
+                        ClassSubject.subject_id == data.subject_id,
+                        ClassSubject.deleted_at.is_(None),
+                        or_(
+                            ClassSubject.section_id == data.section_id,
+                            ClassSubject.section_id.is_(None),
+                        ),
+                    )
+                    .order_by(ClassSubject.section_id.desc().nullslast())
+                    .first()
+                )
+                if cs and cs.teacher_id:
+                    data.teacher_user_id = cs.teacher_id
+
         existing_slot = (
             self.db.query(TimetableEntry)
             .filter(
@@ -664,7 +725,30 @@ class TimetableService:
             raise NotFoundException("Timetable entry not found.")
 
         target_subject_id = data.subject_id if data.subject_id is not None else entry.subject_id
-        target_teacher_id = data.teacher_user_id if data.teacher_user_id is not None else entry.teacher_user_id
+        target_teacher_id = data.teacher_user_id
+        if target_teacher_id is None:
+            if data.subject_id is not None:
+                sec = entry.section or self.db.query(Section).filter(Section.id == entry.section_id, Section.school_id == school_id).first()
+                if sec:
+                    cs = (
+                        self.db.query(ClassSubject)
+                        .filter(
+                            ClassSubject.school_id == school_id,
+                            ClassSubject.class_id == sec.class_id,
+                            ClassSubject.subject_id == target_subject_id,
+                            ClassSubject.deleted_at.is_(None),
+                            or_(
+                                ClassSubject.section_id == entry.section_id,
+                                ClassSubject.section_id.is_(None),
+                            ),
+                        )
+                        .order_by(ClassSubject.section_id.desc().nullslast())
+                        .first()
+                    )
+                    target_teacher_id = cs.teacher_id if cs else None
+            else:
+                target_teacher_id = entry.teacher_user_id
+
         target_period_id = data.period_id if data.period_id is not None else entry.period_id
         target_day = data.day_of_week.value if data.day_of_week is not None else entry.day_of_week
 

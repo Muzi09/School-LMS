@@ -84,6 +84,8 @@ class TimetableSubjectRead(BaseModel):
     code: Optional[str] = None
     category: Optional[str] = "academic"
     is_academic: Optional[bool] = True
+    teacher_id: Optional[UUID] = None
+    teacher: Optional[TimetableTeacherRead] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -118,7 +120,7 @@ class TimetableSectionRead(BaseModel):
 class TimetableEntryCreate(BaseModel):
     section_id: UUID = Field(..., description="Target Section UUID")
     subject_id: UUID = Field(..., description="Subject UUID (must belong to section via ClassSubject)")
-    teacher_user_id: UUID = Field(..., description="Assigned active teaching staff User UUID")
+    teacher_user_id: Optional[UUID] = Field(None, description="Assigned active teaching staff User UUID")
     period_id: UUID = Field(..., description="Period UUID")
     day_of_week: DayOfWeek = Field(..., description="Day of week (MONDAY through SATURDAY)")
     overwrite: Optional[bool] = Field(False, description="Whether to overwrite existing slot if already scheduled")
@@ -140,7 +142,7 @@ class TimetableEntryRead(BaseModel):
     period_number: int
     day_of_week: str
     subject: TimetableSubjectRead
-    teacher: TimetableTeacherRead
+    teacher: Optional[TimetableTeacherRead] = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,5 +1,5 @@
 import React, { useMemo } from "react"
-import { Clock } from "lucide-react"
+import { Clock, CalendarDays } from "lucide-react"
 import { TimetableCell } from "./TimetableCell"
 import { cn } from "@/lib/utils"
 
@@ -37,60 +37,69 @@ export function TimetableGrid({
   return (
     <div className="w-full bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
       <div className="overflow-x-auto scrollbar-thin">
-        <table className="w-full border-collapse min-w-[900px] text-left">
-          {/* Table Header */}
+        <table className="w-full border-collapse min-w-[850px] text-left">
+          {/* Table Header: Period times on X-Axis */}
           <thead>
             <tr className="border-b border-border/80 bg-muted/40">
-              {/* Sticky Period Header */}
-              <th className="sticky left-0 z-20 bg-muted/95 backdrop-blur-xs py-3.5 px-4 text-xs font-bold text-muted-foreground uppercase tracking-wider w-[140px] border-r border-border/60 text-center">
+              {/* Sticky Day Column Header */}
+              <th className="sticky left-0 z-20 bg-muted/95 backdrop-blur-xs py-3.5 px-4 text-xs font-bold text-muted-foreground uppercase tracking-wider w-[130px] border-r border-border/60 text-center">
                 <div className="flex items-center justify-center gap-1.5">
-                  <Clock className="size-3.5 text-muted-foreground" />
-                  <span>Period</span>
+                  <CalendarDays className="size-3.5 text-muted-foreground" />
+                  <span>Day</span>
                 </div>
               </th>
 
-              {/* Day Headers */}
-              {DAYS.map((day) => (
+              {/* Period Headers (X-Axis) */}
+              {periods.map((period) => (
                 <th
-                  key={day.key}
-                  className="py-3.5 px-3 text-center text-xs font-bold text-foreground uppercase tracking-wider min-w-[150px] border-r border-border/40 last:border-r-0"
+                  key={period.id}
+                  className="py-3 px-3 text-center text-xs font-bold border-r border-border/40 last:border-r-0 min-w-[160px]"
                 >
-                  <span className="hidden sm:inline">{day.label}</span>
-                  <span className="sm:hidden">{day.short}</span>
+                  <div className="flex flex-col items-center justify-center gap-1">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="inline-flex items-center justify-center size-5 rounded-md bg-primary/10 text-primary font-bold text-[11px]">
+                        P{period.period_number}
+                      </span>
+                      <span className="text-xs font-bold text-foreground whitespace-nowrap">
+                        Period {period.period_number}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground tracking-tight whitespace-nowrap">
+                      <Clock className="size-3 text-muted-foreground/70" />
+                      <span>
+                        {period.start_time} - {period.end_time}
+                      </span>
+                    </div>
+                  </div>
                 </th>
               ))}
             </tr>
           </thead>
 
-          {/* Table Body: 1 Row per Period */}
+          {/* Table Body: 1 Row per Day (Y-Axis) */}
           <tbody className="divide-y divide-border/60">
-            {periods.map((period) => (
-              <tr key={period.id} className="hover:bg-muted/10 transition-colors">
-                {/* Period Row Header (Sticky Left) */}
+            {DAYS.map((day) => (
+              <tr key={day.key} className="hover:bg-muted/10 transition-colors">
+                {/* Day Row Header (Sticky Left Y-Axis) */}
                 <td className="sticky left-0 z-10 bg-card py-3 px-3 border-r border-border/60 shadow-xs align-middle text-center">
-                  <div className="flex flex-col items-center justify-center text-center gap-1">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <span className="inline-flex items-center justify-center size-6 rounded-md bg-primary/10 text-primary font-bold text-xs">
-                        P{period.period_number}
-                      </span>
-                      <span className="text-md font-semibold text-foreground whitespace-nowrap">
-                        Period {period.period_number}
-                      </span>
-                    </div>
-                    <span className="text-sm font-medium text-muted-foreground tracking-tight whitespace-nowrap">
-                      {period.start_time} - {period.end_time}
+                  <div className="flex flex-col items-center justify-center text-center gap-0.5">
+                    <span className="text-sm font-bold text-foreground whitespace-nowrap">
+                      {day.label}
+                    </span>
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      {day.short}
                     </span>
                   </div>
                 </td>
 
-                {/* Day Cells */}
-                {DAYS.map((day) => {
+                {/* Period Cells */}
+                {periods.map((period) => {
                   const entryKey = `${day.key}_${period.id}`
                   const entry = entryMap.get(entryKey) || null
 
                   return (
                     <td
-                      key={day.key}
+                      key={period.id}
                       className="p-2 border-r border-border/40 last:border-r-0 align-top"
                     >
                       <TimetableCell

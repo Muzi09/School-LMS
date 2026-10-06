@@ -18,7 +18,6 @@ import { Permission, hasPermission } from "@/lib/permissions"
 import {
   useSchoolClasses,
   useTimetable,
-  useEligibleTeachers,
   useCreateTimetableEntry,
   useUpdateTimetableEntry,
   useDeleteTimetableEntry,
@@ -83,9 +82,6 @@ export function TimeTable() {
     error: timetableError,
     refetch: refetchTimetable,
   } = useTimetable(selectedSectionId)
-
-  // 3. Load eligible teachers (for selection)
-  const { data: eligibleTeachers = [] } = useEligibleTeachers()
 
   // Mutations
   const createEntryMutation = useCreateTimetableEntry()
@@ -361,7 +357,6 @@ export function TimeTable() {
         initialPeriod={slotPeriod}
         section={sectionMeta}
         subjects={subjects}
-        teachers={eligibleTeachers}
         periods={periods}
         entries={entries}
         onSave={handleSaveEntry}
@@ -386,9 +381,11 @@ export function TimeTable() {
         description={
           deleteTargetEntry ? (
             <span>
-              This will remove <strong>{deleteTargetEntry.subject?.name}</strong> taught by{" "}
-              <strong>{deleteTargetEntry.teacher?.name}</strong> from Class{" "}
-              {sectionMeta?.class_name}-{sectionMeta?.section_name} during{" "}
+              This will remove <strong>{deleteTargetEntry.subject?.name}</strong>
+              {deleteTargetEntry.teacher?.name ? (
+                <> taught by <strong>{deleteTargetEntry.teacher.name}</strong></>
+              ) : null}{" "}
+              from Class {sectionMeta?.class_name}-{sectionMeta?.section_name} during{" "}
               {deleteTargetEntry.day_of_week} Period {deleteTargetEntry.period_number}.
             </span>
           ) : (

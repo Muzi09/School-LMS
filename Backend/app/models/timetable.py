@@ -128,10 +128,10 @@ class TimetableEntry(Base, AuditMixin):
         nullable=False,
     )
 
-    teacher_user_id: Mapped[UUID] = mapped_column(
+    teacher_user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     period_id: Mapped[UUID] = mapped_column(
@@ -161,7 +161,7 @@ class TimetableEntry(Base, AuditMixin):
         foreign_keys=[subject_id],
     )
 
-    teacher: Mapped["User"] = relationship(
+    teacher: Mapped["User | None"] = relationship(
         "User",
         foreign_keys=[teacher_user_id],
     )
@@ -200,6 +200,6 @@ class TimetableEntry(Base, AuditMixin):
                 cls.day_of_week,
                 cls.period_id,
                 unique=True,
-                postgresql_where=cls.deleted_at.is_(None),
+                postgresql_where=(cls.deleted_at.is_(None) & cls.teacher_user_id.isnot(None)),
             ),
         )

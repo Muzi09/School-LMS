@@ -25,6 +25,9 @@ class Permission(str, Enum):
     VIEW_TIMETABLE = "VIEW_TIMETABLE"
     MANAGE_TIMETABLE = "MANAGE_TIMETABLE"
 
+    # School Management
+    MANAGE_SCHOOL = "MANAGE_SCHOOL"
+
 
 ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
     UserRole.ADMIN: {
@@ -40,6 +43,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
         Permission.STAFF_DASHBOARD_ACCESS,
         Permission.VIEW_TIMETABLE,
         Permission.MANAGE_TIMETABLE,
+        Permission.MANAGE_SCHOOL,
     },
     UserRole.PRINCIPAL: {
         Permission.MANAGE_STAFF,
@@ -54,6 +58,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
         Permission.STAFF_DASHBOARD_ACCESS,
         Permission.VIEW_TIMETABLE,
         Permission.MANAGE_TIMETABLE,
+        Permission.MANAGE_SCHOOL,
     },
     UserRole.STAFF: {
         Permission.STAFF_DASHBOARD_ACCESS,

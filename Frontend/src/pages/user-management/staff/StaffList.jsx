@@ -1,8 +1,7 @@
-import React, { useState, useDeferredValue, useMemo } from "react"
+import { useState, useDeferredValue, useMemo } from "react"
 import {
   Briefcase,
   UserPlus,
-  RefreshCw,
   Eye,
   Edit2,
   Trash2,
@@ -10,7 +9,6 @@ import {
   Copy,
   Check,
   Loader2,
-  ShieldAlert,
   FileSpreadsheet,
 } from "lucide-react"
 
@@ -409,16 +407,16 @@ export function StaffList() {
 
             <div className="p-3.5 rounded-xl bg-muted/60 border border-border text-left space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">
+                <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                   One-Time Setup Link
                 </label>
-                <span className="text-[10px] text-muted-foreground">Expires in 48 hours</span>
+                <span className="text-[11px] text-muted-foreground">Expires in 48 hours</span>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   readOnly
                   value={setupModalData.setupUrl}
-                  className="flex-1 h-9 px-3 text-xs bg-background border border-border rounded-lg text-foreground font-mono truncate"
+                  className="flex-1 h-10 px-3.5 text-sm bg-background border border-border rounded-xl text-foreground font-mono truncate"
                 />
                 <Button
                   type="button"
@@ -427,7 +425,7 @@ export function StaffList() {
                     setIsCopiedLink(true)
                     setTimeout(() => setIsCopiedLink(false), 2000)
                   }}
-                  className="h-9 px-3 text-xs font-semibold rounded-lg shrink-0 gap-1.5 cursor-pointer"
+                  className="h-10 px-4 text-sm font-semibold rounded-xl shrink-0 gap-1.5 cursor-pointer"
                 >
                   {isCopiedLink ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
                   <span>{isCopiedLink ? "Copied!" : "Copy"}</span>

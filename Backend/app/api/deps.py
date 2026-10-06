@@ -187,6 +187,7 @@ require_resend_staff_setup = PermissionChecker(Permission.RESEND_STAFF_SETUP)
 require_manage_email_setup = PermissionChecker(Permission.MANAGE_EMAIL_SETUP)
 require_view_timetable = PermissionChecker(Permission.VIEW_TIMETABLE)
 require_manage_timetable = PermissionChecker(Permission.MANAGE_TIMETABLE)
+require_manage_school = PermissionChecker(Permission.MANAGE_SCHOOL)
 
 # Backward compatibility aliases
 require_super_admin = require_admin

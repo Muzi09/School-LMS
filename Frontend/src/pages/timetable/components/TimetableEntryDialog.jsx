@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo } from "react"
 import {
   CalendarDays,
-  Clock,
   BookOpen,
   User,
   AlertTriangle,
   Loader2,
   Trash2,
   Info,
-  Lock,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -49,16 +47,15 @@ export function TimetableEntryDialog({
   const [selectedDay, setSelectedDay] = useState("MONDAY")
   const [selectedPeriodId, setSelectedPeriodId] = useState("")
   const [selectedSubjectId, setSelectedSubjectId] = useState("")
-  const [selectedTeacherId, setSelectedTeacherId] = useState("")
+
   // Initialize or reset state when modal opens or entry changes
   useEffect(() => {
     if (isOpen) {
-
       if (isEdit && entry) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedDay(entry.day_of_week)
         setSelectedPeriodId(entry.period_id ? String(entry.period_id) : "")
         setSelectedSubjectId(entry.subject?.id ? String(entry.subject.id) : "")
-        setSelectedTeacherId(entry.teacher?.id ? String(entry.teacher.id) : "")
       } else {
         // Defaults to initialDay (or MONDAY) and initialPeriod (or Period 1)
         setSelectedDay(initialDay ? String(initialDay).toUpperCase() : "MONDAY")
@@ -72,10 +69,20 @@ export function TimetableEntryDialog({
           ""
         setSelectedPeriodId(defaultPeriod ? String(defaultPeriod) : "")
         setSelectedSubjectId("")
-        setSelectedTeacherId("")
       }
     }
   }, [isOpen, isEdit, entry, initialDay, initialPeriod, periods])
+
+  // Look up selected subject to get assigned teacher from School Management
+  const selectedSubject = useMemo(() => {
+    return subjects.find((s) => String(s.id) === String(selectedSubjectId)) || null
+  }, [subjects, selectedSubjectId])
+
+  const assignedTeacher = useMemo(() => {
+    if (selectedSubject?.teacher) return selectedSubject.teacher
+    if (isEdit && entry?.subject?.id === selectedSubjectId && entry?.teacher) return entry.teacher
+    return null
+  }, [selectedSubject, isEdit, entry, selectedSubjectId])
 
   // Detect if selected (Day, Period) already has an entry on this section
   const existingSlotEntry = useMemo(() => {
@@ -114,10 +121,8 @@ export function TimetableEntryDialog({
       toast.warning("Please select a subject.")
       return
     }
-    if (!selectedTeacherId) {
-      toast.warning("Please select a teacher.")
-      return
-    }
+
+    const resolvedTeacherId = assignedTeacher?.id || selectedSubject?.teacher_id || null
 
     try {
       if (isEdit && !existingSlotEntry) {
@@ -126,7 +131,7 @@ export function TimetableEntryDialog({
           entryId: entry.id,
           payload: {
             subject_id: selectedSubjectId,
-            teacher_user_id: selectedTeacherId,
+            teacher_user_id: resolvedTeacherId,
             period_id: selectedPeriodId,
             day_of_week: selectedDay,
           },
@@ -135,7 +140,7 @@ export function TimetableEntryDialog({
         await onSave({
           section_id: section?.id || section?.section_id,
           subject_id: selectedSubjectId,
-          teacher_user_id: selectedTeacherId,
+          teacher_user_id: resolvedTeacherId,
           period_id: selectedPeriodId,
           day_of_week: selectedDay,
           overwrite: true,
@@ -219,7 +224,9 @@ export function TimetableEntryDialog({
                     <span className="text-muted-foreground text-xs">&bull;</span>
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-background border border-border font-semibold text-foreground text-xs shadow-2xs">
                       <User className="size-3.5 text-primary shrink-0" />
-                      <span>{existingSlotEntry.teacher?.name || "Teacher"}</span>
+                      <span className={cn(!existingSlotEntry.teacher?.name && "italic font-normal text-muted-foreground")}>
+                        {existingSlotEntry.teacher?.name || "Unassigned"}
+                      </span>
                     </span>
                   </div>
                   <div className="flex items-start gap-1.5 pt-0.5 text-amber-800 dark:text-amber-300 font-medium">
@@ -238,7 +245,7 @@ export function TimetableEntryDialog({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Day Dropdown */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-0.5">
                   <label
                     htmlFor="timetable-day-select"
                     className="text-xs sm:text-sm font-medium text-foreground block"
@@ -262,7 +269,7 @@ export function TimetableEntryDialog({
 
               {/* Period Dropdown */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-0.5">
                   <label
                     htmlFor="timetable-period-select"
                     className="text-xs sm:text-sm font-medium text-foreground block"
@@ -289,7 +296,7 @@ export function TimetableEntryDialog({
             <div>
               <label
                 htmlFor="timetable-subject-select"
-                className="text-xs sm:text-sm font-medium text-foreground block mb-1"
+                className="text-xs sm:text-sm font-medium text-foreground block mb-0.5"
               >
                 Subject
               </label>
@@ -314,27 +321,50 @@ export function TimetableEntryDialog({
               )}
             </div>
 
-            {/* Teacher Selection */}
+            {/* Assigned Teacher (read-only from School Management) */}
             <div>
-              <label
-                htmlFor="timetable-teacher-select"
-                className="text-xs sm:text-sm font-medium text-foreground block mb-1"
-              >
-                Teacher
+              <label className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                Assigned Teacher
               </label>
-              <Combobox
-                id="timetable-teacher-select"
-                value={selectedTeacherId}
-                onValueChange={(val) => setSelectedTeacherId(val)}
-                options={teachers.map((tch) => ({
-                  value: String(tch.id),
-                  label: tch.name,
-                  description: tch.department ? `${tch.department}${tch.designation ? ` • ${tch.designation}` : ""}` : (tch.email || null),
-                }))}
-                placeholder={teachers.length === 0 ? "No teachers available" : "Select or search teacher..."}
-                clearable={true}
-                disabled={!canManage || isPending || teachers.length === 0}
-              />
+
+              {selectedSubjectId ? (
+                assignedTeacher ? (
+                  <div className="flex items-center justify-between p-2.5 px-3 rounded-xl border border-border bg-card">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="size-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0">
+                        {assignedTeacher.name ? assignedTeacher.name.charAt(0).toUpperCase() : "T"}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-foreground truncate">
+                          {assignedTeacher.name}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {assignedTeacher.email || "No email"}
+                          {assignedTeacher.roll_no ? ` • ${assignedTeacher.roll_no}` : ""}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-semibold shrink-0">
+                      Assigned
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-2.5 px-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400">
+                    <div className="flex items-center gap-2 min-w-0 text-xs">
+                      <User className="size-4 shrink-0 opacity-70" />
+                      <span className="truncate">Unassigned in School Management</span>
+                    </div>
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full font-semibold shrink-0">
+                      Unassigned
+                    </span>
+                  </div>
+                )
+              ) : (
+                <div className="p-2.5 px-3 rounded-xl border border-border/60 bg-muted/20 text-xs text-muted-foreground flex items-center gap-2">
+                  <User className="size-4 opacity-40 shrink-0" />
+                  <span>Select a subject above to view its assigned teacher</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -344,26 +374,24 @@ export function TimetableEntryDialog({
               <Button
                 type="button"
                 variant="destructive"
-                size="sm"
                 onClick={() => onDeleteRequest(entry)}
                 disabled={isPending}
-                className="gap-1.5 text-xs h-9 px-3"
+                className="gap-1.5 h-10 px-4 text-sm font-medium rounded-xl cursor-pointer"
               >
-                <Trash2 className="size-3.5" />
+                <Trash2 className="size-4" />
                 <span>Delete</span>
               </Button>
             ) : (
               <div />
             )}
 
-            <div className="flex items-center gap-2.5 ml-auto">
+            <div className="flex items-center gap-3 ml-auto">
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
                 onClick={onClose}
                 disabled={isPending}
-                className="text-xs h-9 px-4"
+                className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
               >
                 Cancel
               </Button>
@@ -371,11 +399,10 @@ export function TimetableEntryDialog({
               {canManage && (
                 <Button
                   type="submit"
-                  size="sm"
                   disabled={isPending || subjects.length === 0 || periods.length === 0}
-                  className="gap-2 text-xs h-9 px-5 shadow-xs font-semibold"
+                  className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer"
                 >
-                  {isPending && <Loader2 className="size-3.5 animate-spin" />}
+                  {isPending && <Loader2 className="size-4 animate-spin" />}
                   <span>
                     {existingSlotEntry
                       ? "Overwrite & Save"

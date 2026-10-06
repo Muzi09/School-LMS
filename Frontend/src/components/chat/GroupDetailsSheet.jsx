@@ -12,7 +12,6 @@ import {
   Crown,
   Search,
   Loader2,
-  AlertCircle,
 } from "lucide-react"
 import {
   Sheet,
@@ -469,7 +468,7 @@ export function GroupDetailsSheet({
               placeholder="Search members to add..."
               value={addSearchTerm}
               onChange={(e) => setAddSearchTerm(e.target.value)}
-              className="pl-9 pr-4 h-9.5 rounded-xl text-xs"
+              className="pl-9 pr-4 h-10 rounded-xl text-sm"
             />
           </div>
 
@@ -539,7 +538,7 @@ export function GroupDetailsSheet({
             variant="outline"
             onClick={() => setIsAddModalOpen(false)}
             disabled={isSubmittingAdd}
-            className="rounded-xl"
+            className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
           >
             Cancel
           </Button>
@@ -547,7 +546,7 @@ export function GroupDetailsSheet({
             type="button"
             onClick={handleAddParticipantsSubmit}
             disabled={isSubmittingAdd || selectedToAdd.length === 0}
-            className="rounded-xl gap-1.5"
+            className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer gap-1.5"
           >
             {isSubmittingAdd && <Loader2 className="size-4 animate-spin" />}
             <span>Add Selected ({selectedToAdd.length})</span>
@@ -575,7 +574,7 @@ export function GroupDetailsSheet({
 
         {isAdmin && otherMembersForTransfer.length > 0 && (
           <div className="space-y-2 my-2">
-            <label className="text-xs font-semibold text-foreground uppercase tracking-wider">
+            <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
               Transfer Ownership To
             </label>
             <div className="max-h-48 overflow-y-auto space-y-1">
@@ -587,13 +586,13 @@ export function GroupDetailsSheet({
                     key={p.user_id}
                     type="button"
                     onClick={() => setSelectedNewOwnerId(String(p.user_id))}
-                    className={`flex items-center justify-between w-full p-2 rounded-xl text-left cursor-pointer transition-all ${
+                    className={`flex items-center justify-between w-full p-2.5 rounded-xl text-left cursor-pointer transition-all ${
                       isSelected
                         ? "bg-primary/10 border border-primary/20"
                         : "hover:bg-muted/70 border border-transparent"
                     }`}
                   >
-                    <span className="text-xs font-medium text-foreground">
+                    <span className="text-sm font-medium text-foreground">
                       {u?.first_name} {u?.last_name}
                     </span>
                     {isSelected && <Check className="size-4 text-primary" />}
@@ -610,7 +609,7 @@ export function GroupDetailsSheet({
             variant="outline"
             onClick={() => setIsLeaveModalOpen(false)}
             disabled={isLeaving}
-            className="rounded-xl"
+            className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
           >
             Cancel
           </Button>
@@ -622,7 +621,7 @@ export function GroupDetailsSheet({
               isLeaving ||
               (isAdmin && otherMembersForTransfer.length > 0 && !selectedNewOwnerId)
             }
-            className="rounded-xl gap-1.5"
+            className="h-10 px-6 text-sm font-semibold rounded-xl cursor-pointer gap-1.5"
           >
             {isLeaving && <Loader2 className="size-4 animate-spin" />}
             <span>Confirm & Leave</span>

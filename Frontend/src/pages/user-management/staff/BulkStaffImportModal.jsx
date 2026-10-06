@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from "react"
+import { useState, useRef, useMemo } from "react"
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -6,17 +6,14 @@ import {
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
-  X,
   Copy,
   Check,
   Loader2,
   ArrowRight,
   ArrowLeft,
-  FileText,
   Mail,
   ShieldCheck,
   Info,
-  ExternalLink,
   ShieldAlert,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -34,7 +31,6 @@ import {
   downloadBlob,
   exportErrorReportXlsx,
   exportResultsXlsx,
-  EXPECTED_COLUMNS,
 } from "@/utils/staffImportUtils"
 import { cn } from "@/lib/utils"
 
@@ -60,7 +56,6 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
   const [creationResult, setCreationResult] = useState(null)
   const [copiedLinksMap, setCopiedLinksMap] = useState({})
   const [isAllCopied, setIsAllCopied] = useState(false)
-  const [generalError, setGeneralError] = useState("")
 
   // Reset state when modal is closed
   const handleModalClose = () => {
@@ -71,7 +66,6 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
     setCreationResult(null)
     setCopiedLinksMap({})
     setIsAllCopied(false)
-    setGeneralError("")
     setCurrentStep(1)
     setReviewTabFilter("ALL")
     setShowConfirmCreate(false)
@@ -111,7 +105,6 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
 
   // Handle File Selection
   const handleFileChange = async (file) => {
-    setGeneralError("")
     if (!file) return
 
     setSelectedFile(file)
@@ -146,7 +139,6 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
   const handleProceedToReview = async () => {
     if (!selectedFile || !clientValidation?.isValid) return
     setIsAnalyzing(true)
-    setGeneralError("")
 
     try {
       const res = await previewBulkStaffImportApi(selectedFile)
@@ -969,14 +961,14 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
         </div>
 
         {/* Modal Footer Controls */}
-        <div className="border-t border-border bg-card px-6 py-4 flex items-center justify-between">
+        <div className="border-t border-border/80 bg-card px-6 py-4 flex items-center justify-between">
           {currentStep === 1 && (
             <>
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleModalClose}
-                className="h-9 px-4 text-sm font-medium cursor-pointer"
+                className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
               >
                 Cancel
               </Button>
@@ -985,7 +977,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                 type="button"
                 onClick={handleProceedToReview}
                 disabled={!selectedFile || !clientValidation?.isValid || isAnalyzing}
-                className="h-9 px-5 text-sm font-semibold gap-2 shadow-xs cursor-pointer"
+                className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm gap-2 cursor-pointer"
               >
                 {isAnalyzing ? (
                   <>
@@ -1008,18 +1000,18 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                 type="button"
                 variant="outline"
                 onClick={() => setCurrentStep(1)}
-                className="h-9 px-4 text-xs font-medium gap-1.5 cursor-pointer"
+                className="h-10 px-4 text-sm font-medium rounded-xl gap-1.5 cursor-pointer"
               >
-                <ArrowLeft className="size-3.5" />
+                <ArrowLeft className="size-4" />
                 <span>Back</span>
               </Button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleModalClose}
-                  className="h-9 px-4 text-xs font-medium cursor-pointer"
+                  className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
                 >
                   Cancel
                 </Button>
@@ -1034,7 +1026,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                       handleExecuteImport()
                     }
                   }}
-                  className="h-9 px-5 text-xs font-bold gap-2 shadow-xs cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
+                  className="h-10 px-6 text-sm font-semibold rounded-xl gap-2 shadow-sm cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   <span>
                     {previewData.valid_rows === 0
@@ -1053,7 +1045,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                 type="button"
                 onClick={handleModalClose}
                 disabled={isCreating}
-                className="h-9 px-6 text-xs font-semibold shadow-xs cursor-pointer"
+                className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer"
               >
                 Done
               </Button>
@@ -1076,21 +1068,19 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                 Each staff member will be placed in Pending Activation and issued a secure onboarding setup link. Continue?
               </p>
             </div>
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/80">
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
                 onClick={() => setShowConfirmCreate(false)}
-                className="h-8 px-4 text-xs font-medium cursor-pointer"
+                className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
               >
                 Cancel
               </Button>
               <Button
                 type="button"
-                size="sm"
                 onClick={handleExecuteImport}
-                className="h-8 px-5 text-xs font-bold shadow-xs cursor-pointer"
+                className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer"
               >
                 Yes, Create {previewData?.valid_rows} Staff
               </Button>

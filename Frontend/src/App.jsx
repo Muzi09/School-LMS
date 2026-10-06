@@ -1,4 +1,3 @@
-import React from "react"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { ThemeProvider } from "@/context/ThemeContext"
@@ -40,6 +39,10 @@ import { ChatPage } from "@/pages/chat/ChatPage"
 
 // Timetable Page
 import { TimeTable } from "@/pages/timetable/TimeTable"
+
+// School Management Workspace
+import { ManageSchool } from "@/pages/school-management/ManageSchool"
+import { SchoolConfiguration } from "@/pages/school-management/SchoolConfiguration"
 import { Toaster } from "@/components/ui/sonner"
 
 export function App() {
@@ -93,6 +96,11 @@ export function App() {
                     <Route path="manage-staff" element={<Navigate to="/staff" replace />} />
                   </Route>
                   <Route path="students" element={<StudentList />} />
+                  <Route element={<PermissionRoute permission={Permission.MANAGE_SCHOOL} redirectTo="/" />}>
+                    <Route path="manage-school" element={<ManageSchool />} />
+                    <Route path="school-configuration" element={<SchoolConfiguration />} />
+                    <Route path="school-settings" element={<Navigate to="/school-configuration" replace />} />
+                  </Route>
                   <Route path="chat" element={<ChatPage />} />
                   <Route element={<PermissionRoute permission={Permission.VIEW_TIMETABLE} redirectTo="/" />}>
                     <Route path="timetable" element={<TimeTable />} />

@@ -9,7 +9,6 @@ import {
   Copy,
   Check,
   User,
-  Mail,
   ShieldAlert,
 } from "lucide-react"
 
@@ -140,13 +139,6 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden"
-      setServerError("")
-      setCreatedSetupUrl("")
-      setCreatedStaffName("")
-      setIsCopied(false)
-      createStaffMutation.reset?.()
-      updateStaffMutation.reset?.()
-      formik.resetForm({ values: initialValues })
 
       // Auto-generate next Staff ID for new staff
       if (!isEdit) {
@@ -167,7 +159,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
     return () => {
       document.body.style.overflow = ""
     }
-  }, [isOpen, staff, isEdit])
+  }, [isOpen, isEdit])
 
   if (!isOpen) return null
 
@@ -259,6 +251,14 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
         ) : (
           /* Main Staff Form */
           <form onSubmit={formik.handleSubmit} noValidate className="flex-1 overflow-y-auto p-6 sm:p-7 space-y-6">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="size-4" />
+                <AlertTitle className="font-semibold">Error</AlertTitle>
+                <AlertDescription className="text-xs">{error}</AlertDescription>
+              </Alert>
+            )}
+
             {/* Email Setup Status Warning/Notice for Staff Creation */}
             {!isEdit && (
               <>
@@ -285,7 +285,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     First Name
                   </label>
                   <Input
@@ -308,7 +308,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Last Name
                   </label>
                   <Input
@@ -331,7 +331,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Mobile Number
                   </label>
                   <Input
@@ -355,7 +355,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Email Address
                   </label>
                   <Input
@@ -390,7 +390,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Staff ID
                   </label>
                   <Input
@@ -410,7 +410,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Gender
                   </label>
                   <Combobox
@@ -439,7 +439,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Date of Birth
                   </label>
                   <DatePicker

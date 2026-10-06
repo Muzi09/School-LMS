@@ -7,8 +7,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  CheckCircle2,
-  AlertCircle,
   Loader2,
   Sparkles,
   ArrowRight,
@@ -27,12 +25,9 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
-  const [serverError, setServerError] = useState("")
-  const [successMessage, setSuccessMessage] = useState("")
   
   // Test states: 'idle' | 'testing' | 'succeeded' | 'failed'
   const [testState, setTestState] = useState("idle")
-  const [testMessage, setTestMessage] = useState("")
   const [isTestedSuccess, setIsTestedSuccess] = useState(false)
 
   const defaultUserEmail = user?.email || existingConfig?.from_email || existingConfig?.smtp_username || ""
@@ -54,9 +49,6 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
     validationSchema: smtpConfigValidationSchema,
     enableReinitialize: true,
     onSubmit: async (values) => {
-      setServerError("")
-      setSuccessMessage("")
-
       try {
         const payload = {
           smtp_host: values.smtp_host.trim(),
@@ -87,8 +79,6 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
     formik.setFieldValue(field, value)
     setIsTestedSuccess(false)
     setTestState("idle")
-    setTestMessage("")
-    setServerError("")
   }
 
   const handleTestConnection = async () => {
@@ -162,16 +152,16 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
         />
 
         {/* Form Body */}
-        <form onSubmit={formik.handleSubmit} className="p-6 space-y-4.5 overflow-y-auto flex-1">
+        <form onSubmit={formik.handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
 
           {/* Row 1: Equal Width Host & Port */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="smtp_host" className="text-xs font-semibold text-foreground block mb-1.5">
+              <label htmlFor="smtp_host" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                 SMTP Host
               </label>
               <div className="relative">
-                <Server className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Server className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id="smtp_host"
                   name="smtp_host"
@@ -179,7 +169,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                   onChange={(e) => handleFieldChange("smtp_host", e.target.value)}
                   onBlur={formik.handleBlur}
                   className={cn(
-                    "pl-9 h-10 text-sm",
+                    "pl-10 h-10 text-sm rounded-xl px-3.5",
                     formik.touched.smtp_host && formik.errors.smtp_host && "border-destructive ring-1 ring-destructive/30"
                   )}
                 />
@@ -192,7 +182,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
             </div>
 
             <div>
-              <label htmlFor="smtp_port" className="text-xs font-semibold text-foreground block mb-1.5">
+              <label htmlFor="smtp_port" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                 Port
               </label>
               <Input
@@ -208,7 +198,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                 }}
                 onBlur={formik.handleBlur}
                 className={cn(
-                  "h-10 text-sm font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                  "h-10 text-sm font-mono rounded-xl px-3.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                   formik.touched.smtp_port && formik.errors.smtp_port && "border-destructive ring-1 ring-destructive/30"
                 )}
               />
@@ -222,18 +212,18 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
 
           {/* Row 2: Prefilled Read-Only From Email Address */}
           <div>
-            <label htmlFor="from_email" className="text-xs font-semibold text-foreground block mb-1.5">
+            <label htmlFor="from_email" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
               From Email Address
             </label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 id="from_email"
                 name="from_email"
                 type="email"
                 readOnly
                 value={formik.values.from_email}
-                className="pl-9 h-10 text-sm bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
+                className="pl-10 h-10 text-sm rounded-xl px-3.5 bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
               />
             </div>
             {formik.touched.from_email && formik.errors.from_email && (
@@ -246,7 +236,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
           {/* Row 3: From Sender Name & Password */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="from_name" className="text-xs font-semibold text-foreground block mb-1.5">
+              <label htmlFor="from_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                 From Sender Name
               </label>
               <Input
@@ -256,7 +246,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                 onChange={(e) => handleFieldChange("from_name", e.target.value)}
                 onBlur={formik.handleBlur}
                 className={cn(
-                  "h-10 text-sm",
+                  "h-10 text-sm rounded-xl px-3.5",
                   formik.touched.from_name && formik.errors.from_name && "border-destructive ring-1 ring-destructive/30"
                 )}
               />
@@ -268,11 +258,11 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
             </div>
 
             <div>
-              <label htmlFor="smtp_password" className="text-xs font-semibold text-foreground block mb-1.5">
+              <label htmlFor="smtp_password" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                 SMTP Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id="smtp_password"
                   name="smtp_password"
@@ -282,7 +272,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                   onChange={(e) => handleFieldChange("smtp_password", e.target.value)}
                   onBlur={formik.handleBlur}
                   className={cn(
-                    "pl-9 pr-9 h-10 text-sm",
+                    "pl-10 pr-10 h-10 text-sm rounded-xl px-3.5 font-mono",
                     formik.touched.smtp_password && formik.errors.smtp_password && "border-destructive ring-1 ring-destructive/30"
                   )}
                 />
@@ -316,13 +306,13 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
           </div>
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-between gap-3 pt-3 border-t border-border/60">
+          <div className="flex items-center justify-between gap-3 pt-4 border-t border-border/80">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={isSaving || isTesting}
-              className="h-9 px-4 text-xs font-medium rounded-xl border-border inline-flex items-center justify-center whitespace-nowrap cursor-pointer hover:bg-muted"
+              className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
             >
               Cancel
             </Button>
@@ -335,7 +325,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                   onClick={handleTestConnection}
                   disabled={isTesting || isSaving || !formik.values.smtp_host || !formik.values.smtp_password}
                   className={cn(
-                    "h-9.5 px-5 text-xs font-semibold rounded-xl text-white inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all duration-300 shadow-xs",
+                    "h-10 px-5 text-sm font-semibold rounded-xl text-white inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all duration-300 shadow-sm",
                     testState === "testing"
                       ? "bg-amber-600 opacity-90 animate-pulse"
                       : testState === "failed"
@@ -345,17 +335,17 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                 >
                   {testState === "testing" ? (
                     <>
-                      <Loader2 className="size-3.5 animate-spin" />
+                      <Loader2 className="size-4 animate-spin" />
                       <span>Testing Connection...</span>
                     </>
                   ) : testState === "failed" ? (
                     <>
-                      <RefreshCw className="size-3.5" />
+                      <RefreshCw className="size-4" />
                       <span>Retry Connection Test</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="size-3.5" />
+                      <Sparkles className="size-4" />
                       <span>Test Connection</span>
                     </>
                   )}
@@ -363,22 +353,20 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
               ) : (
                 /* Step 2: Save Configuration Button (Only unlocked upon successful test) */
                 <div className="flex items-center gap-2 animate-in zoom-in-95 duration-200">
-                  
-
                   <Button
                     type="submit"
                     disabled={isSaving || isTesting}
-                    className="h-9.5 px-5 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-md transition-all duration-200 animate-in fade-in-50"
+                    className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-sm transition-all duration-200 animate-in fade-in-50"
                   >
                     {isSaving ? (
                       <>
-                        <Loader2 className="size-3.5 animate-spin" />
+                        <Loader2 className="size-4 animate-spin" />
                         <span>Saving...</span>
                       </>
                     ) : (
                       <>
                         <span>Save Configuration</span>
-                        <ArrowRight className="size-3.5" />
+                        <ArrowRight className="size-4" />
                       </>
                     )}
                   </Button>

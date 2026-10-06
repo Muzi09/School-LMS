@@ -24,6 +24,9 @@ export function Combobox({
   searchable = true,
   clearable = false,
   disabled = false,
+  showDescriptionInTrigger = true,
+  anchorRef,
+  anchorSelector,
   className,
   popoverClassName,
   id,
@@ -71,6 +74,7 @@ export function Combobox({
 
   // Filter options based on typed search query
   const filteredOptions = React.useMemo(() => {
+    if (!searchable) return normalizedOptions
     const q = searchQuery.trim().toLowerCase()
     if (!q) return normalizedOptions
     return normalizedOptions.filter(
@@ -79,7 +83,7 @@ export function Combobox({
         (opt.description && opt.description.toLowerCase().includes(q)) ||
         String(opt.value).toLowerCase().includes(q)
     )
-  }, [normalizedOptions, searchQuery])
+  }, [normalizedOptions, searchQuery, searchable])
 
   // Find currently selected option
   const selectedOption = React.useMemo(() => {
@@ -98,21 +102,42 @@ export function Combobox({
       return
     }
 
-    const spaceBelow = window.innerHeight - rect.bottom
-    const spaceAbove = rect.top
+    // Determine anchor element for width and horizontal positioning
+    let anchorEl = triggerButtonRef.current
+    if (anchorRef && anchorRef.current) {
+      anchorEl = anchorRef.current
+    } else if (anchorSelector) {
+      anchorEl = triggerButtonRef.current.closest(anchorSelector) || triggerButtonRef.current
+    }
+    const anchorRect = anchorEl.getBoundingClientRect()
+
+    const spaceBelow = window.innerHeight - anchorRect.bottom
+    const spaceAbove = anchorRect.top
     const openUp = spaceBelow < 220 && spaceAbove > spaceBelow
     const availableHeight = openUp ? spaceAbove - 16 : spaceBelow - 16
     const maxHeight = Math.min(260, Math.max(120, availableHeight))
 
+    let left = anchorRect.left
+    let width = anchorRect.width
+
+    // Guard against horizontal viewport overflow
+    if (left + width > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - width - 8)
+    }
+    if (left < 8) {
+      left = 8
+      width = Math.min(width, window.innerWidth - 16)
+    }
+
     setCoords({
-      top: openUp ? undefined : rect.bottom + 4,
-      bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
-      left: rect.left,
-      width: rect.width,
+      top: openUp ? undefined : anchorRect.bottom + 4,
+      bottom: openUp ? window.innerHeight - anchorRect.top + 4 : undefined,
+      left,
+      width,
       openUpwards: openUp,
       maxHeight,
     })
-  }, [])
+  }, [anchorRef, anchorSelector])
 
   // Open / Close toggle
   const handleOpenToggle = () => {
@@ -184,7 +209,9 @@ export function Combobox({
 
   // Handle selection
   const handleSelect = (optionValue) => {
-    const finalValue = clearable && String(value) === String(optionValue) ? "" : optionValue
+    const curVal = value === undefined || value === null ? "" : String(value)
+    const optVal = optionValue === undefined || optionValue === null ? "" : String(optionValue)
+    const finalValue = clearable && curVal === optVal && optVal !== "" ? "" : optionValue
     onValueChange?.(finalValue)
 
     if (onChange) {
@@ -202,7 +229,7 @@ export function Combobox({
 
   // Handle clear button
   const handleClear = (e) => {
-    e.stopPropagation()
+    e?.stopPropagation()
     onValueChange?.("")
     if (onChange) {
       const syntheticEvent = {
@@ -211,6 +238,7 @@ export function Combobox({
       }
       onChange(syntheticEvent, "")
     }
+    setOpen(false)
   }
 
   // Keyboard navigation & Type-to-search (no search field needed)
@@ -231,7 +259,7 @@ export function Combobox({
         setOpen(true)
         updatePosition()
         setSearchQuery(e.key.toLowerCase())
-        lastKeyTimeRef.current = Date.now()
+        lastKeyTimeRef.current = e.timeStamp
         setHighlightedIndex(0)
         return
       }
@@ -283,24 +311,24 @@ export function Combobox({
     }
 
     if (e.key === "Backspace") {
-      if (searchQuery.length > 0) {
+      if (searchable && searchQuery.length > 0) {
         e.preventDefault()
         setSearchQuery((prev) => prev.slice(0, -1))
-        lastKeyTimeRef.current = Date.now()
+        lastKeyTimeRef.current = e.timeStamp
         setHighlightedIndex(0)
       }
       return
     }
 
     // Printable character: append to search buffer
-    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (searchable && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
       if (e.key === " " && !searchQuery) {
         e.preventDefault()
         return
       }
 
       e.preventDefault()
-      const now = Date.now()
+      const now = e.timeStamp
       // If user paused for > 1.2 seconds, start fresh query
       if (now - (lastKeyTimeRef.current || 0) > 1200) {
         setSearchQuery(e.key.toLowerCase())
@@ -336,7 +364,7 @@ export function Combobox({
           {selectedOption ? (
             <span className="font-medium text-foreground">
               {selectedOption.label}
-              {selectedOption.description && (
+              {showDescriptionInTrigger && selectedOption.description && (
                 <span className="text-muted-foreground ml-1.5 font-normal text-xs">
                   ({selectedOption.description})
                 </span>
@@ -352,6 +380,11 @@ export function Combobox({
             <span
               role="button"
               tabIndex={0}
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                handleClear(e)
+              }}
               onClick={handleClear}
               className="p-0.5 rounded-sm hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
               title="Clear"
@@ -371,6 +404,8 @@ export function Combobox({
             ref={popoverRef}
             role="listbox"
             tabIndex={-1}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
             style={{
               position: "fixed",
@@ -388,6 +423,21 @@ export function Combobox({
           >
             {/* Options list */}
             <div ref={listRef} className="overflow-y-auto p-1 space-y-0.5 flex-1">
+              {clearable && selectedOption && (
+                <button
+                  type="button"
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    handleClear(e)
+                  }}
+                  onClick={handleClear}
+                  className="w-full px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-2 text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border-b border-border/50 mb-1 font-medium"
+                >
+                  <X className="size-3.5 shrink-0" />
+                  <span>Clear selection / Unassign</span>
+                </button>
+              )}
               {filteredOptions.length === 0 ? (
                 <div className="py-6 px-3 text-center text-xs text-muted-foreground">
                   {searchQuery ? `No results for "${searchQuery}"` : emptyText}
@@ -405,7 +455,18 @@ export function Combobox({
                       data-highlighted={isHighlighted}
                       aria-selected={isSelected}
                       disabled={opt.disabled}
-                      onClick={() => !opt.disabled && handleSelect(opt.value)}
+                      onPointerDown={(e) => {
+                        e.stopPropagation()
+                      }}
+                      onMouseDown={(e) => {
+                        e.stopPropagation()
+                        e.preventDefault()
+                        if (!opt.disabled) handleSelect(opt.value)
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (!opt.disabled) handleSelect(opt.value)
+                      }}
                       onMouseEnter={() => setHighlightedIndex(idx)}
                       className={cn(
                         "w-full px-3 py-2 rounded-lg text-xs sm:text-sm flex items-center justify-between text-left transition-colors cursor-pointer",

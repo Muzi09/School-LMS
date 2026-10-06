@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Search, Loader2, Users, X, Check, AlertCircle } from "lucide-react"
+import { Search, Loader2, Users, X, Check } from "lucide-react"
 import {
   Dialog,
   DialogHeader,
@@ -121,7 +121,7 @@ export function CreateGroupModal({ isOpen, onOpenChange, onGroupCreated, current
       <form onSubmit={handleSubmit} className="space-y-4 my-2">
         {/* Group Name Input */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-foreground uppercase tracking-wider">
+          <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
             Group Name
           </label>
           <Input
@@ -133,7 +133,7 @@ export function CreateGroupModal({ isOpen, onOpenChange, onGroupCreated, current
               if (error) setError("")
             }}
             maxLength={100}
-            className="h-10 rounded-xl"
+            className="h-10 text-sm rounded-xl px-3.5"
             autoFocus
           />
         </div>
@@ -179,17 +179,17 @@ export function CreateGroupModal({ isOpen, onOpenChange, onGroupCreated, current
 
         {/* User Search & Multi-Select List */}
         <div className="space-y-2">
-          <label className="text-xs font-semibold text-foreground uppercase tracking-wider">
+          <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
             Add Participants
           </label>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
             <Input
               type="text"
               placeholder="Search members by name or role..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-4 h-9.5 rounded-xl text-xs"
+              className="pl-10 pr-4 h-10 rounded-xl text-sm px-3.5"
             />
           </div>
 
@@ -259,20 +259,20 @@ export function CreateGroupModal({ isOpen, onOpenChange, onGroupCreated, current
           </div>
         </div>
 
-        <DialogFooter className="pt-2">
+        <DialogFooter className="flex items-center justify-end gap-3 pt-4 border-t border-border/80">
           <Button
             type="button"
             variant="outline"
             onClick={() => handleOpenChange(false)}
             disabled={isSubmitting}
-            className="rounded-xl"
+            className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
           >
             Cancel
           </Button>
           <Button
             type="submit"
             disabled={isSubmitting || !name.trim() || selectedUsers.length === 0}
-            className="rounded-xl gap-1.5"
+            className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer gap-1.5"
           >
             {isSubmitting && <Loader2 className="size-4 animate-spin" />}
             <span>Create Group ({selectedUsers.length})</span>

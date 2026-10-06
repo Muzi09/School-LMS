@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import { useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useFormik } from "formik"
@@ -12,7 +12,6 @@ import {
   Clock,
   Copy,
   Check,
-  X,
   AlertCircle,
   Link as LinkIcon,
   RefreshCw,
@@ -353,8 +352,12 @@ export function PrincipalsManagement() {
 
       {/* Invite Principal / Regenerated Link Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
-          <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-200"
+            onClick={handleCloseModal}
+          />
+          <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl overflow-hidden z-10 animate-in fade-in-0 zoom-in-95 duration-200">
             {/* Header */}
             <ModalHeader
               icon={successInfo?.isRegenerated ? RefreshCw : UserPlus}
@@ -403,7 +406,7 @@ export function PrincipalsManagement() {
                         size="sm"
                         variant="outline"
                         onClick={() => handleCopyLink(successInfo.url, "modal-link")}
-                        className="h-8 text-xs border-border inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+                        className="h-9 px-3.5 text-xs font-semibold rounded-lg shrink-0 gap-1.5 cursor-pointer border-border"
                       >
                         {copiedId === "modal-link" ? (
                           <>
@@ -421,7 +424,7 @@ export function PrincipalsManagement() {
                   <Button
                     type="button"
                     onClick={handleCloseModal}
-                    className="w-full h-10 text-sm font-medium rounded-xl bg-primary text-primary-foreground inline-flex items-center justify-center whitespace-nowrap mt-4"
+                    className="w-full h-11 text-sm font-semibold rounded-xl bg-primary text-primary-foreground cursor-pointer mt-4"
                   >
                     Done
                   </Button>
@@ -430,7 +433,7 @@ export function PrincipalsManagement() {
                 <form onSubmit={formik.handleSubmit} className="space-y-4">
                   <div className="grid grid-cols-2 gap-3.5">
                     <div>
-                      <label className="text-xs font-semibold text-foreground block mb-1">
+                      <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                         First Name
                       </label>
                       <Input
@@ -440,7 +443,7 @@ export function PrincipalsManagement() {
                         value={formik.values.first_name}
                         onChange={formik.handleChange}
                         onBlur={formik.handleBlur}
-                        className="h-10 text-sm"
+                        className="h-10 text-sm rounded-xl px-3.5"
                       />
                       {formik.touched.first_name && formik.errors.first_name && (
                         <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
@@ -450,7 +453,7 @@ export function PrincipalsManagement() {
                     </div>
 
                     <div>
-                      <label className="text-xs font-semibold text-foreground block mb-1">
+                      <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                         Last Name
                       </label>
                       <Input
@@ -460,7 +463,7 @@ export function PrincipalsManagement() {
                         value={formik.values.last_name}
                         onChange={formik.handleChange}
                         onBlur={formik.handleBlur}
-                        className="h-10 text-sm"
+                        className="h-10 text-sm rounded-xl px-3.5"
                       />
                       {formik.touched.last_name && formik.errors.last_name && (
                         <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
@@ -471,18 +474,18 @@ export function PrincipalsManagement() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
+                    <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                       Email Address
                     </label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
                         type="email"
                         name="email"
                         value={formik.values.email}
                         onChange={formik.handleChange}
                         onBlur={formik.handleBlur}
-                        className="pl-9 h-10 text-sm"
+                        className="pl-10 h-10 text-sm rounded-xl px-3.5"
                       />
                     </div>
                     {formik.touched.email && formik.errors.email && (
@@ -493,11 +496,11 @@ export function PrincipalsManagement() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">
+                    <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                       Mobile Number
                     </label>
                     <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
                         type="tel"
                         name="login_mobile"
@@ -508,7 +511,7 @@ export function PrincipalsManagement() {
                           formik.setFieldValue("login_mobile", onlyNums)
                         }}
                         onBlur={formik.handleBlur}
-                        className="pl-9 h-10 text-sm font-mono"
+                        className="pl-10 h-10 text-sm font-mono rounded-xl px-3.5"
                       />
                     </div>
                     {formik.touched.login_mobile && formik.errors.login_mobile && (
@@ -522,19 +525,19 @@ export function PrincipalsManagement() {
                     💡 <strong>Note:</strong> Admin does not set passwords or configure school details. The Principal will complete school setup and create their own Password & Quick Login PIN via the onboarding link.
                   </div>
 
-                  <div className="flex items-center justify-end gap-2.5 pt-3">
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/80">
                     <Button
                       type="button"
                       variant="outline"
                       onClick={handleCloseModal}
-                      className="h-9 px-4 text-xs font-medium rounded-xl border-border inline-flex items-center justify-center whitespace-nowrap"
+                      className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
                     >
                       Cancel
                     </Button>
                     <Button
                       type="submit"
                       disabled={createMutation.isPending}
-                      className="h-9 px-5 text-xs font-semibold rounded-xl bg-amber-600 hover:bg-amber-700 text-white inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
+                      className="h-10 px-6 text-sm font-semibold rounded-xl bg-amber-600 hover:bg-amber-700 text-white inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-sm"
                     >
                       {createMutation.isPending ? "Creating..." : "Send Invitation"}
                     </Button>

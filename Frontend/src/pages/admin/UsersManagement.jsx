@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useFormik } from "formik"
 import {
@@ -12,8 +12,6 @@ import {
   EyeOff,
   CheckCircle2,
   AlertCircle,
-  Plus,
-  X,
   Loader2,
   UserPlus,
 } from "lucide-react"
@@ -32,8 +30,6 @@ export function PlatformUsersManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedRole, setSelectedRole] = useState(0) // 0 = ADMIN, 4 = SALES_PERSON
   const [showPassword, setShowPassword] = useState(false)
-  const [serverError, setServerError] = useState(null)
-  const [successMessage, setSuccessMessage] = useState(null)
 
   const { data: platformUsers, isLoading } = useQuery({
     queryKey: ["adminPlatformUsers"],
@@ -68,16 +64,12 @@ export function PlatformUsersManagement() {
     },
     validationSchema: userValidationSchema,
     onSubmit: (values) => {
-      setServerError(null)
-      setSuccessMessage(null)
       createMutation.mutate({ values, role: selectedRole })
     },
   })
 
   const handleCloseModal = () => {
     setIsModalOpen(false)
-    setServerError(null)
-    setSuccessMessage(null)
     formik.resetForm()
   }
 
@@ -231,8 +223,12 @@ export function PlatformUsersManagement() {
 
       {/* Create Platform User Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
-          <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-200"
+            onClick={handleCloseModal}
+          />
+          <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl overflow-hidden z-10 animate-in fade-in-0 zoom-in-95 duration-200">
             {/* Header */}
             <ModalHeader
               icon={UserPlus}
@@ -246,7 +242,7 @@ export function PlatformUsersManagement() {
             <div className="p-6 space-y-4">
               {/* Role Selector */}
               <div>
-                <label className="text-xs font-semibold text-foreground block mb-2">Select User Role</label>
+                <label className="text-xs sm:text-sm font-medium text-foreground block mb-1.5">Select User Role</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -289,7 +285,7 @@ export function PlatformUsersManagement() {
               <form onSubmit={formik.handleSubmit} className="space-y-4 pt-1">
                 <div className="grid grid-cols-2 gap-3.5">
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">First Name</label>
+                    <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">First Name</label>
                     <Input
                       type="text"
                       name="first_name"
@@ -297,7 +293,7 @@ export function PlatformUsersManagement() {
                       value={formik.values.first_name}
                       onChange={formik.handleChange}
                       onBlur={formik.handleBlur}
-                      className="h-10 text-sm"
+                      className="h-10 text-sm rounded-xl px-3.5"
                     />
                     {formik.touched.first_name && formik.errors.first_name && (
                       <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
@@ -307,7 +303,7 @@ export function PlatformUsersManagement() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-foreground block mb-1">Last Name</label>
+                    <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Last Name</label>
                     <Input
                       type="text"
                       name="last_name"
@@ -315,7 +311,7 @@ export function PlatformUsersManagement() {
                       value={formik.values.last_name}
                       onChange={formik.handleChange}
                       onBlur={formik.handleBlur}
-                      className="h-10 text-sm"
+                      className="h-10 text-sm rounded-xl px-3.5"
                     />
                     {formik.touched.last_name && formik.errors.last_name && (
                       <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
@@ -326,16 +322,16 @@ export function PlatformUsersManagement() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1">Email Address</label>
+                  <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Email Address</label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <Input
                       type="email"
                       name="email"
                       value={formik.values.email}
                       onChange={formik.handleChange}
                       onBlur={formik.handleBlur}
-                      className="pl-9 h-10 text-sm"
+                      className="pl-10 h-10 text-sm rounded-xl px-3.5"
                     />
                   </div>
                   {formik.touched.email && formik.errors.email && (
@@ -346,9 +342,9 @@ export function PlatformUsersManagement() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1">Mobile Number</label>
+                  <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Mobile Number</label>
                   <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <Input
                       type="tel"
                       name="login_mobile"
@@ -359,7 +355,7 @@ export function PlatformUsersManagement() {
                         formik.setFieldValue("login_mobile", onlyNums)
                       }}
                       onBlur={formik.handleBlur}
-                      className="pl-9 h-10 text-sm font-mono"
+                      className="pl-10 h-10 text-sm font-mono rounded-xl px-3.5"
                     />
                   </div>
                   {formik.touched.login_mobile && formik.errors.login_mobile && (
@@ -370,16 +366,16 @@ export function PlatformUsersManagement() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1">Initial Password</label>
+                  <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Initial Password</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <Input
                       type={showPassword ? "text" : "password"}
                       name="password"
                       value={formik.values.password}
                       onChange={formik.handleChange}
                       onBlur={formik.handleBlur}
-                      className="pl-9 pr-10 h-10 text-sm"
+                      className="pl-10 pr-10 h-10 text-sm rounded-xl px-3.5"
                     />
                     <button
                       type="button"
@@ -397,21 +393,21 @@ export function PlatformUsersManagement() {
                 </div>
 
                 {/* Footer Actions */}
-                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border/60">
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/80">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleCloseModal}
-                    className="h-9 px-4 text-xs font-medium rounded-xl border-border inline-flex items-center justify-center whitespace-nowrap"
+                    className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="submit"
                     disabled={createMutation.isPending}
-                    className="h-9 px-5 text-xs font-semibold rounded-xl bg-amber-600 hover:bg-amber-700 text-white inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-xs"
+                    className="h-10 px-6 text-sm font-semibold rounded-xl bg-amber-600 hover:bg-amber-700 text-white inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-sm"
                   >
-                    {createMutation.isPending && <Loader2 className="size-3.5 animate-spin" />}
+                    {createMutation.isPending && <Loader2 className="size-4 animate-spin" />}
                     <span>
                       {createMutation.isPending
                         ? "Creating..."

@@ -1,4 +1,3 @@
-import React from "react"
 import { AlertTriangle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -23,9 +22,15 @@ export function DeleteConfirmDialog({
   if (!isOpen) return null
 
   return (
-    <div className={cn("fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200", className)}>
+    <div className={cn("fixed inset-0 z-50 flex items-center justify-center p-4", className)}>
+      {/* Backdrop */}
       <div
-        className="relative w-full max-w-md bg-card border border-border shadow-2xl rounded-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200"
+        className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-200"
+        onClick={onClose}
+      />
+
+      <div
+        className="relative w-full max-w-md bg-card border border-border shadow-2xl rounded-2xl p-6 space-y-5 z-10 animate-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
       >
@@ -55,24 +60,22 @@ export function DeleteConfirmDialog({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border/60">
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/80">
           <Button
             type="button"
             variant="outline"
-            size="default"
             onClick={onClose}
             disabled={isPending}
-            className="h-9 px-4 text-sm font-medium"
+            className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
           >
             {cancelText}
           </Button>
           <Button
             type="button"
             variant="destructive"
-            size="default"
             onClick={onConfirm}
             disabled={isPending}
-            className="h-9 px-4 text-sm font-medium gap-2 shadow-xs"
+            className="h-10 px-6 text-sm font-semibold rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground shadow-sm gap-2 cursor-pointer"
           >
             {isPending && <Loader2 className="size-4 animate-spin" />}
             <span>{confirmText}</span>

@@ -19,7 +19,8 @@ export function TimetableCell({
 
   if (isOccupied) {
     const subjectName = entry.subject?.name || "Subject"
-    const teacherName = entry.teacher?.name || "Teacher"
+    const teacherName = entry.teacher?.name || "Unassigned"
+    const hasTeacher = Boolean(entry.teacher?.name)
 
     return (
       <div
@@ -47,7 +48,9 @@ export function TimetableCell({
 
           <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground group-hover:text-foreground/90 transition-colors">
             <UserIcon className="size-3.5 shrink-0 opacity-70" />
-            <span className="truncate font-medium">{teacherName}</span>
+            <span className={cn("truncate font-medium", !hasTeacher && "italic text-muted-foreground/60")}>
+              {teacherName}
+            </span>
           </div>
         </div>
 

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.models.school import School
     from app.models.school_class import SchoolClass
     from app.models.subject import ClassSubject
+    from app.models.user import User
 
 
 class Section(Base, AuditMixin):
@@ -39,6 +40,12 @@ class Section(Base, AuditMixin):
         nullable=False,
     )
 
+    class_teacher_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Relationships
     school: Mapped["School"] = relationship(
         "School",
@@ -56,6 +63,11 @@ class Section(Base, AuditMixin):
         cascade="all, delete-orphan",
     )
 
+    class_teacher: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[class_teacher_id],
+    )
+
     @declared_attr
     def __table_args__(cls):
         return (
@@ -69,5 +81,9 @@ class Section(Base, AuditMixin):
             Index(
                 "idx_sections_school_id",
                 cls.school_id,
+            ),
+            Index(
+                "idx_sections_class_teacher_id",
+                cls.class_teacher_id,
             ),
         )

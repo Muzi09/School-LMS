@@ -1,9 +1,8 @@
-import React, { useState } from "react"
+import { useState } from "react"
 import {
   Clock,
   Plus,
   Trash2,
-  AlertCircle,
   Loader2,
 } from "lucide-react"
 
@@ -392,13 +391,11 @@ export function PeriodSettingsDialog({ isOpen, onClose }) {
 
         {/* Modal Footer */}
         <div className="p-4 px-6 border-t border-border/70 bg-muted/20 flex items-center justify-end">
-          
           <Button
             type="button"
-            size="sm"
             onClick={onClose}
             disabled={isAddingPeriod || savingRowId !== null}
-            className="text-xs h-9 px-5 font-semibold rounded-xl cursor-pointer"
+            className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer"
           >
             Done
           </Button>

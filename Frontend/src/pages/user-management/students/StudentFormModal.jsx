@@ -18,6 +18,7 @@ import { schoolConfigService } from "@/api/schoolConfigService"
 import { calculateStudentRollNoApi } from "@/api/studentService"
 import { getStudentValidationSchema } from "@/validations"
 import { ModalHeader } from "@/components/common/ModalHeader"
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
 import { toast } from "sonner"
 import { Combobox } from "@/components/ui/combobox"
 import { cn } from "@/lib/utils"
@@ -85,6 +86,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
   const createStudentMutation = useCreateStudent()
   const updateStudentMutation = useUpdateStudent()
+  const [serverError, setServerError] = useState("")
 
   const validationSchema = React.useMemo(() => getStudentValidationSchema(isEdit), [isEdit])
 
@@ -173,7 +175,9 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
         handleClose()
       } catch (err) {
-        toast.error(err?.message || "Operation failed. Please try again.")
+        const errorMsg = err?.response?.data?.detail || err?.message || "Operation failed. Please try again."
+        setServerError(errorMsg)
+        toast.error(errorMsg)
       }
     },
   })
@@ -230,6 +234,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
   const handleClose = () => {
     createStudentMutation.reset?.()
     updateStudentMutation.reset?.()
+    setServerError("")
     formik.resetForm({ values: initialValues })
     onClose()
   }
@@ -237,38 +242,30 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
   React.useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden"
-      setServerError("")
-      createStudentMutation.reset?.()
-      updateStudentMutation.reset?.()
-      formik.resetForm({ values: initialValues })
     } else {
       document.body.style.overflow = ""
     }
     return () => {
       document.body.style.overflow = ""
     }
-  }, [isOpen, student])
+  }, [isOpen])
 
-  const currentClassObj = schoolClasses.find((c) => c.name === formik.values.class_name)
-  const currentSectionObj = currentClassObj?.sections?.find((s) => s.name === formik.values.section)
+  const currentClassObj = React.useMemo(() => {
+    return schoolClasses.find((c) => c.name === formik.values.class_name)
+  }, [schoolClasses, formik.values.class_name])
+
+  const currentSectionObj = React.useMemo(() => {
+    return currentClassObj?.sections?.find((s) => s.name === formik.values.section)
+  }, [currentClassObj, formik.values.section])
 
   // Determine if this class has 'same for all sections' unticked during onboarding
-  const isUntickedSameForAll = React.useMemo(() => {
-    if (!formik.values.class_name || !formik.values.section) return false
-
-    if (currentClassObj) {
-      if (currentClassObj.same_for_all_sections === false) return true
-      return false
-    }
-
-    // Fallback if testing with static classes (e.g. Senior classes)
-    const clsName = formik.values.class_name.toLowerCase()
-    if (clsName.includes("11") || clsName.includes("12")) {
-      return true
-    }
-
-    return false
-  }, [currentClassObj, formik.values.class_name, formik.values.section])
+  const isUntickedSameForAll = Boolean(
+    formik.values.class_name &&
+    formik.values.section &&
+    (currentClassObj
+      ? currentClassObj.same_for_all_sections === false
+      : (formik.values.class_name.toLowerCase().includes("11") || formik.values.class_name.toLowerCase().includes("12")))
+  )
 
   // Get and categorize available subjects for the selected section
   const { academicSubjects, nonAcademicSubjects } = React.useMemo(() => {
@@ -367,8 +364,15 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200">
-      <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-200"
+        onClick={handleClose}
+      />
+
+      {/* Modal Dialog */}
+      <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl overflow-hidden z-10 animate-in fade-in-0 zoom-in-95 duration-200">
         {/* Header */}
         <ModalHeader
           icon={GraduationCap}
@@ -380,19 +384,25 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
         {/* Form */}
         <form onSubmit={formik.handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-6 sm:p-7 space-y-6">
+            {serverError && (
+              <Alert variant="destructive">
+                <AlertCircle className="size-4" />
+                <AlertTitle className="font-semibold">Error</AlertTitle>
+                <AlertDescription className="text-xs">{serverError}</AlertDescription>
+              </Alert>
+            )}
+
             {/* Personal Info Section */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+            <div className="space-y-3.5">
+              <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 border-b border-border/60 pb-2">
                 <User className="size-4 text-primary" />
-                <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Personal Info
-                </h4>
-              </div>
+                <span>1. Personal & Contact Information</span>
+              </h4>
 
               {/* Student Names */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     First Name
                   </label>
                   <Input
@@ -415,7 +425,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="middle_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="middle_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Middle Name <span className="text-muted-foreground font-normal text-xs">(Optional)</span>
                   </label>
                   <Input
@@ -438,7 +448,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Last Name
                   </label>
                   <Input
@@ -464,7 +474,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               {/* Father's Names */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="father_first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="father_first_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Father First Name
                   </label>
                   <Input
@@ -487,7 +497,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="father_last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="father_last_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Father Last Name
                   </label>
                   <Input
@@ -513,7 +523,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               {/* Contact Information */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="login_mobile" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Login Mobile
                   </label>
                   <Input
@@ -526,6 +536,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                       formik.setFieldValue("login_mobile", onlyNumbers)
                     }}
                     onBlur={formik.handleBlur}
+                    placeholder="e.g. 9876543210"
                     className={cn(
                       "h-10 text-sm rounded-xl px-3.5 font-mono",
                       formik.touched.login_mobile && formik.errors.login_mobile && "border-destructive/80 ring-1 ring-destructive/30"
@@ -539,7 +550,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
                 </div>
 
                 <div>
-                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Email Address <span className="text-muted-foreground font-normal text-xs">(Optional)</span>
                   </label>
                   <Input
@@ -564,19 +575,17 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
             </div>
 
             {/* Academic Profile Details */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+            <div className="space-y-3.5">
+              <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 border-b border-border/60 pb-2">
                 <GraduationCap className="size-4 text-primary" />
-                <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Academic Profile
-                </h4>
-              </div>
+                <span>2. Academic Profile</span>
+              </h4>
 
               {/* Exact Ordered Grid: Gender -> DOB -> Class -> Section -> House -> Roll No */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* 1. Gender */}
                 <div>
-                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="gender" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Gender
                   </label>
                   <Combobox
@@ -606,7 +615,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 2. Date of Birth */}
                 <div>
-                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="date_of_birth" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Date of Birth
                   </label>
                   <DatePicker
@@ -630,7 +639,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 3. Class / Grade */}
                 <div>
-                  <label htmlFor="class_name" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="class_name" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Class / Grade
                   </label>
                   <Combobox
@@ -667,7 +676,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 4. Section (Always Dropdown, Disabled if Class not selected) */}
                 <div>
-                  <label htmlFor="section" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="section" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Section
                   </label>
                   <Combobox
@@ -697,7 +706,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 5. House */}
                 <div>
-                  <label htmlFor="house" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="house" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     House
                   </label>
                   
@@ -728,7 +737,7 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
 
                 {/* 6. Roll No */}
                 <div>
-                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-1">
+                  <label htmlFor="roll_no" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
                     Roll Number <span className="text-muted-foreground font-normal text-xs">(Auto-generated)</span>
                   </label>
                   <Input
@@ -751,12 +760,10 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
               {isUntickedSameForAll && (academicSubjects.length > 0 || nonAcademicSubjects.length > 0) && (
                 <div className="space-y-4 pt-3 animate-in fade-in-0 duration-200">
                   <div className="flex items-center justify-between border-b border-border/60 pb-2 w-full">
-                    <div className="flex items-center gap-2">
+                    <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
                       <BookOpen className="size-4 text-primary" />
-                      <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                        Choose the subject taught to this student
-                      </h4>
-                    </div>
+                      <span>Choose the subjects taught to this student</span>
+                    </h4>
 
                     <div className="flex items-center gap-2">
                       <button
@@ -883,26 +890,32 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
             </div>
           </div>
 
-          {/* Footer Actions */}
-          <div className="px-6 py-4 border-t border-border/70 bg-muted/20 flex items-center justify-end gap-3">
+          {/* Modal Actions */}
+          <div className="flex items-center justify-end gap-3 p-6 pt-4 border-t border-border/80 bg-background">
             <Button
               type="button"
               variant="outline"
-              size="default"
               onClick={handleClose}
               disabled={isPending}
-              className="h-10 px-5 text-sm font-medium rounded-xl"
+              className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              size="default"
               disabled={isPending}
-              className="h-10 px-5 text-sm font-medium rounded-xl gap-2 shadow-xs cursor-pointer"
+              className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer"
             >
-              {isPending && <Loader2 className="size-4 animate-spin" />}
-              <span>{isEdit ? "Save Changes" : "Register Student"}</span>
+              {isPending ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Saving...</span>
+                </span>
+              ) : isEdit ? (
+                "Save Changes"
+              ) : (
+                "Register Student"
+              )}
             </Button>
           </div>
         </form>
@@ -910,3 +923,4 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
     </div>
   )
 }
+

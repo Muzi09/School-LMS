@@ -1,4 +1,3 @@
-import React from "react"
 import { useDeleteStudent } from "@/hooks/useStudents"
 import { DeleteConfirmDialog } from "@/components/common/DeleteConfirmDialog"
 

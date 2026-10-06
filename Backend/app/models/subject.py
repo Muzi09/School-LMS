@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.models.school import School
     from app.models.school_class import SchoolClass
     from app.models.section import Section
+    from app.models.user import User
 
 
 class Subject(Base, AuditMixin):
@@ -121,6 +122,12 @@ class ClassSubject(Base, AuditMixin):
         nullable=False,
     )
 
+    teacher_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Relationships
     school_class: Mapped["SchoolClass"] = relationship(
         "SchoolClass",
@@ -135,6 +142,11 @@ class ClassSubject(Base, AuditMixin):
     subject: Mapped["Subject"] = relationship(
         "Subject",
         back_populates="class_subjects",
+    )
+
+    teacher: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[teacher_id],
     )
 
     @declared_attr
@@ -155,5 +167,9 @@ class ClassSubject(Base, AuditMixin):
             Index(
                 "idx_class_subjects_section_id",
                 cls.section_id,
+            ),
+            Index(
+                "idx_class_subjects_teacher_id",
+                cls.teacher_id,
             ),
         )

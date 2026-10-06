@@ -34,6 +34,9 @@ export const Permission = {
   // Timetable
   VIEW_TIMETABLE: "VIEW_TIMETABLE",
   MANAGE_TIMETABLE: "MANAGE_TIMETABLE",
+
+  // School Management
+  MANAGE_SCHOOL: "MANAGE_SCHOOL",
 }
 
 export const ROLE_PERMISSIONS = {
@@ -52,6 +55,7 @@ export const ROLE_PERMISSIONS = {
     Permission.STAFF_DASHBOARD_ACCESS,
     Permission.VIEW_TIMETABLE,
     Permission.MANAGE_TIMETABLE,
+    Permission.MANAGE_SCHOOL,
   ],
   [UserRole.STAFF]: [
     Permission.STAFF_DASHBOARD_ACCESS,

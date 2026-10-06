@@ -6,8 +6,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  CheckCircle2,
-  AlertCircle,
   Loader2,
   Sparkles,
   ArrowRight,
@@ -42,8 +40,6 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
   const { user } = useAuth()
 
   const [showPassword, setShowPassword] = useState(false)
-  const [serverError, setServerError] = useState("")
-  const [successMessage, setSuccessMessage] = useState("")
   const [showInstructions, setShowInstructions] = useState(false)
 
   const savedPassword = existingConfig?.app_password || existingConfig?.smtp_password || ""
@@ -51,7 +47,6 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
 
   // Test states: 'idle' | 'testing' | 'succeeded' | 'failed'
   const [testState, setTestState] = useState(isConfigured ? "succeeded" : "idle")
-  const [testMessage, setTestMessage] = useState(isConfigured ? "Connection verified and active." : "")
   const [isTestedSuccess, setIsTestedSuccess] = useState(isConfigured)
 
   const defaultUserEmail =
@@ -112,10 +107,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
       },
     })
     setTestState(isConfigured ? "succeeded" : "idle")
-    setTestMessage(isConfigured ? "Connection verified and active." : "")
     setIsTestedSuccess(isConfigured)
-    setServerError("")
-    setSuccessMessage("")
     setShowInstructions(false)
     setShowPassword(false)
   }
@@ -123,8 +115,10 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
   // When modal is closed and then reopened, or when saved configuration updates, reset fields
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       resetToSavedState()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, existingConfig, defaultUserEmail])
 
   // Reset tested status whenever user changes any field
@@ -132,8 +126,6 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
     formik.setFieldValue(field, value)
     setIsTestedSuccess(false)
     setTestState("idle")
-    setTestMessage("")
-    setServerError("")
   }
 
   const handleTestConnection = async () => {
@@ -218,32 +210,30 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
             />
 
             {/* Form Body */}
-            <form onSubmit={formik.handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+            <form onSubmit={formik.handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
 
               {/* Sender Email Address */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label htmlFor="email" className="text-xs font-semibold text-foreground block">
-                    Sender Email Address
-                  </label>
-                </div>
+                <label htmlFor="email" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
+                  Sender Email Address
+                </label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                   <Input
                     id="email"
                     name="email"
                     type="email"
                     readOnly
                     value={formik.values.email}
-                    className="pl-9 h-9 text-sm bg-muted/60 text-muted-foreground cursor-not-allowed select-all border-border/80 focus-visible:ring-0"
+                    className="pl-10 h-10 text-sm rounded-xl px-3.5 bg-muted/60 text-muted-foreground cursor-not-allowed select-all border-border/80 focus-visible:ring-0"
                   />
                 </div>
               </div>
 
               {/* App Password */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label htmlFor="app_password" className="text-xs font-semibold text-foreground block">
+                <div className="flex items-center justify-between mb-0.5">
+                  <label htmlFor="app_password" className="text-xs sm:text-sm font-medium text-foreground block">
                     App Password
                   </label>
                   <button
@@ -256,7 +246,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                   </button>
                 </div>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                   <Input
                     id="app_password"
                     name="app_password"
@@ -266,7 +256,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                     onChange={(e) => handleFieldChange("app_password", e.target.value)}
                     onBlur={formik.handleBlur}
                     className={cn(
-                      "pl-9 pr-9 h-9 text-sm font-mono",
+                      "pl-10 pr-10 h-10 text-sm font-mono rounded-xl px-3.5",
                       formik.touched.app_password && formik.errors.app_password && "border-destructive ring-1 ring-destructive/30"
                     )}
                   />
@@ -315,7 +305,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
               )}
 
               {/* Footer Actions */}
-              <div className="flex items-center justify-between gap-3 pt-3 border-t border-border/60 shrink-0">
+              <div className="flex items-center justify-between gap-3 pt-4 border-t border-border/80 shrink-0">
                 <Button
                   type="button"
                   slot="close"
@@ -323,7 +313,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                   onPress={handleModalClose}
                   onClick={handleModalClose}
                   disabled={isSaving || isTesting}
-                  className="h-9 px-4 text-xs font-medium rounded-xl border-border inline-flex items-center justify-center whitespace-nowrap cursor-pointer hover:bg-muted"
+                  className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
                 >
                   Cancel
                 </Button>
@@ -336,7 +326,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                       onClick={handleTestConnection}
                       disabled={isTesting || isSaving || !formik.values.email || !formik.values.app_password}
                       className={cn(
-                        "h-9 px-4 text-xs font-semibold rounded-xl inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all duration-300 shadow-xs",
+                        "h-10 px-5 text-sm font-semibold rounded-xl inline-flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all duration-300 shadow-sm",
                         testState === "testing"
                           ? "bg-primary opacity-90 animate-pulse text-primary-foreground"
                           : testState === "failed"
@@ -346,17 +336,17 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                     >
                       {testState === "testing" ? (
                         <>
-                          <Loader2 className="size-3.5 animate-spin" />
+                          <Loader2 className="size-4 animate-spin" />
                           <span>Testing Connection...</span>
                         </>
                       ) : testState === "failed" ? (
                         <>
-                          <RefreshCw className="size-3.5" />
+                          <RefreshCw className="size-4" />
                           <span>Retry Connection Test</span>
                         </>
                       ) : (
                         <>
-                          <Sparkles className="size-3.5" />
+                          <Sparkles className="size-4" />
                           <span>Test Connection</span>
                         </>
                       )}
@@ -367,17 +357,17 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                       <Button
                         type="submit"
                         disabled={isSaving || isTesting}
-                        className="h-9 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-md transition-all duration-200 animate-in fade-in-50"
+                        className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-sm transition-all duration-200 animate-in fade-in-50"
                       >
                         {isSaving ? (
                           <>
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <Loader2 className="size-4 animate-spin" />
                             <span>Saving...</span>
                           </>
                         ) : (
                           <>
                             <span>Save Configuration</span>
-                            <ArrowRight className="size-3.5" />
+                            <ArrowRight className="size-4" />
                           </>
                         )}
                       </Button>

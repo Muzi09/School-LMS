@@ -2,7 +2,6 @@ import React from "react"
 import {
   X,
   GraduationCap,
-  Phone,
   Layers,
   CheckCircle,
   XCircle,
@@ -154,17 +153,15 @@ export function StudentDetailsModal({ isOpen, onClose, student, onEdit }) {
           <Button
             type="button"
             variant="outline"
-            size="default"
             onClick={onClose}
-            className="h-10 px-5 text-sm font-medium rounded-xl"
+            className="h-10 px-5 text-sm font-medium rounded-xl cursor-pointer"
           >
             Close
           </Button>
           <Button
             type="button"
-            size="default"
             onClick={() => { onClose(); onEdit(student); }}
-            className="h-10 px-5 text-sm font-medium rounded-xl gap-2 shadow-xs"
+            className="h-10 px-6 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer gap-2"
           >
             <Edit2 className="size-4" />
             <span>Edit Student</span>
