@@ -21,6 +21,10 @@ class SubjectOptionResponse(BaseModel):
     category: str = "academic"
     is_academic: bool = True
     order_index: int = 0
+    is_split: bool = False
+    parent_id: UUID | None = None
+    parent_name: str | None = None
+    child_subjects: List["SubjectOptionResponse"] = []
     teacher_id: UUID | None = None
     teacher: TeacherSimpleRead | None = None
 
@@ -118,6 +122,10 @@ class SchoolConfigSubject(BaseModel):
     category: str = "academic"
     is_academic: bool = True
     order_index: int = 0
+    is_split: bool = False
+    parent_id: UUID | None = None
+    parent_name: str | None = None
+    child_subjects: List[SubjectOptionResponse] = []
     assigned_class_ids: List[UUID] = []
     assigned_section_ids: List[UUID] = []
 
@@ -150,6 +158,7 @@ class ClassCreateRequest(BaseModel):
     order_index: int = 0
     wing_id: UUID | None = None
     initial_sections: List[str] = ["A"]
+    same_for_all_sections: bool = True
 
 
 class ClassUpdateRequest(BaseModel):
@@ -157,6 +166,17 @@ class ClassUpdateRequest(BaseModel):
     order_index: int | None = None
     wing_id: UUID | None = None
     update_wing: bool = False
+    same_for_all_sections: bool | None = None
+
+
+class ClassToggleSharedRequest(BaseModel):
+    same_for_all_sections: bool
+    source_section_id: UUID | None = None
+    merge_all: bool = False
+
+
+class ClassSubjectsAssignRequest(BaseModel):
+    subject_ids: List[UUID]
 
 
 class ClassReorderItem(BaseModel):
@@ -192,6 +212,9 @@ class SubjectCreateRequest(BaseModel):
     category: str = "academic"
     is_academic: bool = True
     order_index: int = 0
+    is_split: bool = False
+    parent_id: UUID | None = None
+    child_subject_names: List[str] | None = None
     assigned_class_ids: List[UUID] = []
     assigned_section_ids: List[UUID] = []
 
@@ -202,8 +225,15 @@ class SubjectUpdateRequest(BaseModel):
     category: str | None = None
     is_academic: bool | None = None
     order_index: int | None = None
+    is_split: bool | None = None
+    parent_id: UUID | None = None
+    child_subject_names: List[str] | None = None
     assigned_class_ids: List[UUID] | None = None
     assigned_section_ids: List[UUID] | None = None
+
+
+class SubjectSplitRequest(BaseModel):
+    parts: List[str] = []
 
 
 class SubjectReorderItem(BaseModel):

@@ -60,10 +60,36 @@ class Subject(Base, AuditMixin):
         server_default="0",
     )
 
+    is_split: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+    parent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("subjects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
     # Relationships
     school: Mapped["School"] = relationship(
         "School",
         back_populates="subjects",
+    )
+
+    parent: Mapped["Subject | None"] = relationship(
+        "Subject",
+        remote_side="Subject.id",
+        back_populates="child_subjects",
+    )
+
+    child_subjects: Mapped[List["Subject"]] = relationship(
+        "Subject",
+        back_populates="parent",
+        cascade="all, delete-orphan",
+        order_by="Subject.order_index",
     )
 
     class_subjects: Mapped[List["ClassSubject"]] = relationship(
@@ -80,11 +106,23 @@ class Subject(Base, AuditMixin):
                 cls.school_id,
                 cls.name,
                 unique=True,
-                postgresql_where=cls.deleted_at.is_(None),
+                postgresql_where=(cls.deleted_at.is_(None) & cls.parent_id.is_(None)),
+            ),
+            Index(
+                "uq_subjects_school_parent_name",
+                cls.school_id,
+                cls.parent_id,
+                cls.name,
+                unique=True,
+                postgresql_where=(cls.deleted_at.is_(None) & cls.parent_id.is_not(None)),
             ),
             Index(
                 "idx_subjects_school_id",
                 cls.school_id,
+            ),
+            Index(
+                "idx_subjects_parent_id",
+                cls.parent_id,
             ),
         )
 

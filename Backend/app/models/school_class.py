@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, List
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
@@ -39,6 +39,13 @@ class SchoolClass(Base, AuditMixin):
         nullable=False,
         default=0,
         server_default="0",
+    )
+
+    same_for_all_sections: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
     )
 
     # Relationships

@@ -35,6 +35,14 @@ export const schoolConfigService = {
   deleteClass: async (classId) => {
     return await apiClient.delete(`/school/classes/${classId}`)
   },
+  toggleSharedSubjects: async (classId, payload) => {
+    return await apiClient.put(`/school/classes/${classId}/toggle-shared`, payload)
+  },
+  assignClassSubjects: async (classId, subjectIds) => {
+    return await apiClient.put(`/school/classes/${classId}/subjects`, {
+      subject_ids: subjectIds,
+    })
+  },
 
   // Sections
   createSection: async (classId, payload) => {
@@ -58,6 +66,12 @@ export const schoolConfigService = {
   },
   updateSubject: async (subjectId, payload) => {
     return await apiClient.patch(`/school/subjects/${subjectId}`, payload)
+  },
+  splitSubject: async (subjectId, parts) => {
+    return await apiClient.put(`/school/subjects/${subjectId}/split`, { parts })
+  },
+  unsplitSubject: async (subjectId) => {
+    return await apiClient.put(`/school/subjects/${subjectId}/split`, { parts: [] })
   },
   reorderSubjects: async (payload) => {
     return await apiClient.put("/school/subjects/reorder", payload)

@@ -259,7 +259,10 @@ class TimetableService:
 
         class_subjects = (
             self.db.query(ClassSubject)
-            .options(joinedload(ClassSubject.subject))
+            .options(
+                joinedload(ClassSubject.subject).selectinload(Subject.child_subjects),
+                joinedload(ClassSubject.subject).joinedload(Subject.parent),
+            )
             .filter(
                 ClassSubject.school_id == school_id,
                 ClassSubject.class_id == section.class_id,
@@ -275,9 +278,17 @@ class TimetableService:
         seen_subject_ids = set()
         subjects = []
         for cs in class_subjects:
-            if cs.subject and cs.subject.deleted_at is None and cs.subject.id not in seen_subject_ids:
-                seen_subject_ids.add(cs.subject.id)
-                subjects.append(cs.subject)
+            sub = cs.subject
+            if not sub or sub.deleted_at is not None:
+                continue
+            if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
+                for child in sub.child_subjects:
+                    if child.deleted_at is None and child.id not in seen_subject_ids:
+                        seen_subject_ids.add(child.id)
+                        subjects.append(child)
+            elif sub.id not in seen_subject_ids:
+                seen_subject_ids.add(sub.id)
+                subjects.append(sub)
 
         # Sort: academic first, then order_index, then name
         subjects.sort(key=lambda s: (0 if s.is_academic else 1, s.order_index, s.name.lower()))
@@ -314,7 +325,7 @@ class TimetableService:
         entries = (
             self.db.query(TimetableEntry)
             .options(
-                joinedload(TimetableEntry.subject),
+                joinedload(TimetableEntry.subject).joinedload(Subject.parent),
                 joinedload(TimetableEntry.teacher).joinedload(User.staff_profile),
                 joinedload(TimetableEntry.period),
             )
@@ -374,6 +385,8 @@ class TimetableService:
                 "code": s.code,
                 "category": s.category,
                 "is_academic": s.is_academic,
+                "parent_id": getattr(s, "parent_id", None),
+                "parent_name": s.parent.name if getattr(s, "parent", None) else None,
                 "teacher_id": tch.id if tch else None,
                 "teacher": {
                     "id": tch.id,
@@ -404,6 +417,8 @@ class TimetableService:
                     "code": e.subject.code,
                     "category": e.subject.category,
                     "is_academic": e.subject.is_academic,
+                    "parent_id": getattr(e.subject, "parent_id", None),
+                    "parent_name": e.subject.parent.name if getattr(e.subject, "parent", None) else None,
                 } if e.subject else None,
                 "teacher": {
                     "id": t.id,

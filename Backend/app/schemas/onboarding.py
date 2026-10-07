@@ -17,6 +17,7 @@ class ClassSectionItem(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Class name e.g. Class 1")
     order_index: int = Field(default=0)
     sections: List[str] = Field(default_factory=lambda: ["A"], description="List of section names e.g. ['A', 'B']")
+    same_for_all_sections: bool = Field(default=True, description="Whether all sections in this class share the same subjects")
 
 
 class HouseItem(BaseModel):

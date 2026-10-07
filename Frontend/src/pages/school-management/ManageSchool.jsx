@@ -22,6 +22,7 @@ import {
   ChangeClassWingDialog,
   ManageWingClassesDialog,
   AssignClassTeacherDialog,
+  UnifySubjectsDialog,
 } from "./Dialogs"
 
 export function ManageSchool() {
@@ -105,6 +106,7 @@ export function ManageSchool() {
   const [targetWingForClasses, setTargetWingForClasses] = useState(null)
   const [isAssignClassTeacherOpen, setIsAssignClassTeacherOpen] = useState(false)
   const [targetSectionForClassTeacher, setTargetSectionForClassTeacher] = useState({ class: null, section: null })
+  const [unifyModalTargetClass, setUnifyModalTargetClass] = useState(null)
 
   // Generic Confirmation Dialog
   const [confirmDialog, setConfirmDialog] = useState({
@@ -200,6 +202,24 @@ export function ManageSchool() {
     },
     onError: (err) => {
       toast.error(err.message || "Failed to assign section subjects.")
+    },
+  })
+
+  // 2b. Toggle Shared Subjects Mutation
+  const toggleSharedMutation = useMutation({
+    mutationFn: ({ classId, sameForAllSections, sourceSectionId, mergeAll }) =>
+      schoolConfigService.toggleSharedSubjects(classId, {
+        same_for_all_sections: sameForAllSections,
+        source_section_id: sourceSectionId,
+        merge_all: mergeAll,
+      }),
+    onSuccess: (data) => {
+      invalidateConfig()
+      toast.success(data?.message || "Class subject configuration updated.")
+    },
+    onError: (err) => {
+      const msg = err.response?.data?.detail || err.message || "Failed to update subject configuration."
+      toast.error(msg)
     },
   })
 
@@ -354,6 +374,62 @@ export function ManageSchool() {
   const handleManageSubjectsForSection = (cls, sec) => {
     setSectionSubjectTarget({ class: cls, section: sec })
     setIsSectionSubjectsOpen(true)
+  }
+
+  const handleToggleSameForAllSections = (schoolClass) => {
+    const isCurrentlyShared = schoolClass.same_for_all_sections !== false
+
+    if (isCurrentlyShared) {
+      // Switching from Shared -> Section-specific (OFF)
+      toggleSharedMutation.mutate({
+        classId: schoolClass.id,
+        sameForAllSections: false,
+      })
+    } else {
+      // Switching from Section-specific -> Shared (ON)
+      const sections = schoolClass.sections || []
+      if (sections.length <= 1) {
+        // 0 or 1 section: no conflict, toggle directly
+        toggleSharedMutation.mutate({
+          classId: schoolClass.id,
+          sameForAllSections: true,
+        })
+        return
+      }
+
+      // Check if all sections have identical subject lists
+      const firstSecSubIds = (sections[0]?.subjects || [])
+        .map((s) => s.id)
+        .sort()
+        .join(",")
+
+      const allIdentical = sections.every((sec) => {
+        const secSubIds = (sec?.subjects || [])
+          .map((s) => s.id)
+          .sort()
+          .join(",")
+        return secSubIds === firstSecSubIds
+      })
+
+      if (allIdentical) {
+        toggleSharedMutation.mutate({
+          classId: schoolClass.id,
+          sameForAllSections: true,
+        })
+      } else {
+        // Sections differ: prompt user with unify dialog
+        setUnifyModalTargetClass(schoolClass)
+      }
+    }
+  }
+
+  const handleConfirmUnify = async (params) => {
+    try {
+      await toggleSharedMutation.mutateAsync(params)
+      setUnifyModalTargetClass(null)
+    } catch {
+      // Handled by onError in mutation
+    }
   }
 
   // Wing Actions
@@ -537,6 +613,7 @@ export function ManageSchool() {
           onManageSubjectsForSection={handleManageSubjectsForSection}
           onAssignClassTeacher={handleOpenAssignClassTeacher}
           onAssignSubjectTeacher={handleAssignSubjectTeacher}
+          onToggleSameForAllSections={handleToggleSameForAllSections}
         />
       </div>
 
@@ -591,6 +668,9 @@ export function ManageSchool() {
             subjectIds,
           })
         }}
+        onSubjectSplitChange={() => {
+          invalidateConfig()
+        }}
       />
 
       {/* Change Class Wing Dialog */}
@@ -641,6 +721,15 @@ export function ManageSchool() {
         description={confirmDialog.description}
         confirmLabel={confirmDialog.confirmLabel}
         isLoading={confirmDialog.isLoading}
+      />
+
+      {/* Unify Subjects Dialog */}
+      <UnifySubjectsDialog
+        isOpen={Boolean(unifyModalTargetClass)}
+        onClose={() => setUnifyModalTargetClass(null)}
+        targetClass={unifyModalTargetClass}
+        onConfirmUnify={handleConfirmUnify}
+        isPending={toggleSharedMutation.isPending}
       />
     </div>
   )

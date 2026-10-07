@@ -26,6 +26,8 @@ from app.schemas.school_config import (
     ClassCreateRequest,
     ClassOptionResponse,
     ClassReorderRequest,
+    ClassSubjectsAssignRequest,
+    ClassToggleSharedRequest,
     ClassUpdateRequest,
     EmblemUploadResponse,
     HouseCreateRequest,
@@ -49,6 +51,7 @@ from app.schemas.school_config import (
     SubjectCreateRequest,
     SubjectOptionResponse,
     SubjectReorderRequest,
+    SubjectSplitRequest,
     SubjectUpdateRequest,
     TeacherSimpleRead,
     WingCreateRequest,
@@ -97,6 +100,51 @@ def _natural_section_key(section: Section):
     return (chunks, created, str(section.id))
 
 
+def _format_subject_response(
+    sub: Subject,
+    teacher_id: Optional[UUID] = None,
+    teacher_user: Optional[User] = None,
+    sec_teachers: Optional[dict] = None,
+) -> SubjectOptionResponse:
+    child_responses = []
+    if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
+        active_children = [c for c in sub.child_subjects if c.deleted_at is None]
+        for c in sorted(active_children, key=lambda x: (x.order_index, x.name)):
+            c_tid, c_tuser = (None, None)
+            if sec_teachers and c.id in sec_teachers:
+                c_tid, c_tuser = sec_teachers[c.id]
+            child_responses.append(
+                SubjectOptionResponse(
+                    id=c.id,
+                    name=c.name,
+                    code=c.code,
+                    category=c.category or "academic",
+                    is_academic=c.is_academic,
+                    order_index=c.order_index,
+                    is_split=False,
+                    parent_id=sub.id,
+                    parent_name=sub.name,
+                    teacher_id=c_tid,
+                    teacher=_format_teacher(c_tuser) if c_tuser else None,
+                )
+            )
+
+    return SubjectOptionResponse(
+        id=sub.id,
+        name=sub.name,
+        code=sub.code,
+        category=sub.category or ("academic" if sub.is_academic else "non_academic"),
+        is_academic=sub.is_academic,
+        order_index=sub.order_index,
+        is_split=getattr(sub, "is_split", False),
+        parent_id=sub.parent_id,
+        parent_name=sub.parent.name if getattr(sub, "parent", None) else None,
+        child_subjects=child_responses,
+        teacher_id=teacher_id,
+        teacher=_format_teacher(teacher_user) if teacher_user else None,
+    )
+
+
 @router.get("/classes", response_model=List[ClassOptionResponse])
 def get_school_classes(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -113,7 +161,7 @@ def get_school_classes(
         db.query(SchoolClass)
         .options(
             selectinload(SchoolClass.sections).joinedload(Section.class_teacher).joinedload(User.staff_profile),
-            selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.subject),
+            selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.subject).selectinload(Subject.child_subjects),
             selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.teacher).joinedload(User.staff_profile),
         )
         .filter(
@@ -132,70 +180,47 @@ def get_school_classes(
             if cs.deleted_at is None and cs.subject and cs.subject.deleted_at is None
         ]
 
-        # If any ClassSubject has a non-null section_id, sections have different subjects
-        has_section_specific = any(cs.section_id is not None for cs in active_class_subjects)
-        same_for_all_sections = not has_section_specific
+        same_for_all_sections = getattr(c, "same_for_all_sections", True)
 
-        # Shared subjects (section_id is None)
+        # Shared subjects (only top-level subjects with parent_id is None)
         shared_subjects_map = {}
         for cs in active_class_subjects:
-            if cs.section_id is None:
-                sub = cs.subject
-                shared_subjects_map[sub.id] = SubjectOptionResponse(
-                    id=sub.id,
-                    name=sub.name,
-                    code=sub.code,
-                    category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                    is_academic=sub.is_academic,
-                    order_index=sub.order_index,
-                    teacher_id=cs.teacher_id,
-                    teacher=_format_teacher(cs.teacher),
-                )
+            sub = cs.subject
+            if sub.parent_id is not None:
+                continue
+            if cs.section_id is None or same_for_all_sections:
+                if sub.id not in shared_subjects_map:
+                    shared_subjects_map[sub.id] = cs
 
         sections_response: List[SectionOptionResponse] = []
         for s in active_sections:
             sec_subjects_map = {}
+            sec_teachers = {}
             for cs in active_class_subjects:
-                # Subjects specifically assigned to this section
-                if cs.section_id == s.id:
-                    sub = cs.subject
-                    sec_subjects_map[sub.id] = SubjectOptionResponse(
-                        id=sub.id,
-                        name=sub.name,
-                        code=sub.code,
-                        category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                        is_academic=sub.is_academic,
-                        order_index=sub.order_index,
-                        teacher_id=cs.teacher_id,
-                        teacher=_format_teacher(cs.teacher),
+                if cs.section_id == s.id and cs.teacher_id:
+                    sec_teachers[cs.subject_id] = (cs.teacher_id, cs.teacher)
+
+            if same_for_all_sections:
+                # Every section has all shared subjects with its section-specific teacher assigned if any
+                for sub_id, shared_cs in shared_subjects_map.items():
+                    sub = shared_cs.subject
+                    sec_t_id, sec_t_obj = sec_teachers.get(sub_id, (shared_cs.teacher_id, shared_cs.teacher))
+                    sec_subjects_map[sub_id] = _format_subject_response(
+                        sub,
+                        teacher_id=sec_t_id,
+                        teacher_user=sec_t_obj,
+                        sec_teachers=sec_teachers,
                     )
-                # If section-specific mode is active, also inherit any shared subjects
-                elif not same_for_all_sections and cs.section_id is None:
-                    sub = cs.subject
-                    if sub.id not in sec_subjects_map:
-                        sec_subjects_map[sub.id] = SubjectOptionResponse(
-                            id=sub.id,
-                            name=sub.name,
-                            code=sub.code,
-                            category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                            is_academic=sub.is_academic,
-                            order_index=sub.order_index,
+            else:
+                # Only subjects explicitly assigned to this section (top-level only)
+                for cs in active_class_subjects:
+                    if cs.section_id == s.id and cs.subject.parent_id is None:
+                        sub = cs.subject
+                        sec_subjects_map[sub.id] = _format_subject_response(
+                            sub,
                             teacher_id=cs.teacher_id,
-                            teacher=_format_teacher(cs.teacher),
-                        )
-                # If same for all sections, all sections have all class-level subjects
-                elif same_for_all_sections and cs.section_id is None:
-                    sub = cs.subject
-                    if sub.id not in sec_subjects_map:
-                        sec_subjects_map[sub.id] = SubjectOptionResponse(
-                            id=sub.id,
-                            name=sub.name,
-                            code=sub.code,
-                            category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                            is_academic=sub.is_academic,
-                            order_index=sub.order_index,
-                            teacher_id=cs.teacher_id,
-                            teacher=_format_teacher(cs.teacher),
+                            teacher_user=cs.teacher,
+                            sec_teachers=sec_teachers,
                         )
 
             # Sort: academic first, then order_index, then name
@@ -215,7 +240,10 @@ def get_school_classes(
             )
 
         sorted_shared_subjects = sorted(
-            shared_subjects_map.values(),
+            [
+                _format_subject_response(cs.subject, teacher_id=cs.teacher_id, teacher_user=cs.teacher)
+                for cs in shared_subjects_map.values()
+            ],
             key=lambda x: (0 if x.is_academic else 1, x.order_index, x.name),
         )
 
@@ -255,7 +283,8 @@ def get_section_subjects(
         db.query(SchoolClass)
         .options(
             selectinload(SchoolClass.sections),
-            selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.subject),
+            selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.subject).selectinload(Subject.child_subjects),
+            selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.teacher).joinedload(User.staff_profile),
         )
         .filter(
             SchoolClass.school_id == current_user.school_id,
@@ -283,30 +312,36 @@ def get_section_subjects(
         if cs.deleted_at is None and cs.subject and cs.subject.deleted_at is None
     ]
 
-    has_section_specific = any(cs.section_id is not None for cs in active_class_subjects)
-    same_for_all_sections = not has_section_specific
+    same_for_all_sections = getattr(school_class, "same_for_all_sections", True)
+
+    sec_teachers = {}
+    for cs in active_class_subjects:
+        if sec_obj and cs.section_id == sec_obj.id and cs.teacher_id:
+            sec_teachers[cs.subject_id] = (cs.teacher_id, cs.teacher)
 
     sec_subjects_map = {}
     for cs in active_class_subjects:
         sub = cs.subject
-        if sec_obj and cs.section_id == sec_obj.id:
-            sec_subjects_map[sub.id] = SubjectOptionResponse(
-                id=sub.id,
-                name=sub.name,
-                code=sub.code,
-                category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                is_academic=sub.is_academic,
-                order_index=sub.order_index,
-            )
-        elif cs.section_id is None:
-            sec_subjects_map[sub.id] = SubjectOptionResponse(
-                id=sub.id,
-                name=sub.name,
-                code=sub.code,
-                category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                is_academic=sub.is_academic,
-                order_index=sub.order_index,
-            )
+        if sub.parent_id is not None:
+            continue
+        if same_for_all_sections:
+            if cs.section_id is None or (sec_obj and cs.section_id == sec_obj.id):
+                if sub.id not in sec_subjects_map:
+                    t_id, t_obj = sec_teachers.get(sub.id, (cs.teacher_id, cs.teacher))
+                    sec_subjects_map[sub.id] = _format_subject_response(
+                        sub,
+                        teacher_id=t_id,
+                        teacher_user=t_obj,
+                        sec_teachers=sec_teachers,
+                    )
+        else:
+            if sec_obj and cs.section_id == sec_obj.id:
+                sec_subjects_map[sub.id] = _format_subject_response(
+                    sub,
+                    teacher_id=cs.teacher_id,
+                    teacher_user=cs.teacher,
+                    sec_teachers=sec_teachers,
+                )
 
     sorted_subjects = sorted(
         sec_subjects_map.values(),
@@ -415,7 +450,7 @@ def get_school_full_config(
         db.query(SchoolClass)
         .options(
             selectinload(SchoolClass.sections).joinedload(Section.class_teacher).joinedload(User.staff_profile),
-            selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.subject),
+            selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.subject).selectinload(Subject.child_subjects),
             selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.teacher).joinedload(User.staff_profile),
             selectinload(SchoolClass.wing_classes).joinedload(WingClass.wing),
         )
@@ -441,11 +476,12 @@ def get_school_full_config(
         .all()
     )
 
-    # 4. Fetch Subjects with their assignments
+    # 4. Fetch Subjects with their assignments and child subjects
     subjects = (
         db.query(Subject)
         .options(
-            selectinload(Subject.class_subjects)
+            selectinload(Subject.class_subjects),
+            selectinload(Subject.child_subjects),
         )
         .filter(
             Subject.school_id == current_user.school_id,
@@ -482,54 +518,46 @@ def get_school_full_config(
             if cs.deleted_at is None and cs.subject and cs.subject.deleted_at is None
         ]
 
-        has_section_specific = any(cs.section_id is not None for cs in active_class_subjects)
-        same_for_all = not has_section_specific
+        same_for_all = getattr(c, "same_for_all_sections", True)
 
-        # Class-level shared subjects
+        # Class-level shared subjects (only top-level subjects with parent_id is None)
         shared_subs_map = {}
         for cs in active_class_subjects:
-            if cs.section_id is None:
-                sub = cs.subject
-                shared_subs_map[sub.id] = SubjectOptionResponse(
-                    id=sub.id,
-                    name=sub.name,
-                    code=sub.code,
-                    category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                    is_academic=sub.is_academic,
-                    order_index=sub.order_index,
-                    teacher_id=cs.teacher_id,
-                    teacher=_format_teacher(cs.teacher),
-                )
+            sub = cs.subject
+            if sub.parent_id is not None:
+                continue
+            if cs.section_id is None or same_for_all:
+                if sub.id not in shared_subs_map:
+                    shared_subs_map[sub.id] = cs
 
         # Section-level subjects
         sec_response_list: List[SchoolConfigClassSection] = []
         for s in active_sections:
             sec_subs_map = {}
+            sec_teachers = {}
             for cs in active_class_subjects:
-                if cs.section_id == s.id:
-                    sub = cs.subject
-                    sec_subs_map[sub.id] = SubjectOptionResponse(
-                        id=sub.id,
-                        name=sub.name,
-                        code=sub.code,
-                        category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                        is_academic=sub.is_academic,
-                        order_index=sub.order_index,
-                        teacher_id=cs.teacher_id,
-                        teacher=_format_teacher(cs.teacher),
+                if cs.section_id == s.id and cs.teacher_id:
+                    sec_teachers[cs.subject_id] = (cs.teacher_id, cs.teacher)
+
+            if same_for_all:
+                for sub_id, shared_cs in shared_subs_map.items():
+                    sub = shared_cs.subject
+                    sec_t_id, sec_t_obj = sec_teachers.get(sub_id, (shared_cs.teacher_id, shared_cs.teacher))
+                    sec_subs_map[sub_id] = _format_subject_response(
+                        sub,
+                        teacher_id=sec_t_id,
+                        teacher_user=sec_t_obj,
+                        sec_teachers=sec_teachers,
                     )
-                elif cs.section_id is None:
-                    sub = cs.subject
-                    if sub.id not in sec_subs_map:
-                        sec_subs_map[sub.id] = SubjectOptionResponse(
-                            id=sub.id,
-                            name=sub.name,
-                            code=sub.code,
-                            category=sub.category or ("academic" if sub.is_academic else "non_academic"),
-                            is_academic=sub.is_academic,
-                            order_index=sub.order_index,
+            else:
+                for cs in active_class_subjects:
+                    if cs.section_id == s.id and cs.subject.parent_id is None:
+                        sub = cs.subject
+                        sec_subs_map[sub.id] = _format_subject_response(
+                            sub,
                             teacher_id=cs.teacher_id,
-                            teacher=_format_teacher(cs.teacher),
+                            teacher_user=cs.teacher,
+                            sec_teachers=sec_teachers,
                         )
 
             sorted_sec_subs = sorted(
@@ -548,7 +576,10 @@ def get_school_full_config(
             )
 
         sorted_class_subs = sorted(
-            shared_subs_map.values(),
+            [
+                _format_subject_response(cs.subject, teacher_id=cs.teacher_id, teacher_user=cs.teacher)
+                for cs in shared_subs_map.values()
+            ],
             key=lambda x: (0 if x.is_academic else 1, x.order_index, x.name),
         )
 
@@ -584,12 +615,29 @@ def get_school_full_config(
             )
         )
 
-    # Map Subjects
+    # Map Subjects (top-level with child_subjects)
     subjects_response: List[SchoolConfigSubject] = []
-    for sub in subjects:
+    for sub in [s for s in subjects if s.parent_id is None]:
         active_cs = [cs for cs in sub.class_subjects if cs.deleted_at is None]
         assigned_c_ids = list({cs.class_id for cs in active_cs if cs.section_id is None})
         assigned_s_ids = list({cs.section_id for cs in active_cs if cs.section_id is not None})
+        child_resps = []
+        if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
+            active_children = [c for c in sub.child_subjects if c.deleted_at is None]
+            for c in sorted(active_children, key=lambda x: (x.order_index, x.name)):
+                child_resps.append(
+                    SubjectOptionResponse(
+                        id=c.id,
+                        name=c.name,
+                        code=c.code,
+                        category=c.category or "academic",
+                        is_academic=c.is_academic,
+                        order_index=c.order_index,
+                        is_split=False,
+                        parent_id=sub.id,
+                        parent_name=sub.name,
+                    )
+                )
         subjects_response.append(
             SchoolConfigSubject(
                 id=sub.id,
@@ -598,6 +646,9 @@ def get_school_full_config(
                 category=sub.category or ("academic" if sub.is_academic else "non_academic"),
                 is_academic=sub.is_academic,
                 order_index=sub.order_index,
+                is_split=getattr(sub, "is_split", False),
+                parent_id=sub.parent_id,
+                child_subjects=child_resps,
                 assigned_class_ids=assigned_c_ids,
                 assigned_section_ids=assigned_s_ids,
             )
@@ -661,6 +712,7 @@ def create_class(
         school_id=current_user.school_id,
         name=name_clean,
         order_index=payload.order_index,
+        same_for_all_sections=payload.same_for_all_sections,
         created_by=current_user.id,
     )
     db.add(new_class)
@@ -778,6 +830,9 @@ def update_class(
                 created_by=current_user.id,
             )
             db.add(wc)
+
+    if payload.same_for_all_sections is not None:
+        school_class.same_for_all_sections = payload.same_for_all_sections
 
     school_class.updated_by = current_user.id
     db.commit()
@@ -1045,6 +1100,253 @@ def delete_section(
     return {"success": True, "message": f"Section '{sec.name}' deleted successfully."}
 
 
+@router.put("/classes/{class_id}/toggle-shared")
+def toggle_class_shared_subjects(
+    class_id: UUID,
+    payload: ClassToggleSharedRequest,
+    current_user: Annotated[User, Depends(require_manage_school)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Toggle the 'same_for_all_sections' flag for a class.
+    - When switching to FALSE (section-specific):
+      Copies current shared subjects to each active section so each section
+      can have separate subjects without losing the existing ones.
+    - When switching to TRUE (shared across all sections):
+      Unifies subjects across all sections using source_section_id or merge_all.
+    """
+    school_class = (
+        db.query(SchoolClass)
+        .options(
+            selectinload(SchoolClass.sections),
+            selectinload(SchoolClass.class_subjects).joinedload(ClassSubject.subject),
+        )
+        .filter(
+            SchoolClass.id == class_id,
+            SchoolClass.school_id == current_user.school_id,
+            SchoolClass.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not school_class:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Class not found.",
+        )
+
+    active_sections = [s for s in school_class.sections if s.deleted_at is None]
+    active_class_subjects = [
+        cs for cs in school_class.class_subjects
+        if cs.deleted_at is None and cs.subject and cs.subject.deleted_at is None
+    ]
+
+    target_shared = payload.same_for_all_sections
+
+    if not target_shared:
+        # Switching from Shared -> Section-Specific (False)
+        # 1. Collect all distinct subjects currently configured (shared or existing)
+        distinct_subjects = {}
+        for cs in active_class_subjects:
+            if cs.subject_id not in distinct_subjects:
+                distinct_subjects[cs.subject_id] = cs
+
+        # 2. For each section, ensure it has an explicit ClassSubject entry for every subject
+        for sec in active_sections:
+            existing_sec_sub_ids = {
+                cs.subject_id: cs for cs in active_class_subjects if cs.section_id == sec.id
+            }
+            for sub_id, shared_cs in distinct_subjects.items():
+                if sub_id not in existing_sec_sub_ids:
+                    new_cs = ClassSubject(
+                        school_id=current_user.school_id,
+                        class_id=school_class.id,
+                        section_id=sec.id,
+                        subject_id=sub_id,
+                        teacher_id=shared_cs.teacher_id,
+                        created_by=current_user.id,
+                    )
+                    db.add(new_cs)
+
+        # 3. Clean up class-level records (section_id is None) so section records take full control
+        db.query(ClassSubject).filter(
+            ClassSubject.class_id == school_class.id,
+            ClassSubject.section_id.is_(None),
+            ClassSubject.school_id == current_user.school_id,
+        ).delete(synchronize_session=False)
+
+        school_class.same_for_all_sections = False
+
+    else:
+        # Switching from Section-Specific -> Shared (True)
+        # Determine the canonical set of subjects to share
+        canonical_subject_ids = []
+        if payload.source_section_id:
+            sec_cs = [
+                cs for cs in active_class_subjects if cs.section_id == payload.source_section_id
+            ]
+            canonical_subject_ids = [cs.subject_id for cs in sec_cs]
+        elif payload.merge_all:
+            seen_ids = set()
+            for cs in active_class_subjects:
+                if cs.subject_id not in seen_ids:
+                    seen_ids.add(cs.subject_id)
+                    canonical_subject_ids.append(cs.subject_id)
+        else:
+            # Default to first section or existing class-level subjects
+            if active_sections:
+                first_sec_cs = [
+                    cs for cs in active_class_subjects if cs.section_id == active_sections[0].id
+                ]
+                canonical_subject_ids = [cs.subject_id for cs in first_sec_cs]
+            if not canonical_subject_ids:
+                canonical_subject_ids = list({cs.subject_id for cs in active_class_subjects})
+
+        # 1. Update/create class-level entries (section_id is None)
+        existing_shared_map = {
+            cs.subject_id: cs for cs in active_class_subjects if cs.section_id is None
+        }
+        for sub_id in canonical_subject_ids:
+            if sub_id not in existing_shared_map:
+                new_cs = ClassSubject(
+                    school_id=current_user.school_id,
+                    class_id=school_class.id,
+                    section_id=None,
+                    subject_id=sub_id,
+                    created_by=current_user.id,
+                )
+                db.add(new_cs)
+
+        # Delete any class-level shared subjects not in canonical list
+        if canonical_subject_ids:
+            db.query(ClassSubject).filter(
+                ClassSubject.class_id == school_class.id,
+                ClassSubject.section_id.is_(None),
+                ClassSubject.subject_id.notin_(canonical_subject_ids),
+                ClassSubject.school_id == current_user.school_id,
+            ).delete(synchronize_session=False)
+
+        # 2. For each section, remove section-specific ClassSubject records for subjects not in canonical list
+        if canonical_subject_ids:
+            db.query(ClassSubject).filter(
+                ClassSubject.class_id == school_class.id,
+                ClassSubject.section_id.isnot(None),
+                ClassSubject.subject_id.notin_(canonical_subject_ids),
+                ClassSubject.school_id == current_user.school_id,
+            ).delete(synchronize_session=False)
+
+        school_class.same_for_all_sections = True
+
+    school_class.updated_by = current_user.id
+    db.commit()
+
+    return {
+        "success": True,
+        "class_id": str(school_class.id),
+        "same_for_all_sections": school_class.same_for_all_sections,
+        "message": (
+            f"All sections of '{school_class.name}' now share the same subjects."
+            if school_class.same_for_all_sections
+            else f"Each section of '{school_class.name}' now has separate subjects."
+        ),
+    }
+
+
+@router.put("/classes/{class_id}/subjects")
+def assign_class_subjects(
+    class_id: UUID,
+    payload: ClassSubjectsAssignRequest,
+    current_user: Annotated[User, Depends(require_manage_school)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Explicitly assign shared subjects for a class across all its sections.
+    """
+    school_class = db.query(SchoolClass).filter(
+        SchoolClass.id == class_id,
+        SchoolClass.school_id == current_user.school_id,
+        SchoolClass.deleted_at.is_(None),
+    ).first()
+    if not school_class:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Class not found.",
+        )
+
+    # 1. Capture existing class-level teacher assignments
+    existing_cs = (
+        db.query(ClassSubject)
+        .filter(
+            ClassSubject.class_id == class_id,
+            ClassSubject.section_id.is_(None),
+            ClassSubject.school_id == current_user.school_id,
+        )
+        .all()
+    )
+    teacher_map = {cs.subject_id: cs.teacher_id for cs in existing_cs if cs.teacher_id}
+
+    # Clear existing class-level mappings
+    db.query(ClassSubject).filter(
+        ClassSubject.class_id == class_id,
+        ClassSubject.section_id.is_(None),
+        ClassSubject.school_id == current_user.school_id,
+    ).delete(synchronize_session=False)
+
+    # Add new class-level mappings
+    all_assigned_ids = list(payload.subject_ids)
+    for sub_id in payload.subject_ids:
+        sub = (
+            db.query(Subject)
+            .options(selectinload(Subject.child_subjects))
+            .filter(
+                Subject.id == sub_id,
+                Subject.school_id == current_user.school_id,
+                Subject.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if sub:
+            cs = ClassSubject(
+                school_id=current_user.school_id,
+                class_id=class_id,
+                section_id=None,
+                subject_id=sub.id,
+                teacher_id=teacher_map.get(sub.id),
+                created_by=current_user.id,
+            )
+            db.add(cs)
+            if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
+                for child in sub.child_subjects:
+                    if child.deleted_at is None:
+                        all_assigned_ids.append(child.id)
+                        child_cs = ClassSubject(
+                            school_id=current_user.school_id,
+                            class_id=class_id,
+                            section_id=None,
+                            subject_id=child.id,
+                            teacher_id=teacher_map.get(child.id),
+                            created_by=current_user.id,
+                        )
+                        db.add(child_cs)
+
+    # Clean up section-specific records for subjects no longer in payload
+    if all_assigned_ids:
+        db.query(ClassSubject).filter(
+            ClassSubject.class_id == class_id,
+            ClassSubject.section_id.isnot(None),
+            ClassSubject.subject_id.notin_(all_assigned_ids),
+            ClassSubject.school_id == current_user.school_id,
+        ).delete(synchronize_session=False)
+
+    school_class.updated_by = current_user.id
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Updated shared subjects for {school_class.name}.",
+        "count": len(payload.subject_ids),
+    }
+
+
 @router.put("/classes/{class_id}/sections/{section_id}/subjects")
 def assign_section_subjects(
     class_id: UUID,
@@ -1054,8 +1356,9 @@ def assign_section_subjects(
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Explicitly assign subjects for a specific section.
-    Replaces existing section-specific ClassSubject records with the specified subject list.
+    Assign subjects for a specific section.
+    If 'same_for_all_sections' is enabled for this class, updates class-level shared
+    subjects across all sections. Otherwise, updates only this section's subjects.
     """
     school_class = db.query(SchoolClass).filter(
         SchoolClass.id == class_id,
@@ -1080,7 +1383,72 @@ def assign_section_subjects(
             detail="Section not found in specified class.",
         )
 
-    # 1. Capture existing teacher assignments for section to preserve them
+    # If class is in shared mode, apply to entire class
+    if getattr(school_class, "same_for_all_sections", True):
+        existing_cs = (
+            db.query(ClassSubject)
+            .filter(
+                ClassSubject.class_id == class_id,
+                ClassSubject.section_id.is_(None),
+                ClassSubject.school_id == current_user.school_id,
+            )
+            .all()
+        )
+        teacher_map = {cs.subject_id: cs.teacher_id for cs in existing_cs if cs.teacher_id}
+
+        db.query(ClassSubject).filter(
+            ClassSubject.class_id == class_id,
+            ClassSubject.section_id.is_(None),
+            ClassSubject.school_id == current_user.school_id,
+        ).delete(synchronize_session=False)
+
+        all_assigned_ids = list(payload.subject_ids)
+        for sub_id in payload.subject_ids:
+            sub = db.query(Subject).options(selectinload(Subject.child_subjects)).filter(
+                Subject.id == sub_id,
+                Subject.school_id == current_user.school_id,
+                Subject.deleted_at.is_(None),
+            ).first()
+            if sub:
+                cs = ClassSubject(
+                    school_id=current_user.school_id,
+                    class_id=class_id,
+                    section_id=None,
+                    subject_id=sub.id,
+                    teacher_id=teacher_map.get(sub.id),
+                    created_by=current_user.id,
+                )
+                db.add(cs)
+                if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
+                    for child in sub.child_subjects:
+                        if child.deleted_at is None:
+                            all_assigned_ids.append(child.id)
+                            child_cs = ClassSubject(
+                                school_id=current_user.school_id,
+                                class_id=class_id,
+                                section_id=None,
+                                subject_id=child.id,
+                                teacher_id=teacher_map.get(child.id),
+                                created_by=current_user.id,
+                            )
+                            db.add(child_cs)
+
+        if all_assigned_ids:
+            db.query(ClassSubject).filter(
+                ClassSubject.class_id == class_id,
+                ClassSubject.section_id.isnot(None),
+                ClassSubject.subject_id.notin_(all_assigned_ids),
+                ClassSubject.school_id == current_user.school_id,
+            ).delete(synchronize_session=False)
+
+        db.commit()
+        return {
+            "success": True,
+            "message": f"Updated subjects for all sections of {school_class.name}.",
+            "count": len(payload.subject_ids),
+        }
+
+    # Section-specific mode
     existing_cs = (
         db.query(ClassSubject)
         .filter(
@@ -1091,15 +1459,13 @@ def assign_section_subjects(
     )
     teacher_map = {cs.subject_id: cs.teacher_id for cs in existing_cs if cs.teacher_id}
 
-    # Clear existing section-specific mappings
     db.query(ClassSubject).filter(
         ClassSubject.section_id == section_id,
         ClassSubject.school_id == current_user.school_id,
     ).delete(synchronize_session=False)
 
-    # 2. Add new mappings, preserving existing teacher assignments
     for sub_id in payload.subject_ids:
-        sub = db.query(Subject).filter(
+        sub = db.query(Subject).options(selectinload(Subject.child_subjects)).filter(
             Subject.id == sub_id,
             Subject.school_id == current_user.school_id,
             Subject.deleted_at.is_(None),
@@ -1114,6 +1480,18 @@ def assign_section_subjects(
                 created_by=current_user.id,
             )
             db.add(cs)
+            if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
+                for child in sub.child_subjects:
+                    if child.deleted_at is None:
+                        child_cs = ClassSubject(
+                            school_id=current_user.school_id,
+                            class_id=class_id,
+                            section_id=section_id,
+                            subject_id=child.id,
+                            teacher_id=teacher_map.get(child.id),
+                            created_by=current_user.id,
+                        )
+                        db.add(child_cs)
 
     db.commit()
     return {
@@ -1513,6 +1891,204 @@ def reorder_subjects(
     return {"success": True}
 
 
+@router.put("/subjects/{subject_id}/split")
+def split_subject(
+    subject_id: UUID,
+    payload: SubjectSplitRequest,
+    current_user: Annotated[User, Depends(require_manage_school)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Split an academic subject into multiple child parts (e.g., Science -> Physics, Chemistry, Bio),
+    or un-split if parts is empty.
+    """
+    sub = (
+        db.query(Subject)
+        .options(selectinload(Subject.child_subjects), selectinload(Subject.class_subjects))
+        .filter(
+            Subject.id == subject_id,
+            Subject.school_id == current_user.school_id,
+            Subject.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subject not found.",
+        )
+
+    if not sub.is_academic or sub.category != "academic":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only academic subjects can be split into parts.",
+        )
+
+    if sub.parent_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Child subjects cannot be split further.",
+        )
+
+    cleaned_parts = [p.strip() for p in payload.parts if p and p.strip()]
+
+    # Un-split if empty parts
+    if not cleaned_parts:
+        sub.is_split = False
+        sub.updated_by = current_user.id
+        now = datetime.now(timezone.utc)
+        for child in sub.child_subjects:
+            if child.deleted_at is None:
+                child.deleted_at = now
+                child.deleted_by = current_user.id
+                db.query(ClassSubject).filter(
+                    ClassSubject.subject_id == child.id,
+                    ClassSubject.school_id == current_user.school_id,
+                    ClassSubject.deleted_at.is_(None),
+                ).update({"deleted_at": now, "deleted_by": current_user.id}, synchronize_session=False)
+        db.commit()
+        return {
+            "success": True,
+            "message": f"Subject '{sub.name}' is now unified (un-split).",
+            "is_split": False,
+            "child_subjects": [],
+        }
+
+    # Validate at least 2 parts when splitting
+    if len(cleaned_parts) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A split subject must have at least 2 parts (e.g., Physics, Chemistry, Biology).",
+        )
+
+    # Check for duplicate names within the parts
+    lower_names = [p.lower() for p in cleaned_parts]
+    if len(lower_names) != len(set(lower_names)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Part names must be unique within the split subject.",
+        )
+
+    sub.is_split = True
+    sub.updated_by = current_user.id
+    now = datetime.now(timezone.utc)
+
+    # Existing active child subjects
+    existing_children = {c.name.lower(): c for c in sub.child_subjects if c.deleted_at is None}
+    kept_child_ids = []
+
+    # Map of classes/sections where parent subject is assigned
+    parent_cs_list = (
+        db.query(ClassSubject)
+        .filter(
+            ClassSubject.subject_id == sub.id,
+            ClassSubject.school_id == current_user.school_id,
+            ClassSubject.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    child_responses = []
+    for idx, part_name in enumerate(cleaned_parts):
+        key = part_name.lower()
+        if key in existing_children:
+            child = existing_children[key]
+            child.name = part_name
+            child.order_index = idx
+            child.updated_by = current_user.id
+        else:
+            # Check if there is a soft-deleted child with this name to reactivate
+            soft_deleted = (
+                db.query(Subject)
+                .filter(
+                    Subject.school_id == current_user.school_id,
+                    Subject.parent_id == sub.id,
+                    func.lower(Subject.name) == key,
+                )
+                .first()
+            )
+            if soft_deleted:
+                child = soft_deleted
+                child.name = part_name
+                child.order_index = idx
+                child.deleted_at = None
+                child.deleted_by = None
+                child.updated_by = current_user.id
+            else:
+                child = Subject(
+                    school_id=current_user.school_id,
+                    name=part_name,
+                    category=sub.category,
+                    is_academic=True,
+                    order_index=idx,
+                    parent_id=sub.id,
+                    is_split=False,
+                    created_by=current_user.id,
+                )
+                db.add(child)
+                db.flush()
+
+        kept_child_ids.append(child.id)
+
+        # Ensure child is assigned to all classes/sections where parent is assigned
+        for pcs in parent_cs_list:
+            existing_child_cs = (
+                db.query(ClassSubject)
+                .filter(
+                    ClassSubject.subject_id == child.id,
+                    ClassSubject.class_id == pcs.class_id,
+                    ClassSubject.section_id == pcs.section_id,
+                    ClassSubject.school_id == current_user.school_id,
+                    ClassSubject.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if not existing_child_cs:
+                new_cs = ClassSubject(
+                    school_id=current_user.school_id,
+                    class_id=pcs.class_id,
+                    section_id=pcs.section_id,
+                    subject_id=child.id,
+                    teacher_id=None,
+                    created_by=current_user.id,
+                )
+                db.add(new_cs)
+
+        child_responses.append(
+            SubjectOptionResponse(
+                id=child.id,
+                name=child.name,
+                code=child.code,
+                category=child.category,
+                is_academic=child.is_academic,
+                order_index=child.order_index,
+                is_split=False,
+                parent_id=sub.id,
+                parent_name=sub.name,
+            )
+        )
+
+    # Soft delete children no longer in cleaned_parts
+    for c_key, c_obj in existing_children.items():
+        if c_obj.id not in kept_child_ids:
+            c_obj.deleted_at = now
+            c_obj.deleted_by = current_user.id
+            db.query(ClassSubject).filter(
+                ClassSubject.subject_id == c_obj.id,
+                ClassSubject.school_id == current_user.school_id,
+                ClassSubject.deleted_at.is_(None),
+            ).update({"deleted_at": now, "deleted_by": current_user.id}, synchronize_session=False)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Subject '{sub.name}' split into {len(cleaned_parts)} parts successfully.",
+        "is_split": True,
+        "child_subjects": [c.model_dump() for c in child_responses],
+    }
+
+
 @router.delete("/subjects/{subject_id}")
 def delete_subject(
     subject_id: UUID,
@@ -1520,34 +2096,51 @@ def delete_subject(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Soft-delete a subject with safety check for active timetable entries."""
-    sub = db.query(Subject).filter(
-        Subject.id == subject_id,
-        Subject.school_id == current_user.school_id,
-        Subject.deleted_at.is_(None),
-    ).first()
+    sub = (
+        db.query(Subject)
+        .options(selectinload(Subject.child_subjects))
+        .filter(
+            Subject.id == subject_id,
+            Subject.school_id == current_user.school_id,
+            Subject.deleted_at.is_(None),
+        )
+        .first()
+    )
     if not sub:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Subject not found.",
         )
 
+    # Check if sub or any child subjects have timetable entries
+    sub_ids = [sub.id]
+    if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
+        sub_ids.extend([c.id for c in sub.child_subjects if c.deleted_at is None])
+
     tt_count = db.query(TimetableEntry).filter(
         TimetableEntry.school_id == current_user.school_id,
-        TimetableEntry.subject_id == sub.id,
+        TimetableEntry.subject_id.in_(sub_ids),
         TimetableEntry.deleted_at.is_(None),
     ).count()
     if tt_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete Subject '{sub.name}' because active timetable entries exist for it.",
+            detail=f"Cannot delete Subject '{sub.name}' because active timetable entries exist for it or its parts.",
         )
 
     now = datetime.now(timezone.utc)
     sub.deleted_at = now
     sub.deleted_by = current_user.id
 
+    for cid in sub_ids:
+        if cid != sub.id:
+            db.query(Subject).filter(Subject.id == cid).update(
+                {"deleted_at": now, "deleted_by": current_user.id},
+                synchronize_session=False,
+            )
+
     db.query(ClassSubject).filter(
-        ClassSubject.subject_id == sub.id,
+        ClassSubject.subject_id.in_(sub_ids),
         ClassSubject.school_id == current_user.school_id,
     ).update({"deleted_at": now, "deleted_by": current_user.id}, synchronize_session=False)
 

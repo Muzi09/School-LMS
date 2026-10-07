@@ -45,6 +45,11 @@ import { ManageSchool } from "@/pages/school-management/ManageSchool"
 import { SchoolConfiguration } from "@/pages/school-management/SchoolConfiguration"
 import { Toaster } from "@/components/ui/sonner"
 
+// Status grid 
+// Teachers view 
+// Class View
+// Free teacher view 
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>

@@ -7,6 +7,7 @@ import {
   UserPlus,
   BookOpen,
   ArrowLeftRight,
+  Split,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
@@ -36,6 +37,7 @@ function SingleClassCard({
   onManageSubjectsForSection,
   onAssignClassTeacher,
   onAssignSubjectTeacher,
+  onToggleSameForAllSections,
 }) {
   const [isRenamingClass, setIsRenamingClass] = useState(false)
   const [renamedClassName, setRenamedClassName] = useState("")
@@ -158,8 +160,24 @@ function SingleClassCard({
           </button>
         </div>
 
-        {/* Right Side: Sections Count Chip & Add Section Button */}
-        <div className="flex items-center gap-2.5 self-start sm:self-center">
+        {/* Right Side: Same for all sections Checkbox, Sections Count Chip & Add Section Button */}
+        <div className="flex items-center gap-3 self-start sm:self-center flex-wrap sm:flex-nowrap">
+          {/* Same for All Sections Checkbox */}
+          <label
+            className="flex items-center gap-2 cursor-pointer select-none group text-xs font-semibold text-foreground hover:text-primary transition-colors shrink-0"
+            title="When ticked, all sections in this class share the same subjects. When unticked, each section has separate subjects."
+          >
+            <input
+              type="checkbox"
+              checked={schoolClass.same_for_all_sections !== false}
+              onChange={() => onToggleSameForAllSections?.(schoolClass)}
+              className="size-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
+            />
+            <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors whitespace-nowrap">
+              Same for all sections
+            </span>
+          </label>
+
           <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold text-muted-foreground bg-muted border border-border">
             {sections.length} {sections.length === 1 ? "section" : "sections"}
           </span>
@@ -210,10 +228,10 @@ function SingleClassCard({
                       <>
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs font-bold text-foreground uppercase tracking-wide">
-                            Section {sec.name}
+                            {sec.name}
                           </span>
                           <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.2 rounded bg-muted font-bold">
-                            {sectionSubjects.length}
+                            {sectionSubjects.length} Subjects 
                           </span>
                         </div>
 
@@ -305,7 +323,18 @@ function SingleClassCard({
                   {/* SUBJECTS Section */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs font-bold text-foreground">
-                      <span>SUBJECTS ({sectionSubjects.length})</span>
+                      <div className="flex items-center gap-1.5">
+                        <span>SUBJECTS ({sectionSubjects.length})</span>
+                        {schoolClass.same_for_all_sections !== false ? (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full bg-primary/10 text-primary border border-primary/20">
+                            Shared
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full bg-muted text-muted-foreground border border-border">
+                            Section-specific
+                          </span>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => onManageSubjectsForSection(schoolClass, { ...sec, subjects: sectionSubjects })}
@@ -324,6 +353,7 @@ function SingleClassCard({
                         sectionSubjects.map((sub, sIdx) => {
                           const dotColor = SUBJECT_COLORS[sIdx % SUBJECT_COLORS.length]
                           const isActivity = !sub.is_academic || sub.category === "non_academic"
+                          const isSplit = Boolean(sub.is_split && sub.child_subjects && sub.child_subjects.length > 0)
                           const assignedTeacherId = sub.teacher_id || sub.teacher?.id || ""
                           const subjectTeacherOptions =
                             assignedTeacherId &&
@@ -337,6 +367,83 @@ function SingleClassCard({
                                   },
                                 ]
                               : teacherComboboxOptions
+
+                          if (isSplit) {
+                            return (
+                              <div
+                                key={sub.id || sIdx}
+                                className="rounded-lg border border-border/80 bg-background overflow-hidden space-y-0 text-xs"
+                              >
+                                {/* Split Subject Header */}
+                                <div className="px-2.5 py-1.5 bg-muted/40 flex items-center justify-between gap-1.5 border-b border-border/60">
+                                  <div className="flex items-center gap-2 truncate min-w-0 flex-1">
+                                    <span className={`size-1.5 rounded-full ${dotColor} shrink-0`} />
+                                    <span className="text-xs font-semibold text-foreground truncate" title={sub.name}>
+                                      {sub.name}
+                                    </span>
+                                    <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0 flex items-center gap-1">
+                                      <Split className="size-2.5" />
+                                      <span>Split ({sub.child_subjects.length})</span>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Child Subjects */}
+                                <div className="p-1 space-y-1 bg-muted/10">
+                                  {sub.child_subjects.map((childSub) => {
+                                    const childTeacherId = childSub.teacher_id || childSub.teacher?.id || ""
+                                    const childTeacherOptions =
+                                      childTeacherId &&
+                                      !teacherComboboxOptions.some((o) => o.value === String(childTeacherId))
+                                        ? [
+                                            ...teacherComboboxOptions,
+                                            {
+                                              value: String(childTeacherId),
+                                              label: childSub.teacher?.name || "Assigned Teacher",
+                                              description: childSub.teacher?.designation || null,
+                                            },
+                                          ]
+                                        : teacherComboboxOptions
+
+                                    return (
+                                      <div
+                                        key={childSub.id}
+                                        data-subject-card
+                                        className="px-2 py-1 rounded-md border border-border/50 bg-background hover:bg-accent/30 flex items-center justify-between gap-1.5 transition-colors pl-3 relative"
+                                      >
+                                        <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
+                                          <span className="text-muted-foreground/60 text-[11px] shrink-0 font-mono">└</span>
+                                          <span className="text-[11px] font-medium text-foreground truncate" title={childSub.name}>
+                                            {childSub.name}
+                                          </span>
+                                          {childSub.code && (
+                                            <span className="text-[9px] font-mono text-muted-foreground">
+                                              ({childSub.code})
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="shrink-0 max-w-[130px]">
+                                          <Combobox
+                                            value={childTeacherId ? String(childTeacherId) : ""}
+                                            onValueChange={(newVal) =>
+                                              onAssignSubjectTeacher?.(sec.id, childSub.id, newVal ? newVal : null)
+                                            }
+                                            options={childTeacherOptions}
+                                            placeholder="Assign"
+                                            showDescriptionInTrigger={false}
+                                            anchorSelector="[data-subject-card]"
+                                            className="h-6 text-[10px] px-1.5 py-0 rounded font-medium border-border/70 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground font-mono w-auto min-w-[70px]"
+                                            popoverClassName="max-h-56 shadow-xl"
+                                          />
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          }
 
                           return (
                             <div
@@ -364,7 +471,6 @@ function SingleClassCard({
                                   }
                                   options={subjectTeacherOptions}
                                   placeholder="Assign"
-                                  clearable={true}
                                   showDescriptionInTrigger={false}
                                   anchorSelector="[data-subject-card]"
                                   className="h-6 text-[10px] px-2 py-0 rounded font-medium border-border/70 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground font-mono w-auto min-w-[72px]"
@@ -401,6 +507,7 @@ export function ClassSectionWorkspace({
   onManageSubjectsForSection,
   onAssignClassTeacher,
   onAssignSubjectTeacher,
+  onToggleSameForAllSections,
 }) {
   if (classes.length === 0) {
     return (
@@ -431,6 +538,7 @@ export function ClassSectionWorkspace({
           onManageSubjectsForSection={onManageSubjectsForSection}
           onAssignClassTeacher={onAssignClassTeacher}
           onAssignSubjectTeacher={onAssignSubjectTeacher}
+          onToggleSameForAllSections={onToggleSameForAllSections}
         />
       ))}
     </div>

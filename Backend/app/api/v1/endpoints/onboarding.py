@@ -256,6 +256,7 @@ def complete_school_setup(
                 school_id=school.id,
                 name=c_name,
                 order_index=class_item.order_index,
+                same_for_all_sections=class_item.same_for_all_sections,
                 created_by=principal.id,
             )
             db.add(school_class)

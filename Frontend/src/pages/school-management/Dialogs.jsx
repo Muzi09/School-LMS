@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import {
   Dialog,
   DialogHeader,
@@ -21,6 +21,8 @@ import {
   Plus,
   ArrowRightLeft,
   Edit2,
+  Combine,
+  Split,
 } from "lucide-react"
 import { toast } from "sonner"
 import { schoolConfigService } from "@/api/schoolConfigService"
@@ -38,6 +40,18 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
   const [newSectionName, setNewSectionName] = useState("")
   const [editingIndex, setEditingIndex] = useState(null)
   const [editingName, setEditingName] = useState("")
+  const [sameForAllSections, setSameForAllSections] = useState(true)
+  const [focusSectionInput, setFocusSectionInput] = useState(false)
+
+  const classNameInputRef = useRef(null)
+
+  useEffect(() => {
+    // Focus Class Name field when the modal opens
+    const timer = setTimeout(() => {
+      classNameInputRef.current?.focus()
+    }, 50)
+    return () => clearTimeout(timer)
+  }, [])
 
   const wingOptions = useMemo(() => {
     return [
@@ -122,6 +136,7 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
       name: name.trim(),
       wing_id: wingId || null,
       initial_sections: finalSections,
+      same_for_all_sections: sameForAllSections,
     })
     onClose()
   }
@@ -139,8 +154,11 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
         <div className="space-y-1.5">
           <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Class Name</label>
           <Input
+            ref={classNameInputRef}
+            id="class-name-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Class 1, Grade 10"
             className="h-10 text-sm rounded-xl px-3.5"
             autoFocus
           />
@@ -162,6 +180,19 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
           />
         </div>
 
+        {/* Same for All Sections Checkbox */}
+        <label className="flex items-center gap-2 cursor-pointer select-none group py-0.5">
+          <input
+            type="checkbox"
+            checked={sameForAllSections}
+            onChange={(e) => setSameForAllSections(e.target.checked)}
+            className="size-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
+          />
+          <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">
+            Same for all sections (sections share same subjects)
+          </span>
+        </label>
+
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
@@ -174,6 +205,7 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
                 size="xs"
                 onClick={() => {
                   setIsAddingSection(true)
+                  setFocusSectionInput(true)
                   setNewSectionName("")
                 }}
                 className="h-7 text-xs gap-1 font-semibold cursor-pointer shadow-2xs"
@@ -255,6 +287,7 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
                 size="xs"
                 onClick={() => {
                   setIsAddingSection(true)
+                  setFocusSectionInput(true)
                   setNewSectionName("")
                 }}
                 className="h-7 text-xs gap-1.5 font-medium rounded-lg cursor-pointer mx-auto"
@@ -272,12 +305,13 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
               onSave={handleSaveNewSection}
               onCancel={() => {
                 setIsAddingSection(false)
+                setFocusSectionInput(false)
                 setNewSectionName("")
               }}
-              placeholder="Section name (e.g. A, B, Science)..."
+              placeholder="Section name"
               saveTitle="Add section"
               disableSave={!newSectionName.trim()}
-              autoFocus
+              autoFocus={focusSectionInput}
             />
           )}
         </div>
@@ -408,9 +442,9 @@ function AddSectionForm({ onClose, onAddSection, targetClass }) {
         {existingSectionNames.length > 0 && (
           <div className="space-y-1">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Current Sections:
+              Current Sections
             </span>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 mt-1">
               {existingSectionNames.map((s, idx) => (
                 <span
                   key={idx}
@@ -476,7 +510,7 @@ function AddSectionForm({ onClose, onAddSection, targetClass }) {
                 setIsAddingSection(false)
                 setNewSectionName("")
               }}
-              placeholder="Section name (e.g. B, Science)..."
+              placeholder="Section name"
               saveTitle="Add section"
               disableSave={!newSectionName.trim()}
               autoFocus
@@ -958,6 +992,7 @@ function SectionSubjectsForm({
   targetSection,
   allSubjects = [],
   onSaveAssignments,
+  onSubjectSplitChange,
 }) {
   // Only subjects assigned in onboarding / currently configured for this section
   const initialAssigned = useMemo(() => {
@@ -973,13 +1008,56 @@ function SectionSubjectsForm({
       code: s.code || null,
       category: s.category || (s.is_academic ? "academic" : "non_academic"),
       is_academic: s.is_academic !== undefined ? s.is_academic : s.category === "academic",
+      is_split: s.is_split || false,
+      parent_id: s.parent_id || null,
+      child_subjects: s.child_subjects || [],
     }))
   }, [targetSection, targetClass])
 
   const [subjectsList, setSubjectsList] = useState(() => initialAssigned)
   const [addingCategory, setAddingCategory] = useState(null) // "academic" | "non_academic" | null
   const [addingInputVal, setAddingInputVal] = useState("")
+  const [editingSubjectKey, setEditingSubjectKey] = useState(null) // id or tempId
+  const [editingSubjectName, setEditingSubjectName] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  const [splitDialogSubject, setSplitDialogSubject] = useState(null)
+
+  // Open split dialog for academic subject
+  const handleOpenSplitModal = async (sub) => {
+    if (sub._isNew || !sub.id) {
+      try {
+        const created = await schoolConfigService.createSubject({
+          name: sub.name,
+          category: sub.category,
+          is_academic: sub.is_academic,
+          assigned_class_ids: targetClass?.id ? [targetClass.id] : [],
+          assigned_section_ids: targetSection?.id ? [targetSection.id] : [],
+        })
+        if (created?.id) {
+          const updatedSub = { ...sub, ...created, _isNew: false }
+          setSubjectsList((prev) =>
+            prev.map((s) =>
+              (s.id && s.id === created.id) || (s.tempId && s.tempId === sub.tempId)
+                ? updatedSub
+                : s
+            )
+          )
+          setSplitDialogSubject(updatedSub)
+        }
+      } catch (err) {
+        toast.error(err.message || "Failed to initialize subject before splitting.")
+      }
+    } else {
+      setSplitDialogSubject(sub)
+    }
+  }
+
+  const handleSplitSuccess = (updatedSub) => {
+    setSubjectsList((prev) =>
+      prev.map((s) => (s.id === updatedSub.id ? { ...s, ...updatedSub } : s))
+    )
+    onSubjectSplitChange?.()
+  }
 
   // Buckets
   const academicSubjects = useMemo(() => {
@@ -1015,12 +1093,62 @@ function SectionSubjectsForm({
 
   // Remove subject from this section
   const handleRemoveSubject = (targetSub) => {
+    if (editingSubjectKey === (targetSub.id || targetSub.tempId)) {
+      setEditingSubjectKey(null)
+      setEditingSubjectName("")
+    }
     setSubjectsList((prev) =>
       prev.filter((s) => (s.id ? s.id !== targetSub.id : s.tempId !== targetSub.tempId))
     )
   }
 
-  // Add subject inline
+  // Edit subject name inline
+  const handleStartEditSubject = (sub) => {
+    setEditingSubjectKey(sub.id || sub.tempId)
+    setEditingSubjectName(sub.name)
+  }
+
+  const handleSaveEditSubject = (sub) => {
+    const trimmed = (editingSubjectName || "").trim()
+    if (!trimmed) return
+    const key = sub.id || sub.tempId
+
+    if (trimmed.toLowerCase() !== sub.name.toLowerCase()) {
+      if (
+        subjectsList.some(
+          (s) =>
+            (s.id || s.tempId) !== key &&
+            s.name.toLowerCase() === trimmed.toLowerCase()
+        )
+      ) {
+        toast.error(`Subject "${trimmed}" is already in this list.`)
+        return
+      }
+    }
+
+    setSubjectsList((prev) =>
+      prev.map((s) => {
+        const matches = s.id ? s.id === sub.id : s.tempId === sub.tempId
+        if (matches) {
+          return {
+            ...s,
+            name: trimmed,
+            _nameChanged: trimmed !== sub.name,
+          }
+        }
+        return s
+      })
+    )
+    setEditingSubjectKey(null)
+    setEditingSubjectName("")
+  }
+
+  const handleCancelEditSubject = () => {
+    setEditingSubjectKey(null)
+    setEditingSubjectName("")
+  }
+
+  // Add subject inline - adds on the first index (index 0)
   const handleAddSubject = (category) => {
     const trimmed = (addingInputVal || "").trim()
     if (!trimmed) return
@@ -1036,31 +1164,28 @@ function SectionSubjectsForm({
       (s) => s.name.toLowerCase() === trimmed.toLowerCase()
     )
 
+    let newSub
     if (existingInCatalog) {
-      setSubjectsList((prev) => [
-        ...prev,
-        {
-          ...existingInCatalog,
-          category,
-          is_academic: isAcad,
-          _categoryChanged: existingInCatalog.is_academic !== isAcad,
-        },
-      ])
+      newSub = {
+        ...existingInCatalog,
+        category,
+        is_academic: isAcad,
+        _categoryChanged: existingInCatalog.is_academic !== isAcad,
+      }
     } else {
-      setSubjectsList((prev) => [
-        ...prev,
-        {
-          id: null,
-          tempId: `new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          name: trimmed,
-          code: null,
-          category,
-          is_academic: isAcad,
-          _isNew: true,
-        },
-      ])
+      newSub = {
+        id: null,
+        tempId: `new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name: trimmed,
+        code: null,
+        category,
+        is_academic: isAcad,
+        _isNew: true,
+      }
     }
 
+    // Always add on the first index
+    setSubjectsList((prev) => [newSub, ...prev])
     setAddingCategory(null)
     setAddingInputVal("")
   }
@@ -1069,8 +1194,20 @@ function SectionSubjectsForm({
   const handleSave = async () => {
     setIsSaving(true)
     try {
+      // If currently editing a subject name, commit the change first
+      let currentSubjectsList = [...subjectsList]
+      if (editingSubjectKey && editingSubjectName.trim()) {
+        const trimmed = editingSubjectName.trim()
+        currentSubjectsList = currentSubjectsList.map((s) => {
+          if ((s.id || s.tempId) === editingSubjectKey && trimmed !== s.name) {
+            return { ...s, name: trimmed, _nameChanged: true }
+          }
+          return s
+        })
+      }
+
       const finalSubjectIds = []
-      for (const sub of subjectsList) {
+      for (const sub of currentSubjectsList) {
         if (sub._isNew) {
           const res = await schoolConfigService.createSubject({
             name: sub.name,
@@ -1084,8 +1221,9 @@ function SectionSubjectsForm({
           }
         } else {
           finalSubjectIds.push(sub.id)
-          if (sub._categoryChanged) {
+          if (sub._categoryChanged || sub._nameChanged) {
             await schoolConfigService.updateSubject(sub.id, {
+              name: sub.name,
               category: sub.category,
               is_academic: sub.is_academic,
             })
@@ -1105,14 +1243,27 @@ function SectionSubjectsForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="text-base font-bold flex items-center gap-2">
-          <span>Manage Subjects</span>
-          <span className="text-muted-foreground font-normal text-xs">
-            ({targetClass?.name} – Section {targetSection?.name})
-          </span>
-        </DialogTitle>
+        <div className="flex items-center gap-2 flex-wrap">
+          <DialogTitle className="text-base font-bold flex items-center gap-2">
+            <span>Manage Subjects</span>
+            <span className="text-muted-foreground font-normal text-xs">
+              ({targetClass?.name} {targetClass?.same_for_all_sections !== false ? "– All Sections" : `– Section ${targetSection?.name}`})
+            </span>
+          </DialogTitle>
+          {targetClass?.same_for_all_sections !== false ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
+              Shared across all sections
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
+              Section-specific
+            </span>
+          )}
+        </div>
         <DialogDescription className="text-xs">
-          Organize academic and non-academic subjects for this section. Switch categories or add new subjects inline.
+          {targetClass?.same_for_all_sections !== false
+            ? `Organize subjects for ${targetClass?.name}. Since 'Same for all sections' is active, updates will apply to all sections.`
+            : `Organize subjects specifically for ${targetClass?.name} - Section ${targetSection?.name}.`}
         </DialogDescription>
       </DialogHeader>
 
@@ -1151,7 +1302,7 @@ function SectionSubjectsForm({
                   setAddingCategory(null)
                   setAddingInputVal("")
                 }}
-                placeholder="Subject name..."
+                placeholder="Subject name"
                 saveTitle="Add"
                 disableSave={!addingInputVal.trim()}
                 autoFocus
@@ -1165,39 +1316,97 @@ function SectionSubjectsForm({
                   No academic subjects
                 </div>
               ) : (
-                academicSubjects.map((sub, idx) => (
-                  <div
-                    key={sub.id || sub.tempId || idx}
-                    className="group flex items-center justify-between p-2 rounded-xl border border-border/70 bg-card hover:border-border hover:shadow-xs hover:bg-muted/30 text-xs transition-all duration-150"
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
-                      <span className="font-semibold text-foreground truncate">{sub.name}</span>
-                      {sub.code && (
-                        <span className="text-[10px] font-mono text-muted-foreground px-1 py-0.2 rounded bg-muted">
-                          {sub.code}
-                        </span>
+                academicSubjects.map((sub, idx) => {
+                  const key = sub.id || sub.tempId || idx
+                  const isEditing = editingSubjectKey === (sub.id || sub.tempId)
+
+                  if (isEditing) {
+                    return (
+                      <InlineEditInput
+                        key={key}
+                        value={editingSubjectName}
+                        onChange={setEditingSubjectName}
+                        onSave={() => handleSaveEditSubject(sub)}
+                        onCancel={handleCancelEditSubject}
+                        placeholder="Subject name..."
+                        saveTitle="Save name"
+                        disableSave={!editingSubjectName.trim()}
+                        autoFocus
+                      />
+                    )
+                  }
+
+                  return (
+                    <div
+                      key={key}
+                      className="group flex flex-col p-2 rounded-xl border border-border/70 bg-card hover:border-border hover:shadow-xs hover:bg-muted/30 text-xs transition-all duration-150 gap-1"
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
+                          <span className="font-semibold text-foreground truncate" title={sub.name}>
+                            {sub.name}
+                          </span>
+                          {sub.code && (
+                            <span className="text-[10px] font-mono text-muted-foreground px-1 py-0.2 rounded bg-muted">
+                              {sub.code}
+                            </span>
+                          )}
+                          {sub.is_split && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+                              <Split className="size-2.5" />
+                              <span>Split ({sub.child_subjects?.length || 0})</span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditSubject(sub)}
+                            className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer transition-colors"
+                            title="Edit subject name"
+                          >
+                            <Edit2 className="size-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSplitModal(sub)}
+                            className={`size-6 rounded-md flex items-center justify-center cursor-pointer transition-colors ${
+                              sub.is_split
+                                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                : "hover:bg-muted text-muted-foreground hover:text-primary"
+                            }`}
+                            title={sub.is_split ? "Manage split parts" : "Split subject into parts"}
+                          >
+                            <Split className="size-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSubject(sub)}
+                            className="size-6 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
+                            title="Remove subject"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* If split, display child parts pills */}
+                      {sub.is_split && sub.child_subjects && sub.child_subjects.length > 0 && (
+                        <div className="mt-0.5 pt-1.5 border-t border-border/50 flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] text-muted-foreground font-medium">Parts:</span>
+                          {sub.child_subjects.map((c) => (
+                            <span
+                              key={c.id || c.name}
+                              className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-foreground border border-border/60"
+                            >
+                              {c.name}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0 transition-opacity">
-                      <button
-                        type="button"
-                        onClick={() => handleSwitchCategory(sub)}
-                        className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-amber-500 flex items-center justify-center cursor-pointer transition-colors"
-                        title="Move to Non-Academic"
-                      >
-                        <ArrowRightLeft className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveSubject(sub)}
-                        className="size-6 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
-                        title="Remove subject"
-                      >
-                        <Trash2 className="size-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </div>
@@ -1237,7 +1446,7 @@ function SectionSubjectsForm({
                   setAddingCategory(null)
                   setAddingInputVal("")
                 }}
-                placeholder="Subject name..."
+                placeholder="Subject name"
                 saveTitle="Add"
                 disableSave={!addingInputVal.trim()}
                 autoFocus
@@ -1251,39 +1460,62 @@ function SectionSubjectsForm({
                   No non-academic subjects
                 </div>
               ) : (
-                nonAcademicSubjects.map((sub, idx) => (
-                  <div
-                    key={sub.id || sub.tempId || idx}
-                    className="group flex items-center justify-between p-2 rounded-xl border border-border/70 bg-card hover:border-border hover:shadow-xs hover:bg-muted/30 text-xs transition-all duration-150"
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
-                      <span className="font-semibold text-foreground truncate">{sub.name}</span>
-                      {sub.code && (
-                        <span className="text-[10px] font-mono text-muted-foreground px-1 py-0.2 rounded bg-muted">
-                          {sub.code}
+                nonAcademicSubjects.map((sub, idx) => {
+                  const key = sub.id || sub.tempId || idx
+                  const isEditing = editingSubjectKey === (sub.id || sub.tempId)
+
+                  if (isEditing) {
+                    return (
+                      <InlineEditInput
+                        key={key}
+                        value={editingSubjectName}
+                        onChange={setEditingSubjectName}
+                        onSave={() => handleSaveEditSubject(sub)}
+                        onCancel={handleCancelEditSubject}
+                        placeholder="Subject name..."
+                        saveTitle="Save name"
+                        disableSave={!editingSubjectName.trim()}
+                        autoFocus
+                      />
+                    )
+                  }
+
+                  return (
+                    <div
+                      key={key}
+                      className="group flex items-center justify-between p-2 rounded-xl border border-border/70 bg-card hover:border-border hover:shadow-xs hover:bg-muted/30 text-xs transition-all duration-150"
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
+                        <span className="font-semibold text-foreground truncate" title={sub.name}>
+                          {sub.name}
                         </span>
-                      )}
+                        {sub.code && (
+                          <span className="text-[10px] font-mono text-muted-foreground px-1 py-0.2 rounded bg-muted">
+                            {sub.code}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditSubject(sub)}
+                          className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer transition-colors"
+                          title="Edit subject name"
+                        >
+                          <Edit2 className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSubject(sub)}
+                          className="size-6 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
+                          title="Remove subject"
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0 transition-opacity">
-                      <button
-                        type="button"
-                        onClick={() => handleSwitchCategory(sub)}
-                        className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-blue-500 flex items-center justify-center cursor-pointer transition-colors"
-                        title="Move to Academic"
-                      >
-                        <ArrowRightLeft className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveSubject(sub)}
-                        className="size-6 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
-                        title="Remove subject"
-                      >
-                        <Trash2 className="size-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </div>
@@ -1309,7 +1541,220 @@ function SectionSubjectsForm({
           {isSaving ? "Saving..." : "Save Subject Assignments"}
         </Button>
       </DialogFooter>
+
+      {/* Split Subject Dialog */}
+      {splitDialogSubject && (
+        <SplitSubjectDialog
+          isOpen={Boolean(splitDialogSubject)}
+          onClose={() => setSplitDialogSubject(null)}
+          subject={splitDialogSubject}
+          onSplitSuccess={handleSplitSuccess}
+        />
+      )}
     </>
+  )
+}
+
+// ==============================================================
+// 6b. Split Academic Subject Dialog
+// ==============================================================
+function SplitSubjectForm({ subject, onClose, onSplitSuccess }) {
+  const [parts, setParts] = useState(() => {
+    if (subject?.is_split && subject?.child_subjects && subject.child_subjects.length > 0) {
+      return subject.child_subjects.map((c) => c.name)
+    }
+    return ["", ""]
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handlePartChange = (index, value) => {
+    setParts((prev) => {
+      const next = [...prev]
+      next[index] = value
+      return next
+    })
+  }
+
+  const handleAddPart = () => {
+    setParts((prev) => [...prev, ""])
+  }
+
+  const handleRemovePart = (index) => {
+    if (parts.length <= 2) {
+      toast.warning("A split subject requires at least 2 parts.")
+      return
+    }
+    setParts((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleSave = async () => {
+    const cleaned = parts.map((p) => (p || "").trim()).filter(Boolean)
+    if (cleaned.length < 2) {
+      toast.error("Please provide at least 2 part names (e.g. Physics, Chemistry, Biology).")
+      return
+    }
+
+    const lower = cleaned.map((p) => p.toLowerCase())
+    if (new Set(lower).size !== lower.length) {
+      toast.error("Part names must be unique within the split subject.")
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const res = await schoolConfigService.splitSubject(subject.id, cleaned)
+      toast.success(res?.message || `Split "${subject.name}" into ${cleaned.length} parts.`)
+      onSplitSuccess?.({
+        ...subject,
+        is_split: true,
+        child_subjects: res?.child_subjects || [],
+      })
+      onClose()
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || "Failed to split subject."
+      toast.error(msg)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleUnsplit = async () => {
+    setIsSubmitting(true)
+    try {
+      const res = await schoolConfigService.unsplitSubject(subject.id)
+      toast.success(res?.message || `Reverted "${subject.name}" to a unified subject.`)
+      onSplitSuccess?.({
+        ...subject,
+        is_split: false,
+        child_subjects: [],
+      })
+      onClose()
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || "Failed to unsplit subject."
+      toast.error(msg)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <div className="flex items-center gap-2.5">
+          <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <Split className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <DialogTitle className="text-base font-bold truncate">
+              Split Subject: {subject?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Divide into 2 or more parts so different teachers can be assigned to each part.
+            </DialogDescription>
+          </div>
+        </div>
+      </DialogHeader>
+
+      <div className="space-y-3 py-2">
+        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-700 dark:text-blue-300 text-xs">
+          Each part (e.g. Physics, Chemistry, Biology) will become an independent component of <strong>{subject?.name}</strong> with its own teacher assignment and timetable slot capability.
+        </div>
+
+        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+          {parts.map((partVal, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground w-14 shrink-0">
+                Part {idx + 1}
+              </span>
+              <Input
+                value={partVal}
+                onChange={(e) => handlePartChange(idx, e.target.value)}
+                placeholder={idx === 0 ? "e.g. Physics" : idx === 1 ? "e.g. Chemistry" : "e.g. Biology"}
+                className="h-9 text-xs flex-1 rounded-lg"
+                autoFocus={idx === 0 && !partVal}
+              />
+              <button
+                type="button"
+                onClick={() => handleRemovePart(idx)}
+                disabled={parts.length <= 2}
+                className={`size-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                  parts.length <= 2
+                    ? "opacity-30 cursor-not-allowed text-muted-foreground"
+                    : "hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                }`}
+                title={parts.length <= 2 ? "Minimum 2 parts required" : "Remove part"}
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleAddPart}
+          className="w-full text-xs h-8 gap-1.5 border-dashed border-border/80 hover:border-primary/50 text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          <Plus className="size-3" />
+          <span>Add Another Part</span>
+        </Button>
+      </div>
+
+      <DialogFooter className="flex items-center justify-between sm:justify-between gap-2 pt-2 border-t border-border/60">
+        <div>
+          {subject?.is_split && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleUnsplit}
+              disabled={isSubmitting}
+              className="h-9 px-3 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+            >
+              Un-split Subject
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="h-9 px-4 text-xs font-medium rounded-xl cursor-pointer"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={isSubmitting}
+            className="h-9 px-5 text-xs font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer"
+          >
+            {isSubmitting ? "Saving..." : "Save Split Parts"}
+          </Button>
+        </div>
+      </DialogFooter>
+    </>
+  )
+}
+
+export function SplitSubjectDialog({ isOpen, onClose, subject, onSplitSuccess }) {
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onOpenChange={(open) => !open && onClose()}
+      className="sm:max-w-md"
+    >
+      {isOpen && subject && (
+        <SplitSubjectForm
+          subject={subject}
+          onClose={onClose}
+          onSplitSuccess={onSplitSuccess}
+        />
+      )}
+    </Dialog>
   )
 }
 
@@ -1320,6 +1765,7 @@ export function SectionSubjectsDialog({
   targetSection,
   allSubjects = [],
   onSaveAssignments,
+  onSubjectSplitChange,
 }) {
   return (
     <Dialog
@@ -1334,6 +1780,7 @@ export function SectionSubjectsDialog({
           targetSection={targetSection}
           allSubjects={allSubjects}
           onSaveAssignments={onSaveAssignments}
+          onSubjectSplitChange={onSubjectSplitChange}
         />
       )}
     </Dialog>
@@ -1907,5 +2354,176 @@ export function AssignClassTeacherDialog({
         />
       )}
     </Dialog>
+  )
+}
+
+// ==============================================================
+// 10. Unify Subjects Dialog (When toggling Same for all sections to ON)
+// ==============================================================
+export function UnifySubjectsDialog({
+  isOpen,
+  onClose,
+  targetClass,
+  onConfirmUnify,
+  isPending = false,
+}) {
+  const sections = useMemo(() => {
+    return targetClass?.sections || []
+  }, [targetClass])
+
+  const [selectedSectionId, setSelectedSectionId] = useState(() => {
+    return sections[0]?.id || ""
+  })
+  const [strategy, setStrategy] = useState("use_section") // "use_section" | "merge"
+
+  useEffect(() => {
+    if (sections.length > 0 && !selectedSectionId) {
+      setSelectedSectionId(sections[0].id)
+    }
+  }, [sections, selectedSectionId])
+
+  if (!isOpen || !targetClass) return null
+
+  const selectedSection = sections.find((s) => s.id === selectedSectionId) || sections[0]
+
+  const handleConfirm = () => {
+    onConfirmUnify({
+      classId: targetClass.id,
+      sameForAllSections: true,
+      sourceSectionId: strategy === "use_section" ? selectedSection?.id : null,
+      mergeAll: strategy === "merge",
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-200"
+        onClick={onClose}
+      />
+
+      {/* Modal Card */}
+      <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl z-10 flex flex-col p-6 animate-in fade-in-0 zoom-in-95 duration-200 space-y-4">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+        >
+          <X className="size-4" />
+          <span className="sr-only">Close</span>
+        </button>
+
+        <div className="flex items-start gap-3">
+          <div className="size-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+            <Combine className="size-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-foreground">
+              Unify Subjects for {targetClass.name}
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              Sections in this class currently have different subject assignments. Choose how you would like to synchronize them to a single shared configuration.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2.5 pt-1">
+          {/* Option 1: Use Section's subjects */}
+          <div
+            onClick={() => setStrategy("use_section")}
+            className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+              strategy === "use_section"
+                ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                : "border-border bg-muted/20 hover:bg-muted/40"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-foreground flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="unifyStrategy"
+                  checked={strategy === "use_section"}
+                  onChange={() => setStrategy("use_section")}
+                  className="size-3.5 accent-primary cursor-pointer"
+                />
+                <span>Use Section&apos;s Subjects</span>
+              </label>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                Recommended
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground pl-5.5 leading-relaxed">
+              Applies one section&apos;s subjects to all sections of {targetClass.name}.
+            </p>
+
+            {strategy === "use_section" && sections.length > 1 && (
+              <div className="mt-2.5 pl-5.5 space-y-1">
+                <label className="text-[11px] font-semibold text-foreground block">
+                  Select base section:
+                </label>
+                <select
+                  value={selectedSectionId}
+                  onChange={(e) => setSelectedSectionId(e.target.value)}
+                  className="w-full h-8 text-xs rounded-lg border border-border bg-background px-2 font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                >
+                  {sections.map((sec) => (
+                    <option key={sec.id} value={sec.id}>
+                      Section {sec.name} ({sec.subjects?.length || 0} subjects)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Option 2: Merge all unique subjects */}
+          <div
+            onClick={() => setStrategy("merge")}
+            className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+              strategy === "merge"
+                ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                : "border-border bg-muted/20 hover:bg-muted/40"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-foreground flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="unifyStrategy"
+                  checked={strategy === "merge"}
+                  onChange={() => setStrategy("merge")}
+                  className="size-3.5 accent-primary cursor-pointer"
+                />
+                <span>Merge All Unique Subjects</span>
+              </label>
+            </div>
+            <p className="text-[11px] text-muted-foreground pl-5.5 leading-relaxed">
+              Combines every unique subject configured across all sections into the shared list.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-border/80">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={isPending}
+            className="h-9 px-4 text-xs font-medium rounded-xl cursor-pointer"
+          >
+            Cancel (Keep Separate)
+          </Button>
+          <Button
+            type="button"
+            onClick={handleConfirm}
+            disabled={isPending}
+            className="h-9 px-5 text-xs font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer"
+          >
+            {isPending ? "Unifying..." : "Unify Subjects"}
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
