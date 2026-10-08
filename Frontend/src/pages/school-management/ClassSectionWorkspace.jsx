@@ -231,7 +231,7 @@ function SingleClassCard({
                             {sec.name}
                           </span>
                           <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.2 rounded bg-muted font-bold">
-                            {sectionSubjects.length} Subjects 
+                            {sectionSubjects.length} Subjects
                           </span>
                         </div>
 
@@ -258,29 +258,10 @@ function SingleClassCard({
                   </div>
 
                   {/* CLASS TEACHER Card */}
-                  <div className="p-3 rounded-xl border border-border/80 bg-muted/30 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        <GraduationCap className="size-3.5 text-primary" />
-                        <span>Class Teacher</span>
-                      </div>
-                      {hasClassTeacher ? (
-                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          Assigned
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onAssignClassTeacher?.(schoolClass, sec)}
-                          className="px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-colors cursor-pointer"
-                          title="Click to assign class teacher"
-                        >
-                          Unassigned
-                        </button>
-                      )}
-                    </div>
 
-                    {hasClassTeacher ? (
+
+                  {hasClassTeacher ? (
+                    <div className="p-2 rounded-xl border border-border/80 bg-muted/30 space-y-2">
                       <div className="flex items-center justify-between gap-2 pt-0.5">
                         <div className="flex items-center gap-2 truncate min-w-0">
                           <div className="size-7 rounded-full bg-primary/20 text-primary font-bold text-xs flex items-center justify-center shrink-0">
@@ -302,28 +283,28 @@ function SingleClassCard({
                           Manage
                         </button>
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onAssignClassTeacher?.(schoolClass, sec)}
-                        className="w-full text-left p-2 rounded-lg border border-dashed border-border/80 hover:border-primary/50 hover:bg-primary/5 transition-all group cursor-pointer flex items-center gap-2"
-                      >
-                        <div className="size-7 rounded-full bg-muted flex items-center justify-center text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary transition-colors shrink-0">
-                          <UserPlus className="size-3.5" />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onAssignClassTeacher?.(schoolClass, sec)}
+                      className="w-full text-left p-2.75 rounded-lg border border-dashed border-border/80 hover:border-primary/50 hover:bg-primary/5 transition-all group cursor-pointer flex items-center gap-2"
+                    >
+                      <div className="size-7 rounded-full bg-muted flex items-center justify-center text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary transition-colors shrink-0">
+                        <UserPlus className="size-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-medium text-muted-foreground group-hover:text-primary transition-colors leading-tight">
+                          Class teacher not assigned. Click to assign.
                         </div>
-                        <div className="min-w-0">
-                          <div className="text-[11px] font-medium text-muted-foreground group-hover:text-primary transition-colors leading-tight">
-                            Class teacher not assigned. Click to assign.
-                          </div>
-                        </div>
-                      </button>
-                    )}
-                  </div>
+                      </div>
+                    </button>
+                  )}
 
                   {/* SUBJECTS Section */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs font-bold text-foreground">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 mt-1">
                         <span>SUBJECTS ({sectionSubjects.length})</span>
                         {schoolClass.same_for_all_sections !== false ? (
                           <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full bg-primary/10 text-primary border border-primary/20">
@@ -357,15 +338,15 @@ function SingleClassCard({
                           const assignedTeacherId = sub.teacher_id || sub.teacher?.id || ""
                           const subjectTeacherOptions =
                             assignedTeacherId &&
-                            !teacherComboboxOptions.some((o) => o.value === String(assignedTeacherId))
+                              !teacherComboboxOptions.some((o) => o.value === String(assignedTeacherId))
                               ? [
-                                  ...teacherComboboxOptions,
-                                  {
-                                    value: String(assignedTeacherId),
-                                    label: sub.teacher?.name || "Assigned Teacher",
-                                    description: sub.teacher?.designation || null,
-                                  },
-                                ]
+                                ...teacherComboboxOptions,
+                                {
+                                  value: String(assignedTeacherId),
+                                  label: sub.teacher?.name || "Assigned Teacher",
+                                  description: sub.teacher?.designation || null,
+                                },
+                              ]
                               : teacherComboboxOptions
 
                           if (isSplit) {
@@ -394,15 +375,15 @@ function SingleClassCard({
                                     const childTeacherId = childSub.teacher_id || childSub.teacher?.id || ""
                                     const childTeacherOptions =
                                       childTeacherId &&
-                                      !teacherComboboxOptions.some((o) => o.value === String(childTeacherId))
+                                        !teacherComboboxOptions.some((o) => o.value === String(childTeacherId))
                                         ? [
-                                            ...teacherComboboxOptions,
-                                            {
-                                              value: String(childTeacherId),
-                                              label: childSub.teacher?.name || "Assigned Teacher",
-                                              description: childSub.teacher?.designation || null,
-                                            },
-                                          ]
+                                          ...teacherComboboxOptions,
+                                          {
+                                            value: String(childTeacherId),
+                                            label: childSub.teacher?.name || "Assigned Teacher",
+                                            description: childSub.teacher?.designation || null,
+                                          },
+                                        ]
                                         : teacherComboboxOptions
 
                                     return (

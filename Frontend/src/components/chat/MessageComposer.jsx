@@ -127,7 +127,7 @@ export function MessageComposer({
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+            placeholder="Type a message..."
             className="min-h-[44px] max-h-[140px] py-2.5 px-3.5 text-sm bg-muted/60 border border-border/50 rounded-2xl shadow-none"
           />
         </div>

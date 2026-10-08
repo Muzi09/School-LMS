@@ -185,7 +185,7 @@ export function TimeTable() {
         title="Time Table"
         description="Manage weekly class schedules, periods, and teacher assignments."
         actions={
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
             {canManage && (
               <Button
                 type="button"
@@ -217,13 +217,13 @@ export function TimeTable() {
 
       {/* Class & Section Selection Bar */}
       <div className="p-3 sm:p-4 rounded-2xl bg-card border border-border shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 flex-wrap w-full md:w-auto">
           {/* Class Select */}
-          <div className="flex flex-col items-start gap-0.5">
+          <div className="flex flex-col items-start gap-0.5 w-full sm:w-auto">
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider shrink-0">
               Class
             </label>
-            <div className="w-[150px] sm:w-[170px]">
+            <div className="w-full sm:w-[170px]">
               <Combobox
                 value={selectedClassId}
                 onValueChange={handleClassChange}
@@ -233,17 +233,17 @@ export function TimeTable() {
                 }))}
                 placeholder={classesData.length === 0 ? "No Classes" : "Select Class"}
                 disabled={isClassesLoading || classesData.length === 0}
-                className="h-9 text-xs font-semibold rounded-xl bg-background border border-border"
+                className="h-9 text-xs font-semibold rounded-xl bg-background border border-border w-full"
               />
             </div>
           </div>
 
           {/* Section Select */}
-          <div className="flex flex-col items-start gap-0.5">
+          <div className="flex flex-col items-start gap-0.5 w-full sm:w-auto">
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider shrink-0">
               Section
             </label>
-            <div className="w-[140px] sm:w-[160px]">
+            <div className="w-full sm:w-[160px]">
               <Combobox
                 value={selectedSectionId}
                 onValueChange={(val) => setSelectedSectionId(val)}
@@ -253,7 +253,7 @@ export function TimeTable() {
                 }))}
                 placeholder={classSections.length === 0 ? "No Sections" : "Select Section"}
                 disabled={isClassesLoading || classSections.length === 0}
-                className="h-9 text-xs font-semibold rounded-xl bg-background border border-border"
+                className="h-9 text-xs font-semibold rounded-xl bg-background border border-border w-full"
               />
             </div>
           </div>

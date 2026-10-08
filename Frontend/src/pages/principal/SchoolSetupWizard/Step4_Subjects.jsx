@@ -492,7 +492,7 @@ export function Step4Subjects({
             placeholder="Search classes or subjects..."
             value={subjectSearchQuery}
             onChange={(e) => setSubjectSearchQuery(e.target.value)}
-            className="h-8.5 pl-8 text-xs bg-card"
+            className="h-8.5 pl-9 pr-8 text-xs bg-card"
           />
           {subjectSearchQuery && (
             <button

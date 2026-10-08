@@ -131,7 +131,7 @@ export function ConversationList({
             placeholder="Search conversations..."
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
-            className="pl-8.5 pr-3 h-8.5 rounded-xl text-xs bg-muted/40"
+            className="pl-9 pr-3 h-8.5 rounded-xl text-xs bg-muted/40"
           />
         </div>
 

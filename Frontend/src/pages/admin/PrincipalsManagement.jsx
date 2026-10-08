@@ -485,7 +485,7 @@ export function PrincipalsManagement() {
                         value={formik.values.email}
                         onChange={formik.handleChange}
                         onBlur={formik.handleBlur}
-                        className="pl-10 h-10 text-sm rounded-xl px-3.5"
+                        className="pl-11 pr-3.5 h-10 text-sm rounded-xl"
                       />
                     </div>
                     {formik.touched.email && formik.errors.email && (
@@ -511,7 +511,7 @@ export function PrincipalsManagement() {
                           formik.setFieldValue("login_mobile", onlyNums)
                         }}
                         onBlur={formik.handleBlur}
-                        className="pl-10 h-10 text-sm font-mono rounded-xl px-3.5"
+                        className="pl-11 pr-3.5 h-10 text-sm font-mono rounded-xl"
                       />
                     </div>
                     {formik.touched.login_mobile && formik.errors.login_mobile && (

@@ -99,7 +99,7 @@ export function PrincipalLogin() {
               Email Address
             </label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 type="email"
                 name="email"
@@ -107,7 +107,7 @@ export function PrincipalLogin() {
                 value={formik.values.email}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
-                className="pl-9 h-11 text-sm"
+                className="pl-11 h-11 text-sm"
                 autoComplete="email"
               />
             </div>
@@ -123,7 +123,7 @@ export function PrincipalLogin() {
               Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 type={showPassword ? "text" : "password"}
                 name="password"
@@ -131,7 +131,7 @@ export function PrincipalLogin() {
                 value={formik.values.password}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
-                className="pl-9 pr-10 h-11 text-sm"
+                className="pl-11 pr-10 h-11 text-sm"
                 autoComplete="current-password"
               />
               <button

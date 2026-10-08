@@ -225,7 +225,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                     type="email"
                     readOnly
                     value={formik.values.email}
-                    className="pl-10 h-10 text-sm rounded-xl px-3.5 bg-muted/60 text-muted-foreground cursor-not-allowed select-all border-border/80 focus-visible:ring-0"
+                    className="pl-11 pr-3.5 h-10 text-sm rounded-xl bg-muted/60 text-muted-foreground cursor-not-allowed select-all border-border/80 focus-visible:ring-0"
                   />
                 </div>
               </div>
@@ -256,7 +256,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                     onChange={(e) => handleFieldChange("app_password", e.target.value)}
                     onBlur={formik.handleBlur}
                     className={cn(
-                      "pl-10 pr-10 h-10 text-sm font-mono rounded-xl px-3.5",
+                      "pl-11 pr-10 h-10 text-sm font-mono rounded-xl",
                       formik.touched.app_password && formik.errors.app_password && "border-destructive ring-1 ring-destructive/30"
                     )}
                   />

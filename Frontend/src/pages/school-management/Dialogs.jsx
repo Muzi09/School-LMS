@@ -1393,7 +1393,6 @@ function SectionSubjectsForm({
                       {/* If split, display child parts pills */}
                       {sub.is_split && sub.child_subjects && sub.child_subjects.length > 0 && (
                         <div className="mt-0.5 pt-1.5 border-t border-border/50 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] text-muted-foreground font-medium">Parts:</span>
                           {sub.child_subjects.map((c) => (
                             <span
                               key={c.id || c.name}
@@ -1656,11 +1655,8 @@ function SplitSubjectForm({ subject, onClose, onSplitSuccess }) {
       </DialogHeader>
 
       <div className="space-y-3 py-2">
-        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-700 dark:text-blue-300 text-xs">
-          Each part (e.g. Physics, Chemistry, Biology) will become an independent component of <strong>{subject?.name}</strong> with its own teacher assignment and timetable slot capability.
-        </div>
 
-        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+        <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
           {parts.map((partVal, idx) => (
             <div key={idx} className="flex items-center gap-2">
               <span className="text-xs font-semibold text-muted-foreground w-14 shrink-0">
@@ -1669,7 +1665,6 @@ function SplitSubjectForm({ subject, onClose, onSplitSuccess }) {
               <Input
                 value={partVal}
                 onChange={(e) => handlePartChange(idx, e.target.value)}
-                placeholder={idx === 0 ? "e.g. Physics" : idx === 1 ? "e.g. Chemistry" : "e.g. Biology"}
                 className="h-9 text-xs flex-1 rounded-lg"
                 autoFocus={idx === 0 && !partVal}
               />
@@ -2210,7 +2205,7 @@ function AssignClassTeacherForm({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search staff by name, email, staff ID..."
-            className="h-10 text-sm rounded-xl pl-9 pr-8 bg-background w-full min-w-0"
+            className="h-10 text-sm rounded-xl pl-10 pr-9 bg-background w-full min-w-0"
             autoFocus
           />
           {searchQuery && (

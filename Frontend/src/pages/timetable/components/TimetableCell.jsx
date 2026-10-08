@@ -34,20 +34,20 @@ export function TimetableCell({
           }
         }}
         className={cn(
-          "group relative flex flex-col justify-between p-3.5 rounded-xl border transition-all duration-150 text-left min-h-[92px] h-full",
+          "group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl border transition-all duration-150 text-left min-h-[80px] sm:min-h-[88px] h-full",
           "bg-card hover:bg-accent/40 border-border/70 hover:border-primary/40 shadow-xs hover:shadow-sm cursor-pointer",
           "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
         )}
       >
         <div>
-          <div className="flex items-start justify-between gap-1.5">
-            <span className="text-sm font-bold text-foreground tracking-tight group-hover:text-primary transition-colors line-clamp-2">
+          <div className="flex items-start justify-between gap-1">
+            <span className="text-xs sm:text-sm font-bold text-foreground tracking-tight group-hover:text-primary transition-colors line-clamp-2">
               {subjectName}
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground group-hover:text-foreground/90 transition-colors">
-            <UserIcon className="size-3.5 shrink-0 opacity-70" />
+          <div className="flex items-center gap-1.5 mt-1 sm:mt-1.5 text-[11px] sm:text-xs text-muted-foreground group-hover:text-foreground/90 transition-colors">
+            <UserIcon className="size-3 sm:size-3.5 shrink-0 opacity-70" />
             <span className={cn("truncate font-medium", !hasTeacher && "italic text-muted-foreground/60")}>
               {teacherName}
             </span>
@@ -91,7 +91,7 @@ export function TimetableCell({
   // Empty cell
   if (!canManage) {
     return (
-      <div className="flex items-center justify-center p-3 rounded-xl border border-dashed border-border/40 bg-muted/10 min-h-[92px] h-full text-muted-foreground/40 text-xs select-none">
+      <div className="flex items-center justify-center p-2.5 sm:p-3 rounded-xl border border-dashed border-border/40 bg-muted/10 min-h-[80px] sm:min-h-[88px] h-full text-muted-foreground/40 text-xs select-none">
         —
       </div>
     )
@@ -102,7 +102,7 @@ export function TimetableCell({
       type="button"
       onClick={() => onAdd(day, period)}
       className={cn(
-        "group flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border border-dashed border-border/60 transition-all duration-150 min-h-[92px] h-full w-full",
+        "group flex flex-col items-center justify-center gap-1.5 p-2.5 sm:p-3 rounded-xl border border-dashed border-border/60 transition-all duration-150 min-h-[80px] sm:min-h-[88px] h-full w-full",
         "bg-card/40 hover:bg-primary/5 hover:border-primary/50 text-muted-foreground hover:text-primary cursor-pointer",
         "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
       )}

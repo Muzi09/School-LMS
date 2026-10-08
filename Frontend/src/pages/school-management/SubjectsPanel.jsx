@@ -66,7 +66,7 @@ export function SubjectsPanel({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search subjects..."
-            className="h-9 pl-9 text-xs bg-background border-border text-foreground placeholder:text-muted-foreground rounded-xl"
+            className="h-9 pl-10 pr-3 text-xs bg-background border-border text-foreground placeholder:text-muted-foreground rounded-xl"
           />
         </div>
 

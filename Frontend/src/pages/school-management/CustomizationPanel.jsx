@@ -113,7 +113,7 @@ function CustomizationForm({
           {/* Hex Input */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-muted-foreground">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-muted-foreground pointer-events-none">
                 #
               </span>
               <Input
@@ -121,7 +121,7 @@ function CustomizationForm({
                 onChange={(e) => setPrimaryColor(`#${e.target.value}`)}
                 maxLength={6}
                 placeholder="2563EB"
-                className="h-9 pl-6 text-xs font-mono font-bold uppercase bg-background border-border text-foreground rounded-xl"
+                className="h-9 pl-8 pr-3 text-xs font-mono font-bold uppercase bg-background border-border text-foreground rounded-xl"
               />
             </div>
             <input

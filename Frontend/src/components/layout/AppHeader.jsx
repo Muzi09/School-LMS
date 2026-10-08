@@ -122,13 +122,13 @@ export function AppHeader() {
       <div className="flex items-center gap-2 md:gap-3">
         {/* Global Search Bar */}
         <div className="relative hidden md:flex items-center w-64 lg:w-72">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
             placeholder="Search courses, students..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 pl-9 pr-12 text-xs bg-muted/40 focus:bg-background rounded-lg border-border"
+            className="h-9 pl-10 pr-12 text-xs bg-muted/40 focus:bg-background rounded-lg border-border"
           />
           <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:flex">
             ⌘K
@@ -145,26 +145,26 @@ export function AppHeader() {
             <Plus className="size-4 text-primary" />
             <span>Create</span>
           </Button>
+          <DropdownMenu className="w-52" placement="bottom end">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold">
+                Quick Scaffolding
+              </DropdownMenuLabel>
+              <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
+                <BookPlus className="size-4 text-blue-500" />
+                <span>New Course Section</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
+                <UserPlus className="size-4 text-emerald-500" />
+                <span>Enroll Student</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
+                <FilePlus className="size-4 text-purple-500" />
+                <span>Publish Assignment</span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenu>
         </DropdownMenuTrigger>
-        <DropdownMenu className="w-52" placement="bottom end">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold">
-              Quick Scaffolding
-            </DropdownMenuLabel>
-            <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
-              <BookPlus className="size-4 text-blue-500" />
-              <span>New Course Section</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
-              <UserPlus className="size-4 text-emerald-500" />
-              <span>Enroll Student</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
-              <FilePlus className="size-4 text-purple-500" />
-              <span>Publish Assignment</span>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenu>
 
         {/* Principal Email Setup Status Indicator */}
         {isPrincipal && (
@@ -245,51 +245,51 @@ export function AppHeader() {
               <span className="relative inline-flex size-2 rounded-full bg-primary"></span>
             </span>
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenu className="w-80 p-2" placement="bottom end">
-          <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-sm font-semibold text-foreground">Notifications</span>
-            <Badge variant="secondary" className="text-[10px] h-5">
-              3 New
-            </Badge>
-          </div>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            {notifications.map((n) => (
-              <DropdownMenuItem
-                key={n.id}
-                className="flex items-start gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-muted/80"
+          <DropdownMenu className="w-80 p-2" placement="bottom end">
+            <div className="flex items-center justify-between px-2 py-1.5">
+              <span className="text-sm font-semibold text-foreground">Notifications</span>
+              <Badge variant="secondary" className="text-[10px] h-5">
+                3 New
+              </Badge>
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              {notifications.map((n) => (
+                <DropdownMenuItem
+                  key={n.id}
+                  className="flex items-start gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-muted/80"
+                >
+                  <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <n.icon className="size-3.5" />
+                  </div>
+                  <div className="flex flex-col gap-0.5 overflow-hidden">
+                    <p className="text-xs font-medium text-foreground leading-tight">{n.title}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{n.desc}</p>
+                    <span className="text-[10px] text-muted-foreground/70">{n.time}</span>
+                  </div>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <div className="p-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-primary hover:text-primary font-medium h-7"
               >
-                <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <n.icon className="size-3.5" />
-                </div>
-                <div className="flex flex-col gap-0.5 overflow-hidden">
-                  <p className="text-xs font-medium text-foreground leading-tight">{n.title}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{n.desc}</p>
-                  <span className="text-[10px] text-muted-foreground/70">{n.time}</span>
-                </div>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <div className="p-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full text-xs text-primary hover:text-primary font-medium h-7"
-            >
-              View all notifications
-            </Button>
-          </div>
-        </DropdownMenu>
+                View all notifications
+              </Button>
+            </div>
+          </DropdownMenu>
+        </DropdownMenuTrigger>
 
         <Separator orientation="vertical" className="hidden sm:block h-5 mx-1" />
 
         {/* User Profile & Logout */}
         <DropdownMenuTrigger>
-          <button
-            type="button"
-            className="flex items-center gap-2 p-1 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+          <Button
+            variant="ghost"
+            className="flex items-center gap-2 p-1 rounded-lg hover:bg-muted transition-colors cursor-pointer h-auto"
           >
             <Avatar className="size-8 rounded-full ring-2 ring-primary/20">
               <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
@@ -304,31 +304,31 @@ export function AppHeader() {
                 {user?.school_name || (user?.role === 1 ? "Principal" : "Staff")}
               </p>
             </div>
-          </button>
+          </Button>
+          <DropdownMenu className="w-56 p-1.5" placement="bottom end">
+            <div className="px-2 py-1.5 border-b border-border mb-1">
+              <p className="text-xs font-semibold text-foreground">
+                {user?.first_name} {user?.last_name}
+              </p>
+              <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
+              {user?.school_name && (
+                <p className="text-[10px] font-medium text-primary mt-0.5">{user.school_name}</p>
+              )}
+            </div>
+            <DropdownMenuGroup>
+              <DropdownMenuItem
+                onAction={() => {
+                  logout()
+                  window.location.href = "/login"
+                }}
+                className="cursor-pointer gap-2 text-xs text-destructive hover:text-destructive focus:text-destructive"
+              >
+                <LogOut className="size-4" />
+                <span>Sign Out</span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenu>
         </DropdownMenuTrigger>
-        <DropdownMenu className="w-56 p-1.5" placement="bottom end">
-          <div className="px-2 py-1.5 border-b border-border mb-1">
-            <p className="text-xs font-semibold text-foreground">
-              {user?.first_name} {user?.last_name}
-            </p>
-            <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
-            {user?.school_name && (
-              <p className="text-[10px] font-medium text-primary mt-0.5">{user.school_name}</p>
-            )}
-          </div>
-          <DropdownMenuGroup>
-            <DropdownMenuItem
-              onClick={() => {
-                logout()
-                window.location.href = "/login"
-              }}
-              className="cursor-pointer gap-2 text-xs text-destructive hover:text-destructive focus:text-destructive"
-            >
-              <LogOut className="size-4" />
-              <span>Sign Out</span>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenu>
       </div>
     </header>
   )

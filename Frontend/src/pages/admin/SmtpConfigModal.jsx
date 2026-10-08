@@ -169,7 +169,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                   onChange={(e) => handleFieldChange("smtp_host", e.target.value)}
                   onBlur={formik.handleBlur}
                   className={cn(
-                    "pl-10 h-10 text-sm rounded-xl px-3.5",
+                    "pl-11 pr-3.5 h-10 text-sm rounded-xl",
                     formik.touched.smtp_host && formik.errors.smtp_host && "border-destructive ring-1 ring-destructive/30"
                   )}
                 />
@@ -223,7 +223,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                 type="email"
                 readOnly
                 value={formik.values.from_email}
-                className="pl-10 h-10 text-sm rounded-xl px-3.5 bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
+                className="pl-11 pr-3.5 h-10 text-sm rounded-xl bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
               />
             </div>
             {formik.touched.from_email && formik.errors.from_email && (
@@ -272,7 +272,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
                   onChange={(e) => handleFieldChange("smtp_password", e.target.value)}
                   onBlur={formik.handleBlur}
                   className={cn(
-                    "pl-10 pr-10 h-10 text-sm rounded-xl px-3.5 font-mono",
+                    "pl-11 pr-10 h-10 text-sm rounded-xl font-mono",
                     formik.touched.smtp_password && formik.errors.smtp_password && "border-destructive ring-1 ring-destructive/30"
                   )}
                 />

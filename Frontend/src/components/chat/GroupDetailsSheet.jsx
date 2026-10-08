@@ -462,13 +462,13 @@ export function GroupDetailsSheet({
           )}
 
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
             <Input
               type="text"
               placeholder="Search members to add..."
               value={addSearchTerm}
               onChange={(e) => setAddSearchTerm(e.target.value)}
-              className="pl-9 pr-4 h-10 rounded-xl text-sm"
+              className="pl-11 pr-4 h-10 rounded-xl text-sm"
             />
           </div>
 

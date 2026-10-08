@@ -189,7 +189,7 @@ export function CreateBroadcastModal({ isOpen, onOpenChange, onBroadcastCreated,
               placeholder="Search recipients by name or role..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 h-10 rounded-xl text-sm px-3.5"
+              className="pl-11 pr-4 h-10 rounded-xl text-sm"
             />
           </div>
 

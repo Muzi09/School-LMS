@@ -9,6 +9,7 @@ import {
   Shield,
   Bell,
   HelpCircle,
+  X,
 } from "lucide-react"
 
 import {
@@ -41,9 +42,17 @@ import { hasPermission } from "@/lib/permissions"
 
 export function AppSidebar({ ...props }) {
   const location = useLocation()
-  const { state } = useSidebar()
+  const { state, isMobile, setOpenMobile } = useSidebar()
   const { user, logout } = useAuth()
-  const isCollapsed = state === "collapsed"
+  // On mobile drawer, sidebar should never be icon-collapsed
+  const isCollapsed = state === "collapsed" && !isMobile
+
+  // Auto-close mobile drawer on route change
+  React.useEffect(() => {
+    if (isMobile) {
+      setOpenMobile(false)
+    }
+  }, [location.pathname, isMobile, setOpenMobile])
 
   const currentUser = {
     name: user ? `${user.first_name} ${user.last_name}` : "School Admin",
@@ -70,32 +79,50 @@ export function AppSidebar({ ...props }) {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar" {...props}>
       {/* Sidebar Header */}
       <SidebarHeader className="p-4 border-b border-sidebar-border/60">
-        <Link to="/" className="flex items-center gap-2.5 w-full group-data-[collapsible=icon]:justify-center">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/25 overflow-hidden">
-            {emblemUrl ? (
-              <img
-                src={emblemUrl}
-                alt={user?.school_name || "School Emblem"}
-                className="size-full object-contain p-0.5"
-                onError={(e) => {
-                  e.currentTarget.style.display = "none"
-                }}
-              />
-            ) : (
-              <Sparkles className="size-4" />
-            )}
-          </div>
-          {!isCollapsed && (
-            <div className="flex flex-col overflow-hidden text-left">
-              <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
-                {user?.school_name || "Apex Academy"}
-              </span>
-              <span className="truncate text-[11px] text-muted-foreground">
-                LMS Enterprise v2.4
-              </span>
+        <div className="flex items-center justify-between w-full">
+          <Link
+            to="/"
+            onClick={() => {
+              if (isMobile) setOpenMobile(false)
+            }}
+            className="flex items-center gap-2.5 flex-1 min-w-0 group-data-[collapsible=icon]:justify-center"
+          >
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/25 overflow-hidden">
+              {emblemUrl ? (
+                <img
+                  src={emblemUrl}
+                  alt={user?.school_name || "School Emblem"}
+                  className="size-full object-contain p-0.5"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none"
+                  }}
+                />
+              ) : (
+                <Sparkles className="size-4" />
+              )}
             </div>
+            {!isCollapsed && (
+              <div className="flex flex-col overflow-hidden text-left">
+                <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
+                  {user?.school_name || "Apex Academy"}
+                </span>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  LMS Enterprise v2.4
+                </span>
+              </div>
+            )}
+          </Link>
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setOpenMobile(false)}
+              className="size-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer shrink-0 ml-2"
+              aria-label="Close sidebar"
+            >
+              <X className="size-4" />
+            </button>
           )}
-        </Link>
+        </div>
       </SidebarHeader>
 
       {/* Sidebar Content (Iterated dynamically from sidebarNavGroups) */}
@@ -118,49 +145,52 @@ export function AppSidebar({ ...props }) {
                 <SidebarMenu>
                   {visibleItems.map((item) => {
                     const active = isRouteActive(item.url)
-                  return (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton
-                        isActive={active}
-                        tooltip={item.title}
-                        className={cn(
-                          "w-full group-data-[collapsible=icon]:justify-center transition-all",
-                          active
-                            ? "bg-primary/15 text-primary border border-primary/20 font-semibold shadow-xs hover:bg-primary/20 hover:text-primary"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                        )}
-                      >
-                        <Link
-                          to={item.url}
-                          className="flex size-full items-center gap-2.5 group-data-[collapsible=icon]:justify-center"
-                        >
-                          <item.icon
-                            className={cn(
-                              "size-4 shrink-0 transition-colors",
-                              active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
-                            )}
-                          />
-                          {!isCollapsed && <span>{item.title}</span>}
-                          {item.badge && !isCollapsed && (
-                            <SidebarMenuBadge
-                              className={cn(
-                                "text-[10px] px-1.5 py-0.5 ml-auto font-bold",
-                                active
-                                  ? "bg-primary/20 text-primary border border-primary/30"
-                                  : "bg-muted text-muted-foreground"
-                              )}
-                            >
-                              {item.badge}
-                            </SidebarMenuBadge>
+                    return (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton
+                          isActive={active}
+                          tooltip={item.title}
+                          className={cn(
+                            "w-full group-data-[collapsible=icon]:justify-center transition-all",
+                            active
+                              ? "bg-primary/15 text-primary border border-primary/20 font-semibold shadow-xs hover:bg-primary/20 hover:text-primary"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                           )}
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+                        >
+                          <Link
+                            to={item.url}
+                            onClick={() => {
+                              if (isMobile) setOpenMobile(false)
+                            }}
+                            className="flex size-full items-center gap-2.5 group-data-[collapsible=icon]:justify-center"
+                          >
+                            <item.icon
+                              className={cn(
+                                "size-4 shrink-0 transition-colors",
+                                active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                              )}
+                            />
+                            {!isCollapsed && <span>{item.title}</span>}
+                            {item.badge && !isCollapsed && (
+                              <SidebarMenuBadge
+                                className={cn(
+                                  "text-[10px] px-1.5 py-0.5 ml-auto font-bold",
+                                  active
+                                    ? "bg-primary/20 text-primary border border-primary/30"
+                                    : "bg-muted text-muted-foreground"
+                                )}
+                              >
+                                {item.badge}
+                              </SidebarMenuBadge>
+                            )}
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           )
         })}
       </SidebarContent>
@@ -192,50 +222,56 @@ export function AppSidebar({ ...props }) {
                 )}
                 {!isCollapsed && <ChevronDown className="ml-auto size-4 text-muted-foreground" />}
               </SidebarMenuButton>
-            </DropdownMenuTrigger>
 
-            <DropdownMenu className="w-60" placement="top start">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="p-2 font-normal">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="size-8 rounded-lg">
-                      <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
-                      <AvatarFallback className="rounded-lg bg-primary/10 text-primary font-semibold text-xs">
-                        {currentUser.initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex flex-col space-y-0.5 leading-none">
-                      <p className="font-medium text-sm text-foreground">{currentUser.name}</p>
-                      <p className="text-xs text-muted-foreground">{currentUser.email}</p>
+              <DropdownMenu className="w-60" placement="top start">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="p-2 font-normal">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="size-8 rounded-lg">
+                        <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
+                        <AvatarFallback className="rounded-lg bg-primary/10 text-primary font-semibold text-xs">
+                          {currentUser.initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col space-y-0.5 leading-none">
+                        <p className="font-medium text-sm text-foreground">{currentUser.name}</p>
+                        <p className="text-xs text-muted-foreground">{currentUser.email}</p>
+                      </div>
                     </div>
-                  </div>
-                </DropdownMenuLabel>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
-                  <UserCheck className="size-4 text-muted-foreground" />
-                  <span>My Profile</span>
+                  </DropdownMenuLabel>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
+                    <UserCheck className="size-4 text-muted-foreground" />
+                    <span>My Profile</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
+                    <Bell className="size-4 text-muted-foreground" />
+                    <span>Notification Center</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
+                    <Shield className="size-4 text-muted-foreground" />
+                    <span>Role & Permissions</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
+                    <HelpCircle className="size-4 text-muted-foreground" />
+                    <span>Help & Documentation</span>
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onAction={() => {
+                    logout()
+                    window.location.href = "/login"
+                  }}
+                  className="cursor-pointer gap-2 py-1.5 text-destructive focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <LogOut className="size-4" />
+                  <span>Log out</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
-                  <Bell className="size-4 text-muted-foreground" />
-                  <span>Notification Center</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
-                  <Shield className="size-4 text-muted-foreground" />
-                  <span>Role & Permissions</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
-                  <HelpCircle className="size-4 text-muted-foreground" />
-                  <span>Help & Documentation</span>
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="cursor-pointer gap-2 py-1.5 text-destructive focus:bg-destructive/10 focus:text-destructive">
-                <LogOut className="size-4" />
-                <span>Log out</span>
-              </DropdownMenuItem>
-            </DropdownMenu>
+              </DropdownMenu>
+            </DropdownMenuTrigger>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

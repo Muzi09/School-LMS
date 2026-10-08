@@ -57,13 +57,13 @@ export function UserSearchModal({ isOpen, onOpenChange, onSelectUser }) {
       </DialogHeader>
 
       <div className="relative my-2">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
         <Input
           type="text"
           placeholder="Search by name, email, or mobile..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9 pr-4 h-10 rounded-xl"
+          className="pl-11 pr-4 h-10 rounded-xl"
           autoFocus
         />
       </div>

@@ -365,13 +365,13 @@ export function DataTable({
         <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
           {enableGlobalFilter && (
             <div className="relative min-w-[200px] max-w-xs flex-1 sm:flex-initial">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
               <input
                 type="text"
                 value={activeSearch || ""}
                 onChange={(e) => table.setGlobalFilter(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full h-8 pl-8 pr-7 text-xs bg-muted/40 hover:bg-muted/60 focus:bg-background border border-input rounded-lg text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
+                className="w-full h-8 pl-9 pr-8 text-xs bg-muted/40 hover:bg-muted/60 focus:bg-background border border-input rounded-lg text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
               />
               {Boolean(activeSearch) && (
                 <button

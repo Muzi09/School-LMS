@@ -155,10 +155,14 @@ function Sidebar({
         data-sidebar="sidebar"
         data-slot="sidebar"
         data-mobile="true"
-        className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+        className={cn(
+          "w-[var(--sidebar-width,18rem)] max-w-[85vw] bg-sidebar p-0 text-sidebar-foreground border-r border-sidebar-border shadow-2xl [&>button]:hidden",
+          className
+        )}
         style={
           {
-            "--sidebar-width": SIDEBAR_WIDTH_MOBILE
+            "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+            ...props.style,
           }
         }
         side={side}
