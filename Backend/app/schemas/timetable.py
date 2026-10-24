@@ -78,18 +78,6 @@ class TimetablePeriodRead(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TimetableSubjectRead(BaseModel):
-    id: UUID
-    name: str
-    code: Optional[str] = None
-    category: Optional[str] = "academic"
-    is_academic: Optional[bool] = True
-    teacher_id: Optional[UUID] = None
-    teacher: Optional[TimetableTeacherRead] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class TimetableTeacherRead(BaseModel):
     id: UUID
     name: str
@@ -99,6 +87,18 @@ class TimetableTeacherRead(BaseModel):
     roll_no: Optional[str] = None
     department: Optional[str] = None
     designation: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TimetableSubjectRead(BaseModel):
+    id: UUID
+    name: str
+    code: Optional[str] = None
+    category: Optional[str] = "academic"
+    is_academic: Optional[bool] = True
+    teacher_id: Optional[UUID] = None
+    teacher: Optional[TimetableTeacherRead] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -166,6 +166,7 @@ export function Step1Profile({
                 readOnly
                 value={schoolEmail}
                 className="pl-11 pr-3.5 h-10 text-sm rounded-xl bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
+                tabIndex={-1}
               />
             </div>
           </div>
@@ -179,6 +180,7 @@ export function Step1Profile({
                 readOnly
                 value={schoolPhone}
                 className="pl-11 pr-3.5 h-10 text-sm font-mono rounded-xl bg-muted/50 cursor-not-allowed text-foreground border-border select-all"
+                tabIndex={-1}
               />
             </div>
           </div>

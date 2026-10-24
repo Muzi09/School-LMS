@@ -210,7 +210,9 @@ export function SchoolSetupWizard() {
   const [pin, setPin] = useState("")
   const [confirmPin, setConfirmPin] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [showPin, setShowPin] = useState(false)
+  const [showConfirmPin, setShowConfirmPin] = useState(false)
 
   // Sync wingsList with classesList: prune deleted classes & remove wings that have become empty
   useEffect(() => {
@@ -2486,8 +2488,12 @@ export function SchoolSetupWizard() {
               setConfirmPin={setConfirmPin}
               showPassword={showPassword}
               setShowPassword={setShowPassword}
+              showConfirmPassword={showConfirmPassword}
+              setShowConfirmPassword={setShowConfirmPassword}
               showPin={showPin}
               setShowPin={setShowPin}
+              showConfirmPin={showConfirmPin}
+              setShowConfirmPin={setShowConfirmPin}
             />
           )}
 

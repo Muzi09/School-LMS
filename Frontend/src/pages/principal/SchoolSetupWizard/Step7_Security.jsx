@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Lock, Hash, Eye, EyeOff } from "lucide-react"
 import { Input } from "@/components/ui/input"
 
@@ -10,11 +11,53 @@ export function Step7Security({
   setPin,
   confirmPin,
   setConfirmPin,
-  showPassword,
-  setShowPassword,
-  showPin,
-  setShowPin,
+  showPassword: externalShowPassword,
+  setShowPassword: externalSetShowPassword,
+  showConfirmPassword: externalShowConfirmPassword,
+  setShowConfirmPassword: externalSetShowConfirmPassword,
+  showPin: externalShowPin,
+  setShowPin: externalSetShowPin,
+  showConfirmPin: externalShowConfirmPin,
+  setShowConfirmPin: externalSetShowConfirmPin,
 }) {
+  const [internalShowPassword, setInternalShowPassword] = useState(false)
+  const [internalShowConfirmPassword, setInternalShowConfirmPassword] = useState(false)
+  const [internalShowPin, setInternalShowPin] = useState(false)
+  const [internalShowConfirmPin, setInternalShowConfirmPin] = useState(false)
+
+  const isShowPassword =
+    externalSetShowPassword !== undefined ? externalShowPassword : internalShowPassword
+  const toggleShowPassword = () => {
+    if (externalSetShowPassword) externalSetShowPassword(!externalShowPassword)
+    else setInternalShowPassword((prev) => !prev)
+  }
+
+  const isShowConfirmPassword =
+    externalSetShowConfirmPassword !== undefined
+      ? externalShowConfirmPassword
+      : internalShowConfirmPassword
+  const toggleShowConfirmPassword = () => {
+    if (externalSetShowConfirmPassword)
+      externalSetShowConfirmPassword(!externalShowConfirmPassword)
+    else setInternalShowConfirmPassword((prev) => !prev)
+  }
+
+  const isShowPin =
+    externalSetShowPin !== undefined ? externalShowPin : internalShowPin
+  const toggleShowPin = () => {
+    if (externalSetShowPin) externalSetShowPin(!externalShowPin)
+    else setInternalShowPin((prev) => !prev)
+  }
+
+  const isShowConfirmPin =
+    externalSetShowConfirmPin !== undefined
+      ? externalShowConfirmPin
+      : internalShowConfirmPin
+  const toggleShowConfirmPin = () => {
+    if (externalSetShowConfirmPin) externalSetShowConfirmPin(!externalShowConfirmPin)
+    else setInternalShowConfirmPin((prev) => !prev)
+  }
+
   return (
     <div className="space-y-6">
       <div className="border-b border-border pb-4">
@@ -36,29 +79,40 @@ export function Step7Security({
             <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Create Password</label>
             <div className="relative">
               <Input
-                type={showPassword ? "text" : "password"}
+                type={isShowPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="pr-10 h-10 text-sm rounded-xl px-3.5"
               />
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+                onClick={toggleShowPassword}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
               >
-                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                {isShowPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
           </div>
 
           <div>
             <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Confirm Password</label>
-            <Input
-              type={showPassword ? "text" : "password"}
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="h-10 text-sm rounded-xl px-3.5"
-            />
+            <div className="relative">
+              <Input
+                type={isShowConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="pr-10 h-10 text-sm rounded-xl px-3.5"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={toggleShowConfirmPassword}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                {isShowConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -75,7 +129,7 @@ export function Step7Security({
             <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Create PIN</label>
             <div className="relative">
               <Input
-                type={showPin ? "text" : "password"}
+                type={isShowPin ? "text" : "password"}
                 maxLength={10}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
@@ -83,23 +137,34 @@ export function Step7Security({
               />
               <button
                 type="button"
-                onClick={() => setShowPin(!showPin)}
+                tabIndex={-1}
+                onClick={toggleShowPin}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
               >
-                {showPin ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                {isShowPin ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
           </div>
 
           <div>
             <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">Confirm PIN</label>
-            <Input
-              type={showPin ? "text" : "password"}
-              maxLength={10}
-              value={confirmPin}
-              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
-              className="h-10 text-sm font-mono tracking-widest rounded-xl px-3.5"
-            />
+            <div className="relative">
+              <Input
+                type={isShowConfirmPin ? "text" : "password"}
+                maxLength={10}
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
+                className="pr-10 h-10 text-sm font-mono tracking-widest rounded-xl px-3.5"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={toggleShowConfirmPin}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                {isShowConfirmPin ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -12,3 +12,4 @@ email-validator
 httpx
 python-multipart
 openpyxl
+cryptography
