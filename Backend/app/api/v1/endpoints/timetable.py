@@ -14,10 +14,14 @@ from app.core.exceptions import BadRequestException
 from app.models.user import User
 from app.schemas.common import MessageResponse
 from app.schemas.timetable import (
+    FreeTeachersResponse,
+    MasterTimetableResponse,
+    TeacherScheduleResponse,
     TimetableEntryCreate,
     TimetableEntryRead,
     TimetableEntryUpdate,
     TimetableGridResponse,
+    TimetableInsightsResponse,
     TimetablePeriodCreate,
     TimetablePeriodRead,
     TimetablePeriodUpdate,
@@ -308,3 +312,79 @@ def delete_timetable_entry(
 
     service.delete_entry(school_id=school_id, entry_id=entry_id, user_id=current_user.id)
     return MessageResponse(message="Timetable entry deleted successfully.")
+
+
+# ===========================================================================
+# Multi-View & Insights Endpoints
+# ===========================================================================
+
+
+@router.get(
+    "/teacher/{teacher_id}",
+    response_model=TeacherScheduleResponse,
+    summary="Get Teacher Weekly Schedule",
+    description="Retrieve the complete weekly timetable schedule for a specific teacher.",
+)
+def get_teacher_schedule(
+    teacher_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+
+    return service.get_teacher_schedule(school_id=school_id, teacher_user_id=teacher_id)
+
+
+@router.get(
+    "/free-teachers",
+    response_model=FreeTeachersResponse,
+    summary="Get Free Teachers by Day and Time Intervals",
+    description="Scan and retrieve teacher availability for each timetable interval, grouped by day and time.",
+)
+def get_free_teachers(
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+    day_of_week: Annotated[str | None, Query(description="Optional filter by day of week")] = None,
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+
+    return service.get_free_teachers(school_id=school_id, day_of_week=day_of_week)
+
+
+@router.get(
+    "/master",
+    response_model=MasterTimetableResponse,
+    summary="Get Master Timetable (All Classes)",
+    description="Retrieve school-wide timetable for all classes and sections in a single batch.",
+)
+def get_master_timetable(
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+
+    return service.get_master_timetable(school_id=school_id)
+
+
+@router.get(
+    "/insights",
+    response_model=TimetableInsightsResponse,
+    summary="Get Timetable Status & Insights Dashboard Metrics",
+    description="Calculate scheduling completion, unassigned slots, teacher utilization, currently free teachers, conflicts, and coverage summary.",
+)
+def get_timetable_insights(
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+
+    return service.get_insights(school_id=school_id)
+

@@ -43,28 +43,28 @@ export function TimetableGrid({
   onDeleteEntry,
   canManage = false,
 }) {
-  // Determine initial view mode: 'day' for screens < 1024px, 'week' for wide desktop
-  const [viewMode, setViewMode] = useState(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      return "day"
+  // Mobile check (< 768px is mobile; >= 768px is tablets and web)
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth < 768
     }
-    return "week"
+    return false
   })
 
-  // Selected day for the responsive Day View
+  // For mobile devices, allow switching between 'day' and 'week' (defaults to 'day')
+  const [mobileTab, setMobileTab] = useState("day")
+
+  // Selected day for the responsive Day View (mobile)
   const [activeDay, setActiveDay] = useState(getTodayKey)
 
-  // Listen to window resize to suggest/default day mode on small screens
+  // Listen to window resize to track mobile vs tablet/web breakpoint
   useEffect(() => {
     const handleResize = () => {
-      // If screen is resized very small, auto-switch to Day view if currently in week view
-      if (window.innerWidth < 768 && viewMode === "week") {
-        setViewMode("day")
-      }
+      setIsMobile(window.innerWidth < 768)
     }
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
-  }, [viewMode])
+  }, [])
 
   // Index entries by `day_of_week` and `period_id` for O(1) lookup
   const entryMap = useMemo(() => {
@@ -111,78 +111,73 @@ export function TimetableGrid({
 
   return (
     <div className="w-full bg-card rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col">
-      {/* View Mode & Day Navigation Bar */}
-      <div className="p-3 sm:p-4 border-b border-border/80 bg-muted/20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Left: View Mode Toggle */}
-        <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-xl border border-border/60 self-start">
-          <button
-            type="button"
-            onClick={() => setViewMode("day")}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-              viewMode === "day"
-                ? "bg-background text-foreground shadow-xs border border-border/50"
-                : "text-muted-foreground hover:text-foreground hover:bg-background/40"
-            )}
-          >
-            <Calendar className="size-3.5" />
-            <span>Day Schedule</span>
-            <span className="text-[10px] py-0.2 px-1.5 rounded-full bg-primary/10 text-primary font-bold hidden sm:inline-block">
-              Mobile Friendly
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("week")}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-              viewMode === "week"
-                ? "bg-background text-foreground shadow-xs border border-border/50"
-                : "text-muted-foreground hover:text-foreground hover:bg-background/40"
-            )}
-          >
-            <LayoutGrid className="size-3.5" />
-            <span>Week Matrix</span>
-          </button>
-        </div>
+      {/* View Mode & Day Navigation Bar (Visible ONLY on mobile devices) */}
+      {isMobile && (
+        <div className="md:hidden p-3 border-b border-border/80 bg-muted/20 flex items-center justify-between gap-2">
+          {/* Left: View Mode Toggle */}
+          <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-xl border border-border/60">
+            <button
+              type="button"
+              onClick={() => setMobileTab("day")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                mobileTab === "day"
+                  ? "bg-background text-foreground shadow-xs border border-border/50"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/40"
+              )}
+            >
+              <Calendar className="size-3.5" />
+              <span>Day Schedule</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileTab("week")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                mobileTab === "week"
+                  ? "bg-background text-foreground shadow-xs border border-border/50"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/40"
+              )}
+            >
+              <LayoutGrid className="size-3.5" />
+              <span>Week Matrix</span>
+            </button>
+          </div>
 
-        {/* Right: Day Prev/Next Controls when in Day View */}
-        {viewMode === "day" && (
-          <div className="flex items-center justify-between sm:justify-end gap-2">
-            <div className="flex items-center gap-1">
+          {/* Right: Day Prev/Next Controls when in Day View on mobile */}
+          {mobileTab === "day" && (
+            <div className="flex items-center gap-1 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handlePrevDay}
-                className="h-8 px-2 rounded-lg text-xs"
+                className="h-8 w-8 p-0 rounded-lg text-xs"
                 title="Previous Day"
                 aria-label="Previous Day"
               >
                 <ChevronLeft className="size-4" />
-                <span className="hidden md:inline">Prev</span>
               </Button>
               <span className="text-xs font-bold text-foreground px-2 py-1 bg-muted/40 rounded-lg border border-border/40 whitespace-nowrap">
-                {currentDayObj.label}
+                {currentDayObj.short}
               </span>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleNextDay}
-                className="h-8 px-2 rounded-lg text-xs"
+                className="h-8 w-8 p-0 rounded-lg text-xs"
                 title="Next Day"
                 aria-label="Next Day"
               >
-                <span className="hidden md:inline">Next</span>
                 <ChevronRight className="size-4" />
               </Button>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* ===================== DAY VIEW (PERFECTLY RESPONSIVE, ZERO HORIZONTAL SCROLL) ===================== */}
-      {viewMode === "day" && (
-        <div className="p-3 sm:p-5 space-y-4">
+      {/* ===================== DAY VIEW (ONLY ON MOBILE DEVICES WHEN DAY SCHEDULE TAB IS ACTIVE) ===================== */}
+      {isMobile && mobileTab === "day" && (
+        <div className="md:hidden p-3 sm:p-5 space-y-4">
           {/* Day Pills Selector Bar */}
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 sm:gap-2">
             {DAYS.map((day) => {
@@ -257,7 +252,7 @@ export function TimetableGrid({
           </div>
 
           {/* Periods Cards List - 100% Responsive Grid with zero horizontal scroll */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className={cn("grid gap-3", periods.length === 1 ? "grid-cols-1 max-w-sm" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3")}>
             {periods.map((period) => {
               const entryKey = `${activeDay}_${period.id}`
               const entry = entryMap.get(entryKey) || null
@@ -384,8 +379,8 @@ export function TimetableGrid({
         </div>
       )}
 
-      {/* ===================== WEEKLY MATRIX VIEW (FLUID TABLE FOR DESKTOP) ===================== */}
-      {viewMode === "week" && (
+      {/* ===================== WEEKLY MATRIX VIEW (FOR WEB & TABLETS DIRECTLY, OR ON MOBILE WHEN WEEK MATRIX IS ACTIVE) ===================== */}
+      {(!isMobile || mobileTab === "week") && (
         <div>
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full border-collapse text-left">
@@ -393,7 +388,7 @@ export function TimetableGrid({
               <thead>
                 <tr className="border-b border-border/80 bg-muted/40">
                   {/* Sticky Day Column Header */}
-                  <th className="sticky left-0 z-20 bg-muted/95 backdrop-blur-xs py-3 px-3 text-xs font-bold text-muted-foreground uppercase tracking-wider w-24 sm:w-28 border-r border-border/60 text-center">
+                  <th className="sticky left-0 z-20 bg-muted/95 backdrop-blur-xs py-3 px-3 text-xs font-bold text-muted-foreground uppercase tracking-wider w-32 sm:w-36 border-r border-border/60 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <CalendarDays className="size-3.5 text-muted-foreground" />
                       <span>Day</span>
@@ -404,7 +399,7 @@ export function TimetableGrid({
                   {periods.map((period) => (
                     <th
                       key={period.id}
-                      className="py-2.5 px-2 sm:px-3 text-center text-xs font-bold border-r border-border/40 last:border-r-0 min-w-[120px] sm:min-w-[140px]"
+                      className="py-2.5 px-3 sm:px-4 text-center text-xs font-bold border-r border-border/40 min-w-[150px] sm:min-w-[170px] w-[180px] sm:w-[220px] max-w-[240px]"
                     >
                       <div className="flex flex-col items-center justify-center gap-0.5">
                         <div className="flex items-center justify-center gap-1">
@@ -424,6 +419,9 @@ export function TimetableGrid({
                       </div>
                     </th>
                   ))}
+
+                  {/* Spacer column to absorb remaining table width so single period does not stretch */}
+                  <th className="p-0 border-none w-auto" />
                 </tr>
               </thead>
 
@@ -432,7 +430,7 @@ export function TimetableGrid({
                 {DAYS.map((day) => (
                   <tr key={day.key} className="hover:bg-muted/10 transition-colors">
                     {/* Day Row Header (Sticky Left Y-Axis) */}
-                    <td className="sticky left-0 z-10 bg-card py-2.5 px-2 border-r border-border/60 shadow-xs align-middle text-center">
+                    <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border/60 shadow-xs align-middle text-center w-32 sm:w-36">
                       <div className="flex flex-col items-center justify-center text-center gap-0.5">
                         <span className="text-xs sm:text-sm font-bold text-foreground whitespace-nowrap">
                           {day.label}
@@ -451,7 +449,7 @@ export function TimetableGrid({
                       return (
                         <td
                           key={period.id}
-                          className="p-1.5 sm:p-2 border-r border-border/40 last:border-r-0 align-top"
+                          className="p-1.5 sm:p-2 border-r border-border/40 align-top min-w-[150px] sm:min-w-[170px] w-[180px] sm:w-[220px] max-w-[240px]"
                         >
                           <TimetableCell
                             entry={entry}
@@ -465,6 +463,9 @@ export function TimetableGrid({
                         </td>
                       )
                     })}
+
+                    {/* Spacer cell matching header spacer */}
+                    <td className="p-0 border-none w-auto" />
                   </tr>
                 ))}
               </tbody>

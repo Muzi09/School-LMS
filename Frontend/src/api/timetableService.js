@@ -45,6 +45,23 @@ export const getSchoolClassesApi = async () => {
   return await apiClient.get("/school/classes")
 }
 
+export const getTeacherScheduleApi = async (teacherId) => {
+  return await apiClient.get(`/timetable/teacher/${teacherId}`)
+}
+
+export const getFreeTeachersApi = async (dayOfWeek) => {
+  const query = dayOfWeek ? `?day_of_week=${encodeURIComponent(dayOfWeek)}` : ""
+  return await apiClient.get(`/timetable/free-teachers${query}`)
+}
+
+export const getMasterTimetableApi = async () => {
+  return await apiClient.get("/timetable/master")
+}
+
+export const getTimetableInsightsApi = async () => {
+  return await apiClient.get("/timetable/insights")
+}
+
 export const timetableService = {
   getTimetable: getTimetableApi,
   createEntry: createTimetableEntryApi,
@@ -56,6 +73,10 @@ export const timetableService = {
   deletePeriod: deletePeriodApi,
   getTeachers: getEligibleTeachersApi,
   getClasses: getSchoolClassesApi,
+  getTeacherSchedule: getTeacherScheduleApi,
+  getFreeTeachers: getFreeTeachersApi,
+  getMasterTimetable: getMasterTimetableApi,
+  getTimetableInsights: getTimetableInsightsApi,
 }
 
 export default timetableService

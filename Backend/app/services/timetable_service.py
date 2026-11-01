@@ -324,6 +324,7 @@ class TimetableService:
 
         entries = (
             self.db.query(TimetableEntry)
+            .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
             .options(
                 joinedload(TimetableEntry.subject).joinedload(Subject.parent),
                 joinedload(TimetableEntry.teacher).joinedload(User.staff_profile),
@@ -334,6 +335,7 @@ class TimetableService:
                 TimetableEntry.section_id == section_id,
                 TimetableEntry.deleted_at.is_(None),
             )
+            .order_by(TimetablePeriod.period_number.asc(), TimetableEntry.created_at.asc())
             .all()
         )
 
@@ -806,3 +808,538 @@ class TimetableService:
         entry.deleted_at = now
         entry.deleted_by = user_id
         self.db.commit()
+
+    # =========================================================================
+    # MULTI-VIEW & INSIGHTS SERVICES
+    # =========================================================================
+
+    def get_teacher_schedule(self, school_id: UUID, teacher_user_id: UUID) -> Dict[str, Any]:
+        """
+        Fetch weekly timetable schedule for a specific teacher across all classes and sections.
+        Ensures school isolation and active staff eligibility.
+        """
+        teacher = (
+            self.db.query(User)
+            .join(StaffProfile, StaffProfile.user_id == User.id)
+            .options(joinedload(User.staff_profile))
+            .filter(
+                User.id == teacher_user_id,
+                StaffProfile.school_id == school_id,
+                User.is_active.is_(True),
+                User.deleted_at.is_(None),
+                User.role == UserRole.STAFF,
+            )
+            .first()
+        )
+        if not teacher:
+            raise NotFoundException("Teacher not found or not an active staff member of this school.")
+
+        sp = teacher.staff_profile
+        teacher_data = {
+            "id": teacher.id,
+            "name": f"{teacher.first_name} {teacher.last_name}".strip(),
+            "first_name": teacher.first_name,
+            "last_name": teacher.last_name,
+            "email": teacher.email,
+            "roll_no": sp.roll_no if sp else None,
+            "department": sp.department if sp else None,
+            "designation": sp.designation if sp else None,
+        }
+
+        periods = self.list_periods(school_id)
+        periods_data = [
+            {
+                "id": p.id,
+                "school_id": p.school_id,
+                "period_number": p.period_number,
+                "start_time": _format_time(p.start_time),
+                "end_time": _format_time(p.end_time),
+                "created_at": p.created_at,
+                "updated_at": p.updated_at,
+            }
+            for p in periods
+        ]
+
+        entries = (
+            self.db.query(TimetableEntry)
+            .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
+            .join(Section, Section.id == TimetableEntry.section_id)
+            .outerjoin(SchoolClass, SchoolClass.id == Section.class_id)
+            .options(
+                joinedload(TimetableEntry.subject).joinedload(Subject.parent),
+                joinedload(TimetableEntry.section).joinedload(Section.school_class),
+                joinedload(TimetableEntry.period),
+            )
+            .filter(
+                TimetableEntry.school_id == school_id,
+                TimetableEntry.teacher_user_id == teacher_user_id,
+                TimetableEntry.deleted_at.is_(None),
+            )
+            .order_by(TimetablePeriod.period_number.asc(), TimetableEntry.created_at.asc())
+            .all()
+        )
+
+        entries_data = []
+        for e in entries:
+            sec = e.section
+            cls_name = sec.school_class.name if sec and sec.school_class else ""
+            sec_name = sec.name if sec else ""
+            p = e.period
+            entries_data.append({
+                "id": e.id,
+                "school_id": e.school_id,
+                "section_id": e.section_id,
+                "class_id": sec.class_id if sec else None,
+                "class_name": cls_name,
+                "section_name": sec_name,
+                "period_id": e.period_id,
+                "period_number": p.period_number if p else 0,
+                "day_of_week": e.day_of_week,
+                "start_time": _format_time(p.start_time) if p else "",
+                "end_time": _format_time(p.end_time) if p else "",
+                "subject": {
+                    "id": e.subject.id,
+                    "name": e.subject.name,
+                    "code": e.subject.code,
+                    "category": e.subject.category,
+                    "is_academic": e.subject.is_academic,
+                    "parent_id": getattr(e.subject, "parent_id", None),
+                    "parent_name": e.subject.parent.name if getattr(e.subject, "parent", None) else None,
+                } if e.subject else None,
+            })
+
+        return {
+            "teacher": teacher_data,
+            "periods": periods_data,
+            "entries": entries_data,
+            "total_teaching_periods": len(entries_data),
+        }
+
+    def get_free_teachers(self, school_id: UUID, day_of_week: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Scan and calculate teacher availability across all actual time intervals / periods.
+        Avoids N+1 queries by fetching all teachers, periods, and entries in single queries.
+        """
+        periods = self.list_periods(school_id)
+        periods_data = [
+            {
+                "id": p.id,
+                "school_id": p.school_id,
+                "period_number": p.period_number,
+                "start_time": _format_time(p.start_time),
+                "end_time": _format_time(p.end_time),
+                "created_at": p.created_at,
+                "updated_at": p.updated_at,
+            }
+            for p in periods
+        ]
+
+        all_teachers = self.list_eligible_teachers(school_id)
+
+        valid_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+        if day_of_week and day_of_week.upper() in valid_days:
+            target_days = [day_of_week.upper()]
+        else:
+            target_days = valid_days
+
+        entries_query = (
+            self.db.query(TimetableEntry)
+            .options(
+                joinedload(TimetableEntry.teacher).joinedload(User.staff_profile),
+                joinedload(TimetableEntry.section).joinedload(Section.school_class),
+                joinedload(TimetableEntry.subject),
+                joinedload(TimetableEntry.period),
+            )
+            .filter(
+                TimetableEntry.school_id == school_id,
+                TimetableEntry.deleted_at.is_(None),
+                TimetableEntry.teacher_user_id.isnot(None),
+                TimetableEntry.day_of_week.in_(target_days),
+            )
+        )
+        entries = entries_query.all()
+
+        # Map: (day, period_id) -> list of occupied teacher info
+        occupied_by_slot: Dict[Tuple[str, UUID], List[Dict[str, Any]]] = {}
+        for e in entries:
+            key = (e.day_of_week, e.period_id)
+            if key not in occupied_by_slot:
+                occupied_by_slot[key] = []
+
+            t = e.teacher
+            sp = t.staff_profile if t else None
+            sec = e.section
+            cls_name = sec.school_class.name if sec and sec.school_class else ""
+
+            occupied_by_slot[key].append({
+                "teacher": {
+                    "id": t.id,
+                    "name": f"{t.first_name} {t.last_name}".strip() if t else "Unknown",
+                    "first_name": t.first_name if t else "",
+                    "last_name": t.last_name if t else "",
+                    "email": t.email if t else None,
+                    "roll_no": sp.roll_no if sp else None,
+                    "department": sp.department if sp else None,
+                    "designation": sp.designation if sp else None,
+                } if t else None,
+                "section": {
+                    "id": sec.id if sec else e.section_id,
+                    "class_id": sec.class_id if sec else None,
+                    "class_name": cls_name,
+                    "section_name": sec.name if sec else "",
+                },
+                "subject": {
+                    "id": e.subject.id,
+                    "name": e.subject.name,
+                    "code": e.subject.code,
+                    "category": e.subject.category,
+                    "is_academic": e.subject.is_academic,
+                } if e.subject else None,
+            })
+
+        days_data = []
+        for day in target_days:
+            slot_infos = []
+            for p in periods:
+                key = (day, p.id)
+                occ_list = occupied_by_slot.get(key, [])
+                occ_teacher_ids = {item["teacher"]["id"] for item in occ_list if item.get("teacher")}
+
+                free_teachers = [t for t in all_teachers if t["id"] not in occ_teacher_ids]
+
+                slot_infos.append({
+                    "period_id": p.id,
+                    "period_number": p.period_number,
+                    "start_time": _format_time(p.start_time),
+                    "end_time": _format_time(p.end_time),
+                    "free_teachers": free_teachers,
+                    "occupied_teachers": occ_list,
+                    "free_count": len(free_teachers),
+                    "occupied_count": len(occ_list),
+                })
+            days_data.append({
+                "day_of_week": day,
+                "periods": slot_infos,
+            })
+
+        return {
+            "periods": periods_data,
+            "days": days_data,
+            "total_teachers": len(all_teachers),
+        }
+
+    def get_master_timetable(self, school_id: UUID) -> Dict[str, Any]:
+        """
+        Fetch master schedule with all classes, sections, periods, and entries in single batch queries.
+        Optimized for school-wide monitoring.
+        """
+        periods = self.list_periods(school_id)
+        periods_data = [
+            {
+                "id": p.id,
+                "school_id": p.school_id,
+                "period_number": p.period_number,
+                "start_time": _format_time(p.start_time),
+                "end_time": _format_time(p.end_time),
+                "created_at": p.created_at,
+                "updated_at": p.updated_at,
+            }
+            for p in periods
+        ]
+
+        sections = (
+            self.db.query(Section)
+            .join(SchoolClass, SchoolClass.id == Section.class_id)
+            .options(joinedload(Section.school_class))
+            .filter(
+                Section.school_id == school_id,
+                Section.deleted_at.is_(None),
+                SchoolClass.deleted_at.is_(None),
+            )
+            .order_by(SchoolClass.order_index.asc(), SchoolClass.name.asc(), Section.name.asc())
+            .all()
+        )
+
+        sections_data = [
+            {
+                "id": s.id,
+                "class_id": s.class_id,
+                "class_name": s.school_class.name if s.school_class else "",
+                "section_name": s.name,
+                "display_name": f"{s.school_class.name} - {s.name}" if s.school_class else s.name,
+            }
+            for s in sections
+        ]
+
+        entries = (
+            self.db.query(TimetableEntry)
+            .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
+            .options(
+                joinedload(TimetableEntry.subject).joinedload(Subject.parent),
+                joinedload(TimetableEntry.teacher).joinedload(User.staff_profile),
+                joinedload(TimetableEntry.period),
+            )
+            .filter(
+                TimetableEntry.school_id == school_id,
+                TimetableEntry.deleted_at.is_(None),
+            )
+            .order_by(TimetablePeriod.period_number.asc(), TimetableEntry.created_at.asc())
+            .all()
+        )
+
+        entries_data = []
+        for e in entries:
+            t = e.teacher
+            sp = t.staff_profile if t else None
+            p = e.period
+            entries_data.append({
+                "id": e.id,
+                "school_id": e.school_id,
+                "section_id": e.section_id,
+                "period_id": e.period_id,
+                "period_number": p.period_number if p else 0,
+                "day_of_week": e.day_of_week,
+                "start_time": _format_time(p.start_time) if p else "",
+                "end_time": _format_time(p.end_time) if p else "",
+                "subject": {
+                    "id": e.subject.id,
+                    "name": e.subject.name,
+                    "code": e.subject.code,
+                    "category": e.subject.category,
+                    "is_academic": e.subject.is_academic,
+                    "parent_id": getattr(e.subject, "parent_id", None),
+                    "parent_name": e.subject.parent.name if getattr(e.subject, "parent", None) else None,
+                } if e.subject else None,
+                "teacher": {
+                    "id": t.id,
+                    "name": f"{t.first_name} {t.last_name}".strip(),
+                    "first_name": t.first_name,
+                    "last_name": t.last_name,
+                    "email": t.email,
+                    "roll_no": sp.roll_no if sp else None,
+                    "department": sp.department if sp else None,
+                    "designation": sp.designation if sp else None,
+                } if t else None,
+            })
+
+        return {
+            "periods": periods_data,
+            "sections": sections_data,
+            "entries": entries_data,
+        }
+
+    def get_insights(self, school_id: UUID) -> Dict[str, Any]:
+        """
+        Calculate complete timetable status & insights grid metrics:
+        - Total scheduled periods
+        - Assignment completion percentage & unassigned slots (with 'Not configured' state handling)
+        - Teacher utilization
+        - Currently free teachers
+        - Scheduling conflicts scan
+        - Coverage summary across classes/sections
+        """
+        periods = self.list_periods(school_id)
+        sections = (
+            self.db.query(Section)
+            .join(SchoolClass, SchoolClass.id == Section.class_id)
+            .options(joinedload(Section.school_class))
+            .filter(
+                Section.school_id == school_id,
+                Section.deleted_at.is_(None),
+                SchoolClass.deleted_at.is_(None),
+            )
+            .order_by(SchoolClass.order_index.asc(), SchoolClass.name.asc(), Section.name.asc())
+            .all()
+        )
+        teachers = self.list_eligible_teachers(school_id)
+
+        entries = (
+            self.db.query(TimetableEntry)
+            .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
+            .options(
+                joinedload(TimetableEntry.subject),
+                joinedload(TimetableEntry.teacher).joinedload(User.staff_profile),
+                joinedload(TimetableEntry.section).joinedload(Section.school_class),
+                joinedload(TimetableEntry.period),
+            )
+            .filter(
+                TimetableEntry.school_id == school_id,
+                TimetableEntry.deleted_at.is_(None),
+            )
+            .all()
+        )
+
+        num_periods = len(periods)
+        num_sections = len(sections)
+        num_teachers = len(teachers)
+        working_days = 6  # Monday to Saturday
+        is_configured = num_periods > 0 and num_sections > 0
+
+        total_scheduled = len(entries)
+
+        if is_configured:
+            total_expected_slots = num_sections * num_periods * working_days
+            assignment_completion_pct = (
+                round((total_scheduled / total_expected_slots) * 100, 1)
+                if total_expected_slots > 0 else 0.0
+            )
+            unassigned_slots = max(0, total_expected_slots - total_scheduled)
+        else:
+            total_expected_slots = None
+            assignment_completion_pct = None
+            unassigned_slots = None
+
+        # Teacher capacity & utilization
+        total_teacher_capacity = num_teachers * num_periods * working_days
+        if total_teacher_capacity > 0 and num_teachers > 0:
+            assigned_teacher_entries = sum(1 for e in entries if e.teacher_user_id is not None)
+            teacher_utilization_pct = round((assigned_teacher_entries / total_teacher_capacity) * 100, 1)
+        else:
+            teacher_utilization_pct = None
+
+        # Conflicts scan
+        section_slot_map: Dict[Tuple[UUID, str, UUID], List[TimetableEntry]] = {}
+        teacher_slot_map: Dict[Tuple[UUID, str, UUID], List[TimetableEntry]] = {}
+
+        for e in entries:
+            sec_key = (e.section_id, e.day_of_week, e.period_id)
+            if sec_key not in section_slot_map:
+                section_slot_map[sec_key] = []
+            section_slot_map[sec_key].append(e)
+
+            if e.teacher_user_id:
+                tch_key = (e.teacher_user_id, e.day_of_week, e.period_id)
+                if tch_key not in teacher_slot_map:
+                    teacher_slot_map[tch_key] = []
+                teacher_slot_map[tch_key].append(e)
+
+        conflicts = []
+        for (sec_id, day, period_id), slot_entries in section_slot_map.items():
+            if len(slot_entries) > 1:
+                first = slot_entries[0]
+                p = first.period
+                sec = first.section
+                cls_name = sec.school_class.name if sec and sec.school_class else ""
+                sec_name = sec.name if sec else ""
+                conflicts.append({
+                    "type": "SECTION_CONFLICT",
+                    "day_of_week": day,
+                    "period_number": p.period_number if p else 0,
+                    "start_time": _format_time(p.start_time) if p else "",
+                    "end_time": _format_time(p.end_time) if p else "",
+                    "description": f"Multiple lessons scheduled for {cls_name}-{sec_name} on {day} Period {p.period_number if p else ''}",
+                    "section_id": sec_id,
+                    "class_name": cls_name,
+                    "section_name": sec_name,
+                    "teacher_id": None,
+                    "teacher_name": None,
+                    "entry_ids": [se.id for se in slot_entries],
+                })
+
+        for (tch_id, day, period_id), slot_entries in teacher_slot_map.items():
+            if len(slot_entries) > 1:
+                first = slot_entries[0]
+                p = first.period
+                t = first.teacher
+                tch_name = f"{t.first_name} {t.last_name}".strip() if t else "Teacher"
+                conflicts.append({
+                    "type": "TEACHER_CONFLICT",
+                    "day_of_week": day,
+                    "period_number": p.period_number if p else 0,
+                    "start_time": _format_time(p.start_time) if p else "",
+                    "end_time": _format_time(p.end_time) if p else "",
+                    "description": f"{tch_name} is double-booked across {len(slot_entries)} classes on {day} Period {p.period_number if p else ''}",
+                    "section_id": None,
+                    "class_name": None,
+                    "section_name": None,
+                    "teacher_id": tch_id,
+                    "teacher_name": tch_name,
+                    "entry_ids": [se.id for se in slot_entries],
+                })
+
+        # Coverage summary per section
+        entries_by_section: Dict[UUID, int] = {}
+        for e in entries:
+            entries_by_section[e.section_id] = entries_by_section.get(e.section_id, 0) + 1
+
+        expected_per_sec = num_periods * working_days if num_periods > 0 else 0
+        section_coverage_list = []
+        complete_count = 0
+        partial_count = 0
+        missing_count = 0
+
+        for s in sections:
+            cnt = entries_by_section.get(s.id, 0)
+            cls_name = s.school_class.name if s.school_class else ""
+            if not is_configured or expected_per_sec == 0:
+                status_str = "MISSING" if cnt == 0 else "PARTIAL"
+                pct = 0.0
+            elif cnt >= expected_per_sec:
+                status_str = "COMPLETE"
+                pct = 100.0
+            elif cnt == 0:
+                status_str = "MISSING"
+                pct = 0.0
+            else:
+                status_str = "PARTIAL"
+                pct = round((cnt / expected_per_sec) * 100, 1)
+
+            if status_str == "COMPLETE":
+                complete_count += 1
+            elif status_str == "PARTIAL":
+                partial_count += 1
+            else:
+                missing_count += 1
+
+            section_coverage_list.append({
+                "section_id": s.id,
+                "class_id": s.class_id,
+                "class_name": cls_name,
+                "section_name": s.name,
+                "scheduled_periods": cnt,
+                "expected_periods": expected_per_sec,
+                "completion_percentage": pct,
+                "status": status_str,
+            })
+
+        # Calculate currently free teachers
+        now = datetime.now()
+        now_time = now.time()
+        weekday_idx = now.weekday()  # 0=Monday, 5=Saturday, 6=Sunday
+        days_names = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+        free_teachers_now = num_teachers
+
+        if weekday_idx < 6 and num_periods > 0 and num_teachers > 0:
+            today_day = days_names[weekday_idx]
+            current_period = next(
+                (p for p in periods if p.start_time <= now_time <= p.end_time),
+                None,
+            )
+            if current_period:
+                occupied_now = {
+                    e.teacher_user_id
+                    for e in entries
+                    if e.day_of_week == today_day
+                    and e.period_id == current_period.id
+                    and e.teacher_user_id is not None
+                }
+                free_teachers_now = max(0, num_teachers - len(occupied_now))
+
+        return {
+            "is_configured": is_configured,
+            "total_scheduled_periods": total_scheduled,
+            "total_expected_slots": total_expected_slots,
+            "assignment_completion_percentage": assignment_completion_pct,
+            "unassigned_slots": unassigned_slots,
+            "total_teachers": num_teachers,
+            "teacher_utilization_percentage": teacher_utilization_pct,
+            "free_teachers_now_count": free_teachers_now if num_teachers > 0 else 0,
+            "conflict_count": len(conflicts),
+            "conflicts": conflicts,
+            "coverage_summary": {
+                "complete_count": complete_count,
+                "partial_count": partial_count,
+                "missing_count": missing_count,
+                "sections": section_coverage_list,
+            },
+        }

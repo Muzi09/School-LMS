@@ -10,6 +10,10 @@ import {
   deletePeriodApi,
   getEligibleTeachersApi,
   getSchoolClassesApi,
+  getTeacherScheduleApi,
+  getFreeTeachersApi,
+  getMasterTimetableApi,
+  getTimetableInsightsApi,
 } from "@/api/timetableService"
 
 export const timetableKeys = {
@@ -18,6 +22,10 @@ export const timetableKeys = {
   periods: () => ["timetable-periods"],
   teachers: () => ["timetable-teachers"],
   grid: (sectionId) => ["timetable", "grid", sectionId],
+  teacherSchedule: (teacherId) => ["timetable", "teacher", teacherId],
+  freeTeachers: (day) => ["timetable", "free-teachers", day || "all"],
+  master: () => ["timetable", "master"],
+  insights: () => ["timetable", "insights"],
 }
 
 /**
@@ -65,7 +73,52 @@ export function useTimetable(sectionId) {
 }
 
 /**
- * Create timetable entry mutation with automatic grid cache invalidation.
+ * Fetch weekly timetable schedule for a specific teacher.
+ */
+export function useTeacherSchedule(teacherId) {
+  return useQuery({
+    queryKey: timetableKeys.teacherSchedule(teacherId),
+    queryFn: () => getTeacherScheduleApi(teacherId),
+    enabled: Boolean(teacherId),
+    staleTime: 30 * 1000,
+  })
+}
+
+/**
+ * Fetch free vs occupied teacher availability across intervals.
+ */
+export function useFreeTeachers(dayOfWeek = null) {
+  return useQuery({
+    queryKey: timetableKeys.freeTeachers(dayOfWeek),
+    queryFn: () => getFreeTeachersApi(dayOfWeek),
+    staleTime: 30 * 1000,
+  })
+}
+
+/**
+ * Fetch master timetable for all classes and sections.
+ */
+export function useMasterTimetable() {
+  return useQuery({
+    queryKey: timetableKeys.master(),
+    queryFn: getMasterTimetableApi,
+    staleTime: 30 * 1000,
+  })
+}
+
+/**
+ * Fetch timetable status & insights metrics.
+ */
+export function useTimetableInsights() {
+  return useQuery({
+    queryKey: timetableKeys.insights(),
+    queryFn: getTimetableInsightsApi,
+    staleTime: 30 * 1000,
+  })
+}
+
+/**
+ * Create timetable entry mutation with automatic grid and insights cache invalidation.
  */
 export function useCreateTimetableEntry() {
   const queryClient = useQueryClient()
@@ -74,6 +127,7 @@ export function useCreateTimetableEntry() {
     mutationFn: (payload) => createTimetableEntryApi(payload),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.section_id) })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     },
   })
 }
@@ -89,9 +143,8 @@ export function useUpdateTimetableEntry() {
     onSuccess: (_, variables) => {
       if (variables.sectionId) {
         queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId) })
-      } else {
-        queryClient.invalidateQueries({ queryKey: timetableKeys.all })
       }
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     },
   })
 }
@@ -107,16 +160,15 @@ export function useDeleteTimetableEntry() {
     onSuccess: (_, variables) => {
       if (variables.sectionId) {
         queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId) })
-      } else {
-        queryClient.invalidateQueries({ queryKey: timetableKeys.all })
       }
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     },
   })
 }
 
 /**
  * Period Mutations: Create, Update, Delete.
- * Invalidates both periods and all timetable grids to keep timings synced.
+ * Invalidates periods and all timetable queries.
  */
 export function useCreatePeriod() {
   const queryClient = useQueryClient()
