@@ -14,6 +14,24 @@ import {
   getFreeTeachersApi,
   getMasterTimetableApi,
   getTimetableInsightsApi,
+  // Redeveloped multi-timetable & setups
+  listTimetablesApi,
+  getActiveTimetableApi,
+  createTimetableApi,
+  updateTimetableApi,
+  activateTimetableApi,
+  duplicateTimetableApi,
+  deleteTimetableApi,
+  listSetupsApi,
+  createSetupApi,
+  updateSetupApi,
+  duplicateSetupApi,
+  deleteSetupApi,
+  previewSetupsImpactApi,
+  batchSaveSetupsApi,
+  getClassWiseTimetableApi,
+  checkConflictApi,
+  bulkAssignSlotApi,
 } from "@/api/timetableService"
 
 export const timetableKeys = {
@@ -26,6 +44,12 @@ export const timetableKeys = {
   freeTeachers: (day) => ["timetable", "free-teachers", day || "all"],
   master: () => ["timetable", "master"],
   insights: () => ["timetable", "insights"],
+
+  // New keys
+  timetables: () => ["timetable", "list"],
+  activeTimetable: () => ["timetable", "active"],
+  setups: (timetableId) => ["timetable", "setups", timetableId],
+  classWise: (timetableId, wingId) => ["timetable", "class-wise", timetableId || "active", wingId || "all"],
 }
 
 /**
@@ -117,9 +141,141 @@ export function useTimetableInsights() {
   })
 }
 
-/**
- * Create timetable entry mutation with automatic grid and insights cache invalidation.
- */
+// =========================================================================
+// Multi-Timetable Hooks
+// =========================================================================
+
+export function useTimetables() {
+  return useQuery({
+    queryKey: timetableKeys.timetables(),
+    queryFn: listTimetablesApi,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useActiveTimetable() {
+  return useQuery({
+    queryKey: timetableKeys.activeTimetable(),
+    queryFn: getActiveTimetableApi,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useCreateTimetable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload) => createTimetableApi(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+    },
+  })
+}
+
+export function useUpdateTimetable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ timetableId, payload }) => updateTimetableApi(timetableId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+    },
+  })
+}
+
+export function useActivateTimetable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (timetableId) => activateTimetableApi(timetableId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+    },
+  })
+}
+
+export function useDuplicateTimetable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ timetableId, name }) => duplicateTimetableApi(timetableId, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+    },
+  })
+}
+
+export function useDeleteTimetable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (timetableId) => deleteTimetableApi(timetableId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+    },
+  })
+}
+
+// =========================================================================
+// Setups & Bell Schedule Hooks
+// =========================================================================
+
+export function useSetups(timetableId) {
+  return useQuery({
+    queryKey: timetableKeys.setups(timetableId),
+    queryFn: () => listSetupsApi(timetableId),
+    enabled: Boolean(timetableId),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useBatchSaveSetups() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload) => batchSaveSetupsApi(payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.setups(variables.timetable_id) })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+    },
+  })
+}
+
+// =========================================================================
+// Class-Wise Perspective Hooks
+// =========================================================================
+
+export function useClassWiseTimetable({ timetableId = null, wingId = null } = {}) {
+  return useQuery({
+    queryKey: timetableKeys.classWise(timetableId, wingId),
+    queryFn: () => getClassWiseTimetableApi({ timetableId, wingId }),
+    staleTime: 20 * 1000,
+  })
+}
+
+export function useCheckConflict() {
+  return useMutation({
+    mutationFn: (payload) => checkConflictApi(payload),
+  })
+}
+
+export function useBulkAssignSlot() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload) => bulkAssignSlotApi(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+    },
+  })
+}
+
+// =========================================================================
+// Slot Mutations
+// =========================================================================
+
 export function useCreateTimetableEntry() {
   const queryClient = useQueryClient()
 
@@ -132,16 +288,13 @@ export function useCreateTimetableEntry() {
   })
 }
 
-/**
- * Update timetable entry mutation.
- */
 export function useUpdateTimetableEntry() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: ({ entryId, payload, sectionId }) => updateTimetableEntryApi(entryId, payload),
     onSuccess: (_, variables) => {
-      if (variables.sectionId) {
+      if (variables?.sectionId) {
         queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId) })
       }
       queryClient.invalidateQueries({ queryKey: timetableKeys.all })
@@ -149,16 +302,13 @@ export function useUpdateTimetableEntry() {
   })
 }
 
-/**
- * Delete timetable entry mutation.
- */
 export function useDeleteTimetableEntry() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: ({ entryId, sectionId }) => deleteTimetableEntryApi(entryId),
     onSuccess: (_, variables) => {
-      if (variables.sectionId) {
+      if (variables?.sectionId) {
         queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId) })
       }
       queryClient.invalidateQueries({ queryKey: timetableKeys.all })
@@ -166,10 +316,6 @@ export function useDeleteTimetableEntry() {
   })
 }
 
-/**
- * Period Mutations: Create, Update, Delete.
- * Invalidates periods and all timetable queries.
- */
 export function useCreatePeriod() {
   const queryClient = useQueryClient()
 

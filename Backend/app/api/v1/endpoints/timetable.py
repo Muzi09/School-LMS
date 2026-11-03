@@ -1,4 +1,4 @@
-from typing import Annotated, List
+from typing import Annotated, Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -14,9 +14,16 @@ from app.core.exceptions import BadRequestException
 from app.models.user import User
 from app.schemas.common import MessageResponse
 from app.schemas.timetable import (
+    BatchSetupAssignmentsRequest,
+    BulkSlotAssignRequest,
+    ClassWiseTimetableResponse,
+    ConflictCheckRequest,
+    ConflictCheckResponse,
     FreeTeachersResponse,
+    ImpactPreviewResponse,
     MasterTimetableResponse,
     TeacherScheduleResponse,
+    TimetableCreate,
     TimetableEntryCreate,
     TimetableEntryRead,
     TimetableEntryUpdate,
@@ -25,7 +32,12 @@ from app.schemas.timetable import (
     TimetablePeriodCreate,
     TimetablePeriodRead,
     TimetablePeriodUpdate,
+    TimetableRead,
+    TimetableSetupCreate,
+    TimetableSetupRead,
+    TimetableSetupUpdate,
     TimetableTeacherRead,
+    TimetableUpdate,
 )
 from app.services.timetable_service import TimetableService
 
@@ -387,4 +399,332 @@ def get_timetable_insights(
         raise BadRequestException("User does not belong to a school.")
 
     return service.get_insights(school_id=school_id)
+
+
+# ===========================================================================
+# Timetable CRUD & Active Management Endpoints
+# ===========================================================================
+
+
+@router.get(
+    "/timetables",
+    response_model=List[TimetableRead],
+    summary="List All Timetables",
+    description="Retrieve all timetables (active, inactive, draft) for the school.",
+)
+def list_timetables(
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        return []
+    return service.list_timetables(school_id=school_id)
+
+
+@router.get(
+    "/timetables/active",
+    response_model=TimetableRead,
+    summary="Get Active Timetable",
+    description="Retrieve the currently active school timetable.",
+)
+def get_active_timetable(
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.get_active_timetable(school_id=school_id)
+
+
+@router.post(
+    "/timetables",
+    response_model=TimetableRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create New Timetable",
+    description="Create a new timetable (blank, duplicated, or copy bell schedule).",
+)
+def create_timetable(
+    data: TimetableCreate,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.create_timetable(school_id=school_id, data=data, user_id=current_user.id)
+
+
+@router.get(
+    "/timetables/{timetable_id}",
+    response_model=TimetableRead,
+    summary="Get Timetable by ID",
+)
+def get_timetable(
+    timetable_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.get_timetable_by_id(school_id=school_id, timetable_id=timetable_id)
+
+
+@router.put(
+    "/timetables/{timetable_id}",
+    response_model=TimetableRead,
+    summary="Update Timetable Details",
+)
+def update_timetable(
+    timetable_id: UUID,
+    data: TimetableUpdate,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.update_timetable(school_id=school_id, timetable_id=timetable_id, data=data, user_id=current_user.id)
+
+
+@router.post(
+    "/timetables/{timetable_id}/activate",
+    response_model=TimetableRead,
+    summary="Set Timetable as Active",
+    description="Activate this timetable, deactivating all other timetables for this school.",
+)
+def activate_timetable(
+    timetable_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.activate_timetable(school_id=school_id, timetable_id=timetable_id, user_id=current_user.id)
+
+
+@router.post(
+    "/timetables/{timetable_id}/duplicate",
+    response_model=TimetableRead,
+    summary="Duplicate Timetable",
+)
+def duplicate_timetable(
+    timetable_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+    name: Optional[str] = Query(None, description="Optional custom name for duplicated timetable"),
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.duplicate_timetable(school_id=school_id, timetable_id=timetable_id, user_id=current_user.id, new_name=name)
+
+
+@router.delete(
+    "/timetables/{timetable_id}",
+    response_model=MessageResponse,
+    summary="Delete Timetable",
+)
+def delete_timetable(
+    timetable_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    service.delete_timetable(school_id=school_id, timetable_id=timetable_id, user_id=current_user.id)
+    return MessageResponse(message="Timetable deleted successfully.")
+
+
+# ===========================================================================
+# Bell Schedule Setup Endpoints
+# ===========================================================================
+
+
+@router.get(
+    "/setups",
+    response_model=List[TimetableSetupRead],
+    summary="List Bell Schedule Setups",
+    description="Retrieve all bell schedule setups for a timetable with periods and assigned classes.",
+)
+def list_setups(
+    timetable_id: Annotated[UUID, Query(..., description="Target Timetable UUID")],
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        return []
+    return service.list_setups(school_id=school_id, timetable_id=timetable_id)
+
+
+@router.post(
+    "/setups",
+    response_model=TimetableSetupRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Bell Schedule Setup",
+)
+def create_setup(
+    data: TimetableSetupCreate,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    setup = service.create_setup(school_id=school_id, data=data, user_id=current_user.id)
+    setups = service.list_setups(school_id=school_id, timetable_id=data.timetable_id)
+    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
+    return matched or setups[0]
+
+
+@router.put(
+    "/setups/{setup_id}",
+    response_model=TimetableSetupRead,
+    summary="Update Bell Schedule Setup",
+)
+def update_setup(
+    setup_id: UUID,
+    data: TimetableSetupUpdate,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    setup = service.update_setup(school_id=school_id, setup_id=setup_id, data=data, user_id=current_user.id)
+    setups = service.list_setups(school_id=school_id, timetable_id=setup.timetable_id)
+    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
+    return matched or setups[0]
+
+
+@router.post(
+    "/setups/{setup_id}/duplicate",
+    response_model=TimetableSetupRead,
+    summary="Duplicate Bell Schedule Setup",
+)
+def duplicate_setup(
+    setup_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    setup = service.duplicate_setup(school_id=school_id, setup_id=setup_id, user_id=current_user.id)
+    setups = service.list_setups(school_id=school_id, timetable_id=setup.timetable_id)
+    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
+    return matched or setups[0]
+
+
+@router.delete(
+    "/setups/{setup_id}",
+    response_model=MessageResponse,
+    summary="Delete Bell Schedule Setup",
+)
+def delete_setup(
+    setup_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    service.delete_setup(school_id=school_id, setup_id=setup_id, user_id=current_user.id)
+    return MessageResponse(message="Setup deleted successfully.")
+
+
+@router.post(
+    "/setups/preview-impact",
+    response_model=ImpactPreviewResponse,
+    summary="Preview Impact of Bell Schedule Changes",
+    description="Check whether modifying or removing periods will affect existing scheduled classes.",
+)
+def preview_impact(
+    data: BatchSetupAssignmentsRequest,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.preview_setups_impact(school_id=school_id, timetable_id=data.timetable_id, data=data)
+
+
+@router.post(
+    "/setups/batch-save",
+    response_model=List[TimetableSetupRead],
+    summary="Batch Save Setups and Applicability Assignments",
+    description="Persist all bell setups, period configurations, and class applicability mappings at once.",
+)
+def batch_save_setups(
+    data: BatchSetupAssignmentsRequest,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.batch_save_setups(school_id=school_id, timetable_id=data.timetable_id, data=data, user_id=current_user.id)
+
+
+# ===========================================================================
+# Class-Wise Timetable & Bulk Assign Endpoints
+# ===========================================================================
+
+
+@router.get(
+    "/class-wise",
+    response_model=ClassWiseTimetableResponse,
+    summary="Get Complete Class-Wise Timetable",
+    description="Master data endpoint for the class-wise grid, including wings, classes, setups, scheduled entries, targets, and stats.",
+)
+def get_class_wise_timetable(
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+    timetable_id: Optional[UUID] = Query(None, description="Optional target timetable ID"),
+    wing_id: Optional[UUID] = Query(None, description="Optional filter by wing ID"),
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.get_class_wise_timetable(school_id=school_id, timetable_id=timetable_id, wing_id=wing_id)
+
+
+@router.post(
+    "/check-conflict",
+    response_model=ConflictCheckResponse,
+    summary="Real-time Conflict Checking",
+    description="Verify teacher availability and double-booking across overlapping real time intervals.",
+)
+def check_conflict(
+    data: ConflictCheckRequest,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.check_slot_conflict(school_id=school_id, data=data)
+
+
+@router.post(
+    "/entries/bulk",
+    summary="Bulk Assign or Clear Timetable Slots",
+    description="Assign or clear slots across scopes (single slot, weekdays, class sections, fill target).",
+)
+def bulk_assign(
+    data: BulkSlotAssignRequest,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.bulk_assign_slot(school_id=school_id, data=data, user_id=current_user.id)
+
 
