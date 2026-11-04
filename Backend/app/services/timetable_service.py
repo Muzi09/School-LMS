@@ -965,13 +965,28 @@ class TimetableService:
 
         class_subjects = (
             self.db.query(ClassSubject)
-            .options(joinedload(ClassSubject.subject))
+            .options(
+                joinedload(ClassSubject.subject),
+                joinedload(ClassSubject.teacher).joinedload(User.staff_profile),
+            )
             .filter(ClassSubject.school_id == school_id, ClassSubject.deleted_at.is_(None))
             .all()
         )
         cs_by_class_and_sec: Dict[Tuple[UUID, Optional[UUID]], List[ClassSubject]] = {}
         for cs in class_subjects:
             cs_by_class_and_sec.setdefault((cs.class_id, cs.section_id), []).append(cs)
+
+        # Build lookup for assigned subject teacher per section (section-specific first, then class-level fallback)
+        sec_sub_teacher_map: Dict[Tuple[UUID, UUID], Any] = {}
+        for cs in class_subjects:
+            if cs.teacher and cs.subject_id and cs.section_id:
+                sec_sub_teacher_map[(cs.section_id, cs.subject_id)] = cs.teacher
+
+        for s in all_sections:
+            for cs in cs_by_class_and_sec.get((s.class_id, None), []):
+                if cs.teacher and cs.subject_id:
+                    if (s.id, cs.subject_id) not in sec_sub_teacher_map:
+                        sec_sub_teacher_map[(s.id, cs.subject_id)] = cs.teacher
 
         wings_summary = []
         total_classes_count = 0
@@ -1032,6 +1047,8 @@ class TimetableService:
                         seen_subs.add(sub.id)
                         assigned_cnt = sub_counts.get(sub.id, 0)
                         target_cnt = 6 if sub.is_academic else 3
+                        tch = sec_sub_teacher_map.get((s.id, sub.id))
+                        sp = tch.staff_profile if tch else None
                         subject_stats.append({
                             "subject_id": sub.id,
                             "name": sub.name,
@@ -1041,12 +1058,25 @@ class TimetableService:
                             "assigned": assigned_cnt,
                             "target": target_cnt,
                             "status": "normal" if assigned_cnt == target_cnt else ("under" if assigned_cnt < target_cnt else "over"),
+                            "teacher_id": tch.id if tch else None,
+                            "teacher": {
+                                "id": tch.id,
+                                "name": f"{tch.first_name} {tch.last_name}".strip(),
+                                "first_name": tch.first_name,
+                                "last_name": tch.last_name,
+                                "email": tch.email,
+                                "roll_no": sp.roll_no if sp else None,
+                                "department": sp.department if sp else None,
+                                "designation": sp.designation if sp else None,
+                            } if tch else None,
                         })
 
                     for sub_id, cnt in sub_counts.items():
                         if sub_id not in seen_subs:
                             e_match = next((e for e in sec_entries if e.subject_id == sub_id), None)
                             if e_match and e_match.subject:
+                                tch = sec_sub_teacher_map.get((s.id, sub_id)) or e_match.teacher
+                                sp = tch.staff_profile if tch else None
                                 subject_stats.append({
                                     "subject_id": sub_id,
                                     "name": e_match.subject.name,
@@ -1056,6 +1086,17 @@ class TimetableService:
                                     "assigned": cnt,
                                     "target": 6 if e_match.subject.is_academic else 3,
                                     "status": "normal" if cnt == 6 else ("under" if cnt < 6 else "over"),
+                                    "teacher_id": tch.id if tch else None,
+                                    "teacher": {
+                                        "id": tch.id,
+                                        "name": f"{tch.first_name} {tch.last_name}".strip(),
+                                        "first_name": tch.first_name,
+                                        "last_name": tch.last_name,
+                                        "email": tch.email,
+                                        "roll_no": sp.roll_no if sp else None,
+                                        "department": sp.department if sp else None,
+                                        "designation": sp.designation if sp else None,
+                                    } if tch else None,
                                 })
 
                     unassigned_count = max(0, total_expected_slots - len(sec_entries))
@@ -1109,7 +1150,7 @@ class TimetableService:
 
         entries_read = []
         for e in entries:
-            t = e.teacher
+            t = e.teacher or sec_sub_teacher_map.get((e.section_id, e.subject_id))
             sp = t.staff_profile if t else None
             entries_read.append({
                 "id": e.id,
@@ -1328,7 +1369,12 @@ class TimetableService:
                                 ClassSubject.class_id == sec.class_id,
                                 ClassSubject.subject_id == data.subject_id,
                                 ClassSubject.deleted_at.is_(None),
+                                or_(
+                                    ClassSubject.section_id == sec.id,
+                                    ClassSubject.section_id.is_(None),
+                                ),
                             )
+                            .order_by(ClassSubject.section_id.desc().nullslast())
                             .first()
                         )
                         if cs and cs.teacher_id:
@@ -1727,7 +1773,7 @@ class TimetableService:
 
         entries_data = []
         for e in entries:
-            t = e.teacher
+            t = e.teacher or subject_teacher_map.get(e.subject_id)
             sp = t.staff_profile if t else None
             entries_data.append({
                 "id": e.id,
@@ -2419,9 +2465,26 @@ class TimetableService:
             .all()
         )
 
+        class_subjects = (
+            self.db.query(ClassSubject)
+            .options(joinedload(ClassSubject.teacher).joinedload(User.staff_profile))
+            .filter(ClassSubject.school_id == school_id, ClassSubject.deleted_at.is_(None))
+            .all()
+        )
+        master_sec_sub_teacher_map: Dict[Tuple[UUID, UUID], Any] = {}
+        for cs in class_subjects:
+            if cs.teacher and cs.subject_id and cs.section_id:
+                master_sec_sub_teacher_map[(cs.section_id, cs.subject_id)] = cs.teacher
+
+        for s in sections:
+            for cs in class_subjects:
+                if cs.class_id == s.class_id and cs.section_id is None and cs.teacher and cs.subject_id:
+                    if (s.id, cs.subject_id) not in master_sec_sub_teacher_map:
+                        master_sec_sub_teacher_map[(s.id, cs.subject_id)] = cs.teacher
+
         entries_data = []
         for e in entries:
-            t = e.teacher
+            t = e.teacher or master_sec_sub_teacher_map.get((e.section_id, e.subject_id))
             sp = t.staff_profile if t else None
             p = e.period
             entries_data.append({

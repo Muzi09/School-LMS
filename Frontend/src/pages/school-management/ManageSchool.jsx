@@ -1,10 +1,13 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { useSearchParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   School,
   RefreshCw,
   BookOpen,
   AlertCircle,
+  ArrowLeft,
+  Sparkles,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -73,9 +76,31 @@ export function ManageSchool() {
   const subjects = useMemo(() => config?.subjects || [], [config?.subjects])
 
   // -------------------------------------------------------------
-  // Selection State
+  // Selection State & Deep-link Target Handling
   // -------------------------------------------------------------
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const targetClassId = searchParams.get("classId")
+  const targetSectionId = searchParams.get("sectionId")
+  const targetSubjectId = searchParams.get("subjectId")
+
+  const handleClearTarget = () => {
+    const newParams = new URLSearchParams(searchParams)
+    newParams.delete("highlight")
+    setSearchParams(newParams, { replace: true })
+  }
+
   const [selectedWingId, setSelectedWingId] = useState("all") // "all" | "unassigned" | wing.id
+
+  // If redirected with target class from timetable, ensure its wing is active so it is not filtered out
+  useEffect(() => {
+    if (targetClassId && classes.length > 0) {
+      const cls = classes.find((c) => String(c.id) === String(targetClassId))
+      if (cls && cls.wing_id && selectedWingId !== cls.wing_id && selectedWingId !== "all") {
+        setSelectedWingId(cls.wing_id)
+      }
+    }
+  }, [targetClassId, classes])
 
   // Filter classes based on selected wing
   const filteredClasses = useMemo(() => {
@@ -265,6 +290,7 @@ export function ManageSchool() {
       schoolConfigService.assignClassTeacher(sectionId, teacherId),
     onSuccess: (_, variables) => {
       invalidateConfig()
+      queryClient.invalidateQueries({ queryKey: ["timetable"] })
       toast.success(
         variables.teacherId
           ? "Class teacher assigned successfully."
@@ -283,6 +309,7 @@ export function ManageSchool() {
       schoolConfigService.assignSectionSubjectTeacher(sectionId, subjectId, teacherId),
     onSuccess: (_, variables) => {
       invalidateConfig()
+      queryClient.invalidateQueries({ queryKey: ["timetable"] })
       toast.success(
         variables.teacherId
           ? "Subject teacher assigned successfully."
@@ -568,6 +595,28 @@ export function ManageSchool() {
         createLabel="Add Class"
       />
 
+      {/* Return to timetable banner if redirected from timetable */}
+      {targetSubjectId && (
+        <div className="flex items-center justify-between gap-3 p-3 px-4 rounded-xl bg-primary/10 border border-primary/20 text-xs shadow-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="size-4 text-primary shrink-0 animate-pulse" />
+            <span className="font-semibold text-foreground truncate">
+              Assign a teacher for the highlighted subject below. Once assigned, hit Back to return to Timetable.
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={() => navigate(-1)}
+            className="font-bold text-xs h-7 gap-1.5 shrink-0 bg-background hover:bg-muted"
+          >
+            <ArrowLeft className="size-3" />
+            <span>Back to Timetable</span>
+          </Button>
+        </div>
+      )}
+
       {/* 2. Top Bar: Wings Navigation & Class Overview */}
       <div className="space-y-2">
         <WingsBar
@@ -614,6 +663,9 @@ export function ManageSchool() {
           onAssignClassTeacher={handleOpenAssignClassTeacher}
           onAssignSubjectTeacher={handleAssignSubjectTeacher}
           onToggleSameForAllSections={handleToggleSameForAllSections}
+          targetSectionId={targetSectionId}
+          targetSubjectId={targetSubjectId}
+          onClearTarget={handleClearTarget}
         />
       </div>
 

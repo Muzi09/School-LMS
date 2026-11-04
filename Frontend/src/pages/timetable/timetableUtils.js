@@ -2,6 +2,17 @@
  * Timetable Utility Functions & Color Helpers
  */
 
+/**
+ * Detects whether the current client device is running macOS.
+ */
+export function getIsMac() {
+  if (typeof window === "undefined") return false
+  if (navigator.userAgentData?.platform) {
+    return navigator.userAgentData.platform.toLowerCase().includes("mac")
+  }
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent || navigator.platform || "")
+}
+
 export const DAYS = [
   { key: "MONDAY", label: "Monday", short: "Mon" },
   { key: "TUESDAY", label: "Tuesday", short: "Tue" },

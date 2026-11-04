@@ -31,8 +31,20 @@ export function Combobox({
   popoverClassName,
   id,
   name,
+  autoOpen = false,
+  onOpenChange,
 }) {
   const [open, setOpen] = React.useState(false)
+  const hasOpenedRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (open) {
+      hasOpenedRef.current = true
+      onOpenChange?.(true)
+    } else if (hasOpenedRef.current) {
+      onOpenChange?.(false)
+    }
+  }, [open, onOpenChange])
   const [searchQuery, setSearchQuery] = React.useState("")
   const [highlightedIndex, setHighlightedIndex] = React.useState(-1)
   const [coords, setCoords] = React.useState({
@@ -138,6 +150,19 @@ export function Combobox({
       maxHeight,
     })
   }, [anchorRef, anchorSelector])
+
+  // Auto open if requested (e.g., deep linking from timetable)
+  React.useEffect(() => {
+    if (autoOpen && !open && !disabled) {
+      const timer = setTimeout(() => {
+        updatePosition()
+        setOpen(true)
+        const curIdx = normalizedOptions.findIndex((opt) => String(opt.value) === String(value))
+        setHighlightedIndex(curIdx >= 0 ? curIdx : 0)
+      }, 350)
+      return () => clearTimeout(timer)
+    }
+  }, [autoOpen, disabled])
 
   // Open / Close toggle
   const handleOpenToggle = () => {

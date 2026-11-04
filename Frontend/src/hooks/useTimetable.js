@@ -252,7 +252,8 @@ export function useClassWiseTimetable({ timetableId = null, wingId = null } = {}
   return useQuery({
     queryKey: timetableKeys.classWise(timetableId, wingId),
     queryFn: () => getClassWiseTimetableApi({ timetableId, wingId }),
-    staleTime: 20 * 1000,
+    staleTime: 5 * 1000,
+    refetchOnMount: "always",
   })
 }
 

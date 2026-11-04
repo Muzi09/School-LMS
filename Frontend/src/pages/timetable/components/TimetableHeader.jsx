@@ -8,6 +8,7 @@ import { PerspectiveSelector } from "./PerspectiveSelector"
 import { WingSelector } from "./WingSelector"
 import { SearchFilterBar } from "./SearchFilterBar"
 import { ZoomControls } from "./ZoomDensityControls"
+import { AssignModeBar } from "./AssignModeBar"
 import { cn } from "@/lib/utils"
 
 export function TimetableHeader({
@@ -28,6 +29,7 @@ export function TimetableHeader({
   canManage = false,
   isAssignMode,
   onToggleAssignMode,
+  assignBarProps = null,
   saveStatus = "saved", // "saved" | "saving" | "unsaved"
 
   // Zoom
@@ -38,11 +40,11 @@ export function TimetableHeader({
   return (
     <header
       className={cn(
-        "sticky top-0 z-30 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md",
+        "sticky top-0 z-30 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md overflow-hidden transition-all duration-300",
         className
       )}
     >
-      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-2.5 flex-wrap lg:flex-nowrap">
+      <div className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 flex-wrap lg:flex-nowrap">
         {/* Left Section: Perspective, Wing, Search Bar */}
         <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap flex-1 min-w-0">
           {/* Perspective Selector */}
@@ -125,6 +127,32 @@ export function TimetableHeader({
             zoomLevel={zoomLevel}
             onZoomChange={onZoomChange}
           />
+        </div>
+      </div>
+
+      {/* Edit Mode Helper Strip: Embedded inside filter & search card with smooth gradual push animation */}
+      <div
+        className={cn(
+          "grid transition-all duration-300 ease-in-out border-t",
+          isAssignMode
+            ? "grid-rows-[1fr] opacity-100 border-border/60"
+            : "grid-rows-[0fr] opacity-0 border-transparent pointer-events-none"
+        )}
+      >
+        <div className="overflow-hidden min-h-0">
+          <div className="px-4 sm:px-6 py-2.5 flex justify-center items-center w-full">
+            <AssignModeBar
+              isActive={isAssignMode}
+              unassignedCount={assignBarProps?.unassignedCount || 0}
+              conflictsCount={assignBarProps?.conflictsCount || 0}
+              canUndo={assignBarProps?.canUndo || false}
+              canRedo={assignBarProps?.canRedo || false}
+              onUndo={assignBarProps?.onUndo}
+              onRedo={assignBarProps?.onRedo}
+              onExitMode={onToggleAssignMode}
+              issuesList={assignBarProps?.issuesList || []}
+            />
+          </div>
         </div>
       </div>
     </header>

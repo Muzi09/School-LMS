@@ -1,4 +1,5 @@
-import React, { useState } from "react"
+import React, { useState, useRef, useEffect, useMemo } from "react"
+import { createPortal } from "react-dom"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -22,6 +23,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+import { getIsMac } from "../timetableUtils"
 import { cn } from "@/lib/utils"
 
 export function AssignModeBar({
@@ -34,24 +36,96 @@ export function AssignModeBar({
   onRedo,
   onExitMode,
   issuesList = [], // [{ id, type: 'conflict'|'unassigned', title, sectionName, day, period, onJump }]
+  className,
 }) {
   const [isIssuesOpen, setIsIssuesOpen] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [isMac, setIsMac] = useState(false)
+  const [coords, setCoords] = useState(null)
+  const buttonRef = useRef(null)
+  const hoverTimeoutRef = useRef(null)
 
-  if (!isActive) return null
+  useEffect(() => {
+    setIsMac(getIsMac())
+  }, [])
+
+  const shortcuts = useMemo(() => {
+    if (isMac) {
+      return [
+        { label: "Move slot", keys: ["Arrow Keys"] },
+        { label: "Assign / Edit slot", keys: ["Return"] },
+        { label: "Clear slot", keys: ["Delete ⌫"] },
+        { label: "Undo change", keys: ["⌘", "Z"] },
+        { label: "Redo change", keys: ["⌘", "⇧", "Z"] },
+        { label: "Copy slot", keys: ["⌘", "C"] },
+        { label: "Paste slot", keys: ["⌘", "V"] },
+        { label: "Duplicate slot", keys: ["⌥", "Drag"] },
+      ]
+    }
+    return [
+      { label: "Move slot", keys: ["Arrow Keys"] },
+      { label: "Assign / Edit slot", keys: ["Enter"] },
+      { label: "Clear slot", keys: ["Delete"] },
+      { label: "Undo change", keys: ["Ctrl", "Z"] },
+      { label: "Redo change", keys: ["Ctrl", "Y"] },
+      { label: "Copy slot", keys: ["Ctrl", "C"] },
+      { label: "Paste slot", keys: ["Ctrl", "V"] },
+      { label: "Duplicate slot", keys: ["Alt", "Drag"] },
+    ]
+  }, [isMac])
+
+  const handleMouseEnter = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current)
+      hoverTimeoutRef.current = null
+    }
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      setCoords({
+        top: rect.bottom + 8,
+        right: Math.max(16, window.innerWidth - rect.right),
+      })
+    }
+    setShowShortcuts(true)
+  }
+
+  const handleMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current)
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      setShowShortcuts(false)
+    }, 180)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  // Close shortcuts popup & issues drawer when edit mode is toggled off
+  useEffect(() => {
+    if (!isActive) {
+      setShowShortcuts(false)
+      setIsIssuesOpen(false)
+    }
+  }, [isActive])
 
   return (
     <>
-      <div className="fixed bottom-4 right-4 z-40 max-w-[95vw] sm:max-w-2xl transition-all animate-in slide-in-from-bottom duration-200">
-        <div className="flex flex-wrap items-center justify-between gap-2.5 p-2 px-3 sm:px-4 bg-card/95 backdrop-blur-md border-2 border-primary/50 rounded-2xl shadow-xl">
+      <div className={cn("inline-flex flex-col items-center w-full max-w-2xl", className)}>
+        <div className="w-full flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 px-3 sm:px-4 py-1.5 bg-background border border-border/80 rounded-xl shadow-2xs">
           {/* Left: Mode Title & Issue Counts */}
           <div className="flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
+            <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
             </span>
 
-            <span className="font-bold text-xs sm:text-sm text-foreground tracking-tight">
+            <span className="font-semibold text-xs sm:text-sm text-foreground tracking-tight">
               Edit Mode
             </span>
 
@@ -59,7 +133,7 @@ export function AssignModeBar({
             {conflictsCount > 0 ? (
               <Badge
                 variant="destructive"
-                className="text-[11px] font-bold px-1.5 py-0.5 flex items-center gap-1 cursor-pointer"
+                className="text-[11px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 cursor-pointer"
                 onClick={() => setIsIssuesOpen(true)}
               >
                 <AlertTriangle className="size-3" />
@@ -71,7 +145,7 @@ export function AssignModeBar({
             {unassignedCount > 0 ? (
               <Badge
                 variant="outline"
-                className="bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 text-[11px] font-semibold px-1.5 py-0.5 cursor-pointer"
+                className="bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/30 text-[11px] font-semibold px-2 py-0.5 rounded-lg cursor-pointer hover:bg-amber-500/20"
                 onClick={() => setIsIssuesOpen(true)}
               >
                 {unassignedCount} Unassigned
@@ -79,7 +153,7 @@ export function AssignModeBar({
             ) : (
               <Badge
                 variant="outline"
-                className="bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-semibold px-1.5 py-0.5"
+                className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-500/30 text-[11px] font-semibold px-2 py-0.5 rounded-lg"
               >
                 All Assigned
               </Badge>
@@ -94,8 +168,8 @@ export function AssignModeBar({
               size="icon-xs"
               onClick={onUndo}
               disabled={!canUndo}
-              className="text-muted-foreground hover:text-foreground"
-              title="Undo last change (Ctrl+Z)"
+              className="size-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              title={isMac ? "Undo change (⌘Z)" : "Undo change (Ctrl+Z)"}
             >
               <Undo2 className="size-3.5" />
             </Button>
@@ -105,71 +179,84 @@ export function AssignModeBar({
               size="icon-xs"
               onClick={onRedo}
               disabled={!canRedo}
-              className="text-muted-foreground hover:text-foreground"
-              title="Redo (Ctrl+Shift+Z)"
+              className="size-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              title={isMac ? "Redo change (⌘⇧Z)" : "Redo change (Ctrl+Y)"}
             >
               <Redo2 className="size-3.5" />
             </Button>
           </div>
 
-          {/* Right: Review Issues, Shortcuts Hint, Exit */}
-          <div className="flex items-center gap-1.5">
-            {(conflictsCount > 0 || unassignedCount > 0) && (
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={() => setIsIssuesOpen(true)}
-                className="text-xs font-semibold border-amber-400/50 hover:bg-amber-500/10 text-amber-900 dark:text-amber-200"
-              >
-                Review Issues
-              </Button>
-            )}
-
-            <Button
+          {/* Right: Keyboard Shortcuts Button (Overlay via Portal without flickering or extending card height) */}
+          <div className="flex items-center">
+            <button
+              ref={buttonRef}
               type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => setShowShortcuts(!showShortcuts)}
-              className="text-muted-foreground hover:text-foreground hidden sm:inline-flex"
-              title="Keyboard shortcuts"
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+              className={cn(
+                "size-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden sm:inline-flex items-center justify-center cursor-pointer transition-colors",
+                showShortcuts && "bg-muted text-foreground"
+              )}
+              aria-label={isMac ? "Mac keyboard shortcuts" : "Windows keyboard shortcuts"}
+              title={isMac ? "Mac keyboard shortcuts" : "Windows keyboard shortcuts"}
             >
               <Keyboard className="size-3.5" />
-            </Button>
-
-            <Button
-              type="button"
-              variant="default"
-              size="xs"
-              onClick={onExitMode}
-              className="font-bold text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              Done Editing
-            </Button>
-          </div>
-        </div>
-
-        {/* Shortcuts Popover Bar */}
-        {showShortcuts && (
-          <div className="mt-1.5 p-2 bg-popover/95 backdrop-blur-md border border-border/80 rounded-xl shadow-lg text-[11px] text-muted-foreground flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-3">
-              <span><kbd className="px-1 py-0.5 bg-muted rounded border text-[10px]">Arrows</kbd> Move</span>
-              <span><kbd className="px-1 py-0.5 bg-muted rounded border text-[10px]">Enter</kbd> Edit</span>
-              <span><kbd className="px-1 py-0.5 bg-muted rounded border text-[10px]">Del</kbd> Clear</span>
-              <span><kbd className="px-1 py-0.5 bg-muted rounded border text-[10px]">Ctrl+Z</kbd> Undo</span>
-              <span><kbd className="px-1 py-0.5 bg-muted rounded border text-[10px]">Ctrl+C/V</kbd> Copy/Paste</span>
-              <span><kbd className="px-1 py-0.5 bg-muted rounded border text-[10px]">Alt+Drag</kbd> Duplicate</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowShortcuts(false)}
-              className="text-muted-foreground hover:text-foreground p-0.5"
-            >
-              <X className="size-3" />
             </button>
           </div>
-        )}
+        </div>
       </div>
+
+      {/* Floating OS Shortcuts Portal Overlay */}
+      {showShortcuts && coords && typeof document !== "undefined" && createPortal(
+        <div
+          style={{
+            position: "fixed",
+            top: coords.top,
+            right: coords.right,
+            zIndex: 9999,
+          }}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          className="p-3.5 w-72 rounded-2xl border border-border/80 bg-popover/95 backdrop-blur-md text-popover-foreground shadow-2xl animate-in fade-in-0 zoom-in-95 duration-150 pointer-events-auto select-none"
+        >
+          {/* Header */}
+          <div className="flex items-center gap-2 pb-2 mb-2.5 border-b border-border/60">
+            <Keyboard className="size-4 text-primary shrink-0" />
+            <span className="text-xs font-bold text-foreground">
+              {isMac ? "Mac Shortcuts" : "Windows Shortcuts"}
+            </span>
+          </div>
+
+          {/* Vertical List: Label in Column 1, Button Chip in Column 2 */}
+          <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 items-center">
+            {shortcuts.map((sc) => (
+              <div key={sc.label} className="contents">
+                {/* Column 1: Label */}
+                <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                  {sc.label}
+                </span>
+
+                {/* Column 2: Button Chip */}
+                <div className="flex items-center gap-1 justify-end">
+                  {sc.keys.map((k, i) => (
+                    <React.Fragment key={i}>
+                      <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-md bg-muted border border-border/80 text-[10px] font-semibold font-mono text-foreground shadow-2xs">
+                        {k}
+                      </kbd>
+                      {i < sc.keys.length - 1 && (
+                        <span className="text-[10px] text-muted-foreground/60 font-medium">
+                          {sc.separator || "+"}
+                        </span>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* REVIEW ISSUES SHEET / DRAWER */}
       <Sheet open={isIssuesOpen} onOpenChange={setIsIssuesOpen}>

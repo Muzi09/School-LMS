@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import {
   GraduationCap,
   Trash2,
@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
 import { InlineEditInput } from "./InlineEditInput"
+import { cn } from "@/lib/utils"
 
 const SUBJECT_COLORS = [
   "bg-blue-500",
@@ -38,12 +39,27 @@ function SingleClassCard({
   onAssignClassTeacher,
   onAssignSubjectTeacher,
   onToggleSameForAllSections,
+  targetSectionId = null,
+  targetSubjectId = null,
+  onStopHighlight = null,
 }) {
   const [isRenamingClass, setIsRenamingClass] = useState(false)
   const [renamedClassName, setRenamedClassName] = useState("")
 
   const [editingSectionId, setEditingSectionId] = useState(null)
   const [editingSectionName, setEditingSectionName] = useState("")
+
+  // Auto scroll to target highlighted subject if redirected from timetable
+  useEffect(() => {
+    if (targetSectionId && targetSubjectId) {
+      const el = document.getElementById(`target-subject-${targetSectionId}-${targetSubjectId}`)
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: "smooth", block: "center" })
+        }, 200)
+      }
+    }
+  }, [targetSectionId, targetSubjectId])
 
   const teacherComboboxOptions = useMemo(() => {
     return [
@@ -325,7 +341,7 @@ function SingleClassCard({
                       </button>
                     </div>
 
-                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto scrollbar-thin pr-0.5">
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto scrollbar-thin p-1.5 pr-2.5">
                       {sectionSubjects.length === 0 ? (
                         <div className="text-[11px] text-muted-foreground italic py-2 text-center">
                           No subjects assigned
@@ -370,7 +386,7 @@ function SingleClassCard({
                                 </div>
 
                                 {/* Child Subjects */}
-                                <div className="p-1 space-y-1 bg-muted/10">
+                                <div className="p-1.5 space-y-1.5 bg-muted/10">
                                   {sub.child_subjects.map((childSub) => {
                                     const childTeacherId = childSub.teacher_id || childSub.teacher?.id || ""
                                     const childTeacherOptions =
@@ -386,11 +402,22 @@ function SingleClassCard({
                                         ]
                                         : teacherComboboxOptions
 
+                                    const isChildTarget = Boolean(
+                                      targetSectionId &&
+                                      targetSubjectId &&
+                                      String(sec.id) === String(targetSectionId) &&
+                                      String(childSub.id) === String(targetSubjectId)
+                                    )
+
                                     return (
                                       <div
                                         key={childSub.id}
+                                        id={`target-subject-${sec.id}-${childSub.id}`}
                                         data-subject-card
-                                        className="px-2 py-1 rounded-md border border-border/50 bg-background hover:bg-accent/30 flex items-center justify-between gap-1.5 transition-colors pl-3 relative"
+                                        className={cn(
+                                          "px-2 py-1 rounded-md border border-border/50 bg-background hover:bg-accent/30 flex items-center justify-between gap-1.5 transition-all pl-3 relative",
+                                          isChildTarget && "ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/10 border-primary shadow-sm animate-pulse"
+                                        )}
                                       >
                                         <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
                                           <span className="text-muted-foreground/60 text-[11px] shrink-0 font-mono">└</span>
@@ -407,13 +434,22 @@ function SingleClassCard({
                                         <div className="shrink-0 max-w-[130px]">
                                           <Combobox
                                             value={childTeacherId ? String(childTeacherId) : ""}
-                                            onValueChange={(newVal) =>
+                                            onValueChange={(newVal) => {
                                               onAssignSubjectTeacher?.(sec.id, childSub.id, newVal ? newVal : null)
-                                            }
+                                              if (isChildTarget) {
+                                                onStopHighlight?.()
+                                              }
+                                            }}
+                                            onOpenChange={(isOpen) => {
+                                              if (!isOpen && isChildTarget) {
+                                                onStopHighlight?.()
+                                              }
+                                            }}
                                             options={childTeacherOptions}
                                             placeholder="Assign"
                                             showDescriptionInTrigger={false}
                                             anchorSelector="[data-subject-card]"
+                                            autoOpen={isChildTarget}
                                             className="h-6 text-[10px] px-1.5 py-0 rounded font-medium border-border/70 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground font-mono w-auto min-w-[70px]"
                                             popoverClassName="max-h-56 shadow-xl"
                                           />
@@ -426,11 +462,22 @@ function SingleClassCard({
                             )
                           }
 
+                          const isTarget = Boolean(
+                            targetSectionId &&
+                            targetSubjectId &&
+                            String(sec.id) === String(targetSectionId) &&
+                            String(sub.id) === String(targetSubjectId)
+                          )
+
                           return (
                             <div
                               key={sub.id || sIdx}
+                              id={`target-subject-${sec.id}-${sub.id}`}
                               data-subject-card
-                              className="px-2.5 py-1.5 rounded-lg border border-border/70 bg-background hover:bg-accent/40 flex items-center justify-between gap-1.5 transition-colors relative"
+                              className={cn(
+                                "px-2.5 py-1.5 rounded-lg border border-border/70 bg-background hover:bg-accent/40 flex items-center justify-between gap-1.5 transition-all relative",
+                                isTarget && "ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/10 border-primary shadow-sm animate-pulse"
+                              )}
                             >
                               <div className="flex items-center gap-2 truncate min-w-0 flex-1">
                                 <span className={`size-1.5 rounded-full ${dotColor} shrink-0`} />
@@ -447,13 +494,22 @@ function SingleClassCard({
                               <div className="shrink-0 max-w-[130px]">
                                 <Combobox
                                   value={assignedTeacherId ? String(assignedTeacherId) : ""}
-                                  onValueChange={(newVal) =>
+                                  onValueChange={(newVal) => {
                                     onAssignSubjectTeacher?.(sec.id, sub.id, newVal ? newVal : null)
-                                  }
+                                    if (isTarget) {
+                                      onStopHighlight?.()
+                                    }
+                                  }}
+                                  onOpenChange={(isOpen) => {
+                                    if (!isOpen && isTarget) {
+                                      onStopHighlight?.()
+                                    }
+                                  }}
                                   options={subjectTeacherOptions}
                                   placeholder="Assign"
                                   showDescriptionInTrigger={false}
                                   anchorSelector="[data-subject-card]"
+                                  autoOpen={isTarget}
                                   className="h-6 text-[10px] px-2 py-0 rounded font-medium border-border/70 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground font-mono w-auto min-w-[72px]"
                                   popoverClassName="max-h-56 shadow-xl"
                                 />
@@ -489,7 +545,27 @@ export function ClassSectionWorkspace({
   onAssignClassTeacher,
   onAssignSubjectTeacher,
   onToggleSameForAllSections,
+  targetSectionId = null,
+  targetSubjectId = null,
+  onClearTarget = null,
 }) {
+  const [activeHighlight, setActiveHighlight] = useState({
+    sectionId: targetSectionId,
+    subjectId: targetSubjectId,
+  })
+
+  useEffect(() => {
+    setActiveHighlight({
+      sectionId: targetSectionId,
+      subjectId: targetSubjectId,
+    })
+  }, [targetSectionId, targetSubjectId])
+
+  const handleStopHighlight = () => {
+    setActiveHighlight({ sectionId: null, subjectId: null })
+    onClearTarget?.()
+  }
+
   if (classes.length === 0) {
     return (
       <div className="p-8 rounded-2xl border border-border bg-card text-center space-y-3 shadow-xs">
@@ -520,6 +596,9 @@ export function ClassSectionWorkspace({
           onAssignClassTeacher={onAssignClassTeacher}
           onAssignSubjectTeacher={onAssignSubjectTeacher}
           onToggleSameForAllSections={onToggleSameForAllSections}
+          targetSectionId={activeHighlight.sectionId}
+          targetSubjectId={activeHighlight.subjectId}
+          onStopHighlight={handleStopHighlight}
         />
       ))}
     </div>

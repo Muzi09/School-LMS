@@ -6,7 +6,7 @@ from typing import Annotated, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import get_current_user, require_manage_school
@@ -1637,6 +1637,22 @@ def assign_section_subject_teacher(
         .first()
     )
 
+    old_teacher_id = cs.teacher_id if cs else None
+    if not old_teacher_id:
+        shared_cs = (
+            db.query(ClassSubject)
+            .filter(
+                ClassSubject.class_id == sec.class_id,
+                ClassSubject.section_id.is_(None),
+                ClassSubject.subject_id == sub.id,
+                ClassSubject.school_id == current_user.school_id,
+                ClassSubject.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if shared_cs and shared_cs.teacher_id:
+            old_teacher_id = shared_cs.teacher_id
+
     if cs:
         cs.teacher_id = teacher_user.id if teacher_user else None
         cs.updated_by = current_user.id
@@ -1651,6 +1667,52 @@ def assign_section_subject_teacher(
             created_by=current_user.id,
         )
         db.add(cs)
+
+    # Collect subject ids to sync (including split child subjects if any)
+    sub_ids_to_sync = [sub.id]
+    if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
+        for child in sub.child_subjects:
+            if child.deleted_at is None:
+                sub_ids_to_sync.append(child.id)
+                child_cs = (
+                    db.query(ClassSubject)
+                    .filter(
+                        ClassSubject.section_id == sec.id,
+                        ClassSubject.subject_id == child.id,
+                        ClassSubject.school_id == current_user.school_id,
+                        ClassSubject.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                if child_cs:
+                    child_cs.teacher_id = teacher_user.id if teacher_user else None
+                    child_cs.updated_by = current_user.id
+                else:
+                    child_cs = ClassSubject(
+                        school_id=current_user.school_id,
+                        class_id=sec.class_id,
+                        section_id=sec.id,
+                        subject_id=child.id,
+                        teacher_id=teacher_user.id if teacher_user else None,
+                        created_by=current_user.id,
+                    )
+                    db.add(child_cs)
+
+    # Synchronize existing timetable entries for this section and subject(s):
+    tt_entries = (
+        db.query(TimetableEntry)
+        .filter(
+            TimetableEntry.school_id == current_user.school_id,
+            TimetableEntry.section_id == sec.id,
+            TimetableEntry.subject_id.in_(sub_ids_to_sync),
+            TimetableEntry.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    for entry in tt_entries:
+        entry.teacher_user_id = teacher_user.id if teacher_user else None
+        entry.updated_by = current_user.id
 
     db.commit()
     return {

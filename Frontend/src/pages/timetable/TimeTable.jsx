@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import {
   CalendarDays,
@@ -110,15 +110,44 @@ export function TimeTable() {
     })
   }
 
-  // 4. Search and Filters State
-  const [searchQuery, setSearchQuery] = useState("")
+  // 4. Search and Filters State (persisted across navigation)
+  const [searchQuery, setSearchQuery] = useState(() => {
+    return sessionStorage.getItem("timetable_search_query") || ""
+  })
+
+  const handleSearchChange = (query) => {
+    setSearchQuery(query)
+    if (query) {
+      sessionStorage.setItem("timetable_search_query", query)
+    } else {
+      sessionStorage.removeItem("timetable_search_query")
+    }
+  }
 
   const searchTokens = useMemo(() => {
     return parseSearchTokens(searchQuery)
   }, [searchQuery])
 
-  // 5. Assign Mode (Edit Mode) State
-  const [isAssignMode, setIsAssignMode] = useState(false)
+  // 5. Assign Mode (Edit Mode) State (persisted across navigation)
+  const [isAssignMode, setIsAssignMode] = useState(() => {
+    return (
+      searchParams.get("edit") === "true" ||
+      sessionStorage.getItem("timetable_edit_mode") === "true"
+    )
+  })
+  const [assignBarProps, setAssignBarProps] = useState(null)
+
+  useEffect(() => {
+    sessionStorage.setItem("timetable_edit_mode", isAssignMode ? "true" : "false")
+  }, [isAssignMode])
+
+  const handleToggleAssignMode = () => {
+    setIsAssignMode((prev) => {
+      const next = !prev
+      sessionStorage.setItem("timetable_edit_mode", next ? "true" : "false")
+      return next
+    })
+  }
 
   // 6. Zoom Settings (persisted to localStorage)
   const [zoomLevel, setZoomLevel] = useState(() => {
@@ -153,6 +182,44 @@ export function TimeTable() {
     if (selectedWingIds.length > 0) return selectedWingIds[0]
     return wingsData[0]?.id || null
   }, [selectedWingIds, wingsData])
+
+  // Restore scroll position and highlight slot if returning from Manage School
+  useEffect(() => {
+    if (isClassWiseLoading || !timetableData) return
+
+    const savedY = sessionStorage.getItem("timetable_scroll_y")
+    const savedX = sessionStorage.getItem("timetable_scroll_x")
+    const savedSlotKey = sessionStorage.getItem("timetable_scroll_slot_key")
+
+    if (savedY !== null || savedSlotKey) {
+      const timer = setTimeout(() => {
+        let scrolled = false
+        if (savedSlotKey) {
+          const el = document.querySelector(`[data-slot-key="${savedSlotKey}"]`)
+          if (el) {
+            el.scrollIntoView({ behavior: "instant", block: "center" })
+            el.classList.add("ring-2", "ring-primary", "ring-offset-2", "transition-all")
+            setTimeout(() => {
+              el.classList.remove("ring-2", "ring-primary", "ring-offset-2", "transition-all")
+            }, 2000)
+            scrolled = true
+          }
+        }
+        if (!scrolled && savedY !== null) {
+          window.scrollTo({
+            top: parseInt(savedY, 10),
+            left: parseInt(savedX || "0", 10),
+            behavior: "instant",
+          })
+        }
+        sessionStorage.removeItem("timetable_scroll_slot_key")
+        sessionStorage.removeItem("timetable_scroll_y")
+        sessionStorage.removeItem("timetable_scroll_x")
+      }, 120)
+
+      return () => clearTimeout(timer)
+    }
+  }, [isClassWiseLoading, timetableData])
 
   const handleRefreshAll = () => {
     refetchClassWise()
@@ -235,10 +302,11 @@ export function TimeTable() {
         selectedWingIds={activeWingId ? [activeWingId] : []}
         onSelectWingIds={handleSelectWingIds}
         searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
+        onSearchChange={handleSearchChange}
         canManage={canManage}
         isAssignMode={isAssignMode}
-        onToggleAssignMode={() => setIsAssignMode(!isAssignMode)}
+        onToggleAssignMode={handleToggleAssignMode}
+        assignBarProps={assignBarProps}
         zoomLevel={zoomLevel}
         onZoomChange={handleZoomChange}
       />
@@ -253,7 +321,8 @@ export function TimeTable() {
         searchQuery={searchQuery}
         searchTokens={searchTokens}
         isAssignMode={isAssignMode}
-        onToggleAssignMode={() => setIsAssignMode(!isAssignMode)}
+        onToggleAssignMode={handleToggleAssignMode}
+        onAssignBarPropsChange={setAssignBarProps}
         zoom={zoomLevel}
         onOpenBellSetup={() => setIsBellSetupOpen(true)}
         onCreateNewTimetable={() => setIsCreateTimetableOpen(true)}

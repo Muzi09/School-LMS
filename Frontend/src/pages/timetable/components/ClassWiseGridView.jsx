@@ -10,8 +10,6 @@ import {
   RefreshCw,
   FolderOpen,
   FilterX,
-  ChevronDown,
-  ChevronRight,
   BookOpen,
   CheckCircle2,
 } from "lucide-react"
@@ -28,6 +26,7 @@ import {
   useDeleteTimetableEntry,
 } from "@/hooks/useTimetable"
 import { parseTimetableQuery, sectionMatchesQuery } from "../searchUtils"
+import { getIsMac } from "../timetableUtils"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -47,9 +46,10 @@ export function ClassWiseGridView({
   zoom = 100,
   onOpenBellSetup,
   onCreateNewTimetable,
+  onAssignBarPropsChange,
 }) {
-  const [collapsedWings, setCollapsedWings] = useState({})
   const [selectedSlotKey, setSelectedSlotKey] = useState(null)
+  const [selectedSlotData, setSelectedSlotData] = useState(null)
   const [dialogState, setDialogState] = useState({
     isOpen: false,
     cellData: null,
@@ -59,6 +59,16 @@ export function ClassWiseGridView({
   // Undo / Redo history stacks
   const [historyStack, setHistoryStack] = useState([])
   const [futureStack, setFutureStack] = useState([])
+
+  // Clear selection and close assignment dialog when edit mode is off
+  useEffect(() => {
+    if (!isAssignMode) {
+      setSelectedSlotKey(null)
+      setSelectedSlotData(null)
+      setCopiedSlotData(null)
+      setDialogState({ isOpen: false, cellData: null })
+    }
+  }, [isAssignMode])
 
   const bulkAssignMutation = useBulkAssignSlot()
   const deleteEntryMutation = useDeleteTimetableEntry()
@@ -221,7 +231,8 @@ export function ClassWiseGridView({
   const flattenedClasses = useMemo(() => {
     const list = []
     const seen = new Set()
-    for (const w of activeWings) {
+    const sourceWings = (searchQuery || unassignedOnly || conflictsOnly) ? filteredWings : activeWings
+    for (const w of sourceWings) {
       for (const c of w.classes || []) {
         if (!seen.has(c.id)) {
           seen.add(c.id)
@@ -230,7 +241,7 @@ export function ClassWiseGridView({
       }
     }
     return list
-  }, [activeWings])
+  }, [activeWings, filteredWings, searchQuery, unassignedOnly, conflictsOnly])
 
   // Issues list for AssignModeBar & Drawer
   const issuesList = useMemo(() => {
@@ -296,16 +307,10 @@ export function ClassWiseGridView({
       is_academic: s.is_academic,
       target_weekly: s.target,
       current_assigned: s.assigned,
+      teacher_id: s.teacher_id || s.teacher?.id || null,
+      teacher: s.teacher || null,
     }))
   }, [dialogState.cellData])
-
-  // Toggle Wing Collapse
-  const toggleWingCollapse = (wingId) => {
-    setCollapsedWings((prev) => ({
-      ...prev,
-      [wingId]: !prev[wingId],
-    }))
-  }
 
   // Handle slot assignment
   const handleAssignSlot = useCallback(
@@ -338,14 +343,54 @@ export function ClassWiseGridView({
 
       try {
         await bulkAssignMutation.mutateAsync(requestPayload)
-        toast.success("Timetable slot assigned successfully")
+        if (!payload.silent) {
+          toast.success("Timetable slot assigned successfully")
+        }
         setDialogState({ isOpen: false, cellData: null })
       } catch (err) {
-        toast.error("Failed to assign slot: " + (err.message || "Unknown error"))
+        if (!payload.silent) {
+          toast.error("Failed to assign slot: " + (err.message || "Unknown error"))
+        }
       }
     },
     [timetable, dialogState.cellData, bulkAssignMutation]
   )
+
+  // Handle any pending assign now slot assignment when returning from Manage School
+  useEffect(() => {
+    if (!timetable?.id || !entries) return
+    const rawTarget = sessionStorage.getItem("timetable_assign_now_target")
+    if (!rawTarget) return
+
+    try {
+      const target = JSON.parse(rawTarget)
+      const hasSlot = entries.some(
+        (e) =>
+          String(e.section_id) === String(target.sectionId) &&
+          String(e.day_of_week) === String(target.day) &&
+          (String(e.period_id) === String(target.periodId) ||
+            String(e.period_number) === String(target.periodNumber)) &&
+          String(e.subject_id) === String(target.subjectId)
+      )
+
+      if (!hasSlot && target.subjectId && target.timetableId) {
+        bulkAssignMutation.mutate({
+          timetable_id: target.timetableId,
+          section_id: target.sectionId,
+          day_of_week: target.day,
+          period_id: target.periodId,
+          subject_id: target.subjectId,
+          teacher_user_id: null,
+          scope: "SLOT",
+          overwrite: true,
+        })
+      }
+      sessionStorage.removeItem("timetable_assign_now_target")
+    } catch (e) {
+      console.error("Error processing pending assign target:", e)
+      sessionStorage.removeItem("timetable_assign_now_target")
+    }
+  }, [timetable, entries, bulkAssignMutation])
 
   // Handle slot unassign
   const handleUnassignSlot = useCallback(
@@ -521,7 +566,132 @@ export function ClassWiseGridView({
     }
   }, [futureStack, bulkAssignMutation])
 
-  // Keyboard navigation & Shortcuts listener
+  // Sync AssignModeBar props to parent (so it can render smoothly inside TimetableHeader)
+  useEffect(() => {
+    onAssignBarPropsChange?.({
+      unassignedCount: totalUnassignedCount,
+      conflictsCount: totalConflictsCount,
+      canUndo: historyStack.length > 0,
+      canRedo: futureStack.length > 0,
+      onUndo: handleUndo,
+      onRedo: handleRedo,
+      issuesList,
+    })
+  }, [
+    totalUnassignedCount,
+    totalConflictsCount,
+    historyStack.length,
+    futureStack.length,
+    handleUndo,
+    handleRedo,
+    issuesList,
+    onAssignBarPropsChange,
+  ])
+
+  // Keyboard arrow navigation between slots
+  const handleArrowNavigation = useCallback(
+    (direction) => {
+      if (!selectedSlotData?.section || !selectedSlotData?.period) return
+
+      const sec = selectedSlotData.section
+      const currentDay = selectedSlotData.day
+      const currentPeriod = selectedSlotData.period
+
+      const secSetupId = sec.setup_id || timetableData?.setups?.[0]?.id
+      const secSetup = setupMap.get(secSetupId) || timetableData?.setups?.[0]
+      if (!secSetup) return
+
+      const appDays = secSetup.applicable_days || [
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+      ]
+
+      const isSat = currentDay === "SATURDAY"
+      const satSched = secSetup.schedules?.find(
+        (s) => s.id === "saturday" || s.days?.includes("SATURDAY")
+      )
+      const wkSched = secSetup.schedules?.find(
+        (s) => s.id !== "saturday" && !s.days?.every((d) => d === "SATURDAY")
+      )
+
+      const rawWeekdayPeriods = wkSched?.periods || secSetup.periods || []
+      const rawSaturdayPeriods = satSched?.periods || secSetup.periods || []
+
+      const sortedWeekday = [...rawWeekdayPeriods].sort(
+        (a, b) => a.period_number - b.period_number
+      )
+      const sortedSaturday = [...rawSaturdayPeriods].sort(
+        (a, b) => a.period_number - b.period_number
+      )
+
+      const activePeriods = isSat ? sortedSaturday : sortedWeekday
+
+      const dayIdx = appDays.indexOf(currentDay)
+      const periodIdx = activePeriods.findIndex(
+        (p) =>
+          (p.id && p.id === currentPeriod.id) ||
+          p.period_number === currentPeriod.period_number
+      )
+
+      if (dayIdx === -1 || periodIdx === -1) return
+
+      let targetDayIdx = dayIdx
+      let targetPeriodIdx = periodIdx
+
+      if (direction === "ArrowRight") {
+        targetPeriodIdx = Math.min(activePeriods.length - 1, periodIdx + 1)
+      } else if (direction === "ArrowLeft") {
+        targetPeriodIdx = Math.max(0, periodIdx - 1)
+      } else if (direction === "ArrowDown") {
+        targetDayIdx = Math.min(appDays.length - 1, dayIdx + 1)
+      } else if (direction === "ArrowUp") {
+        targetDayIdx = Math.max(0, dayIdx - 1)
+      }
+
+      const targetDay = appDays[targetDayIdx]
+      const targetIsSat = targetDay === "SATURDAY"
+      const targetPeriods = targetIsSat ? sortedSaturday : sortedWeekday
+      const targetPeriod =
+        targetPeriods[Math.min(targetPeriodIdx, targetPeriods.length - 1)]
+
+      if (!targetPeriod) return
+
+      const targetEntry =
+        entries.find(
+          (e) =>
+            e.section_id === sec.id &&
+            e.day_of_week === targetDay &&
+            ((e.period_id && e.period_id === targetPeriod.id) ||
+              e.period_number === targetPeriod.period_number)
+        ) || null
+
+      const nextSlotKey = `${sec.id}_${targetDay}_${targetPeriod.id || targetPeriod.period_number}`
+      const nextSlotData = {
+        section: sec,
+        day: targetDay,
+        period: targetPeriod,
+        entry: targetEntry,
+      }
+
+      setSelectedSlotKey(nextSlotKey)
+      setSelectedSlotData(nextSlotData)
+
+      requestAnimationFrame(() => {
+        const cellEl = document.querySelector(`[data-slot-key="${nextSlotKey}"]`)
+        cellEl?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+          inline: "nearest",
+        })
+      })
+    },
+    [selectedSlotData, timetableData, setupMap, entries]
+  )
+
+  // Keyboard navigation & Shortcuts listener adhering to cross-OS standards (Windows & Mac)
   useEffect(() => {
     if (!isAssignMode) return
 
@@ -534,33 +704,109 @@ export function ClassWiseGridView({
         return
       }
 
-      // Undo: Ctrl/Cmd + Z
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+      const isMac = getIsMac()
+      const isAnyModifier = e.ctrlKey || e.metaKey
+
+      // 1. Undo: Windows Ctrl+Z | Mac ⌘+Z
+      if (isAnyModifier && !e.shiftKey && e.key.toLowerCase() === "z") {
         e.preventDefault()
         handleUndo()
         return
       }
 
-      // Redo: Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y
+      // 2. Redo: Windows Ctrl+Y (or Ctrl+Shift+Z) | Mac ⌘+Shift+Z (or ⌘+Y)
       if (
-        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z") ||
-        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y")
+        (isAnyModifier && e.shiftKey && e.key.toLowerCase() === "z") ||
+        (isAnyModifier && e.key.toLowerCase() === "y")
       ) {
         e.preventDefault()
         handleRedo()
         return
       }
 
-      // Escape: deselect or close
+      // 3. Copy slot: Windows Ctrl+C | Mac ⌘+C
+      if (isAnyModifier && !e.shiftKey && e.key.toLowerCase() === "c") {
+        if (selectedSlotData?.entry) {
+          e.preventDefault()
+          setCopiedSlotData(selectedSlotData)
+          toast.success(
+            `Copied ${selectedSlotData.entry.subject?.name || "slot"}. Press ${isMac ? "⌘V" : "Ctrl+V"} to paste.`
+          )
+        }
+        return
+      }
+
+      // 4. Paste slot: Windows Ctrl+V | Mac ⌘+V
+      if (isAnyModifier && !e.shiftKey && e.key.toLowerCase() === "v") {
+        if (copiedSlotData?.entry && selectedSlotData) {
+          e.preventDefault()
+          handleMoveSlot(copiedSlotData, selectedSlotData, true)
+        }
+        return
+      }
+
+      // 5. Clear slot: Windows Delete | Mac Delete (⌫ / Backspace)
+      if (
+        e.key === "Delete" ||
+        (isMac && e.key === "Backspace" && !isAnyModifier)
+      ) {
+        if (selectedSlotData?.entry?.id) {
+          e.preventDefault()
+          handleUnassignSlot(selectedSlotData.entry.id)
+        }
+        return
+      }
+
+      // 6. Assign / Edit slot: Windows Enter | Mac Return
+      if (e.key === "Enter") {
+        if (selectedSlotData) {
+          e.preventDefault()
+          setDialogState({
+            isOpen: true,
+            cellData: {
+              section: selectedSlotData.section,
+              day: selectedSlotData.day,
+              period: selectedSlotData.period,
+              currentEntry: selectedSlotData.entry,
+              timetableId: timetable?.id,
+            },
+          })
+        }
+        return
+      }
+
+      // 7. Escape: deselect active slot
       if (e.key === "Escape") {
         setSelectedSlotKey(null)
+        setSelectedSlotData(null)
+        return
+      }
+
+      // 8. Arrow keys: navigate between timetable slots
+      if (
+        ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key) &&
+        selectedSlotData
+      ) {
+        e.preventDefault()
+        handleArrowNavigation(e.key)
         return
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isAssignMode, dialogState.isOpen, handleUndo, handleRedo])
+  }, [
+    isAssignMode,
+    dialogState.isOpen,
+    handleUndo,
+    handleRedo,
+    handleUnassignSlot,
+    handleMoveSlot,
+    handleArrowNavigation,
+    selectedSlotData,
+    copiedSlotData,
+    timetable,
+  ])
 
   // LOADING SKELETON
   if (isLoading) {
@@ -652,109 +898,70 @@ export function ClassWiseGridView({
   }
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-6 pb-20">
       {/* WING GROUPS */}
       {filteredWings.map((wing) => {
-        const isCollapsed = Boolean(collapsedWings[wing.id])
-        const wingClassesCount = wing.classes?.length || 0
-        const wingSectionsCount = wing.classes?.reduce((acc, c) => acc + (c.sections?.length || 0), 0) || 0
-
         return (
           <div key={wing.id} id={`wing-group-${wing.id}`} className="space-y-4">
-            {/* WING SECTION HEADER */}
-            <div className="flex items-center justify-between gap-3 px-1">
-              <button
-                type="button"
-                onClick={() => toggleWingCollapse(wing.id)}
-                className="flex items-center gap-2 text-left group cursor-pointer"
-              >
-                <div className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center transition-transform group-hover:scale-105">
-                  {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-                </div>
+            {/* CLASS CARDS IN WING (Wing section header removed completely) */}
+            <div className="space-y-5">
+              {wing.classes?.map((cls) => {
+                return (
+                  <div key={cls.id} id={`class-group-${cls.id}`} className="space-y-4">
+                    {cls.sections?.map((section) => {
+                      const secSetup = setupMap.get(section.setup_id) || setups[0]
+                      const secEntries = entriesBySection.get(section.id) || []
 
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base sm:text-lg font-bold uppercase tracking-wider text-foreground">
-                    {wing.name}
-                  </h2>
-                  <Badge
-                    variant="outline"
-                    className="font-semibold text-xs border-border/70 text-muted-foreground"
-                  >
-                    {wingClassesCount} Classes • {wingSectionsCount} Sections
-                  </Badge>
-                </div>
-              </button>
+                      return (
+                        <ClassWiseCard
+                          key={section.id}
+                          section={{
+                            ...section,
+                            class_name: cls.name,
+                            wing_name: wing.name,
+                          }}
+                          setup={secSetup}
+                          entries={secEntries}
+                          conflictMap={conflictMap}
+                          isAssignMode={isAssignMode}
+                          selectedSlot={selectedSlotKey}
+                          copiedSlot={copiedSlotData}
+                          onSelectSlot={(slotKey, slotData) => {
+                            if (!isAssignMode) return
+                            setSelectedSlotKey(slotKey)
+                            setSelectedSlotData(slotData || null)
+                          }}
+                          onOpenAssignDialog={(cellInfo) => {
+                            if (!isAssignMode) return
+                            setDialogState({
+                              isOpen: true,
+                              cellData: {
+                                ...cellInfo,
+                                timetableId: timetable.id,
+                              },
+                            })
+                          }}
+                          onClearSlot={(entryId) => handleUnassignSlot(entryId)}
+                          onMoveSlot={(src, tgt, isCopy) => handleMoveSlot(src, tgt, isCopy)}
+                          density={density}
+                          zoom={zoom}
+                          searchQuery={searchQuery}
+                          searchTokens={searchTokens}
+                          unassignedOnly={unassignedOnly}
+                          conflictsOnly={conflictsOnly}
+                        />
+                      )
+                    })}
+                  </div>
+                )
+              })}
             </div>
-
-            {/* CLASS CARDS IN WING */}
-            {!isCollapsed && (
-              <div className="space-y-5">
-                {wing.classes?.map((cls) => {
-                  return (
-                    <div key={cls.id} id={`class-group-${cls.id}`} className="space-y-4">
-                      {cls.sections?.map((section) => {
-                        const secSetup = setupMap.get(section.setup_id) || setups[0]
-                        const secEntries = entriesBySection.get(section.id) || []
-
-                        return (
-                          <ClassWiseCard
-                            key={section.id}
-                            section={{
-                              ...section,
-                              class_name: cls.name,
-                              wing_name: wing.name,
-                            }}
-                            setup={secSetup}
-                            entries={secEntries}
-                            conflictMap={conflictMap}
-                            isAssignMode={isAssignMode}
-                            selectedSlot={selectedSlotKey}
-                            copiedSlot={copiedSlotData}
-                            onSelectSlot={(slotKey) => setSelectedSlotKey(slotKey)}
-                            onOpenAssignDialog={(cellInfo) => {
-                              setDialogState({
-                                isOpen: true,
-                                cellData: {
-                                  ...cellInfo,
-                                  timetableId: timetable.id,
-                                },
-                              })
-                            }}
-                            onClearSlot={(entryId) => handleUnassignSlot(entryId)}
-                            onMoveSlot={(src, tgt, isCopy) => handleMoveSlot(src, tgt, isCopy)}
-                            density={density}
-                            zoom={zoom}
-                            searchQuery={searchQuery}
-                            searchTokens={searchTokens}
-                            unassignedOnly={unassignedOnly}
-                            conflictsOnly={conflictsOnly}
-                          />
-                        )
-                      })}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
           </div>
         )
       })}
 
       {/* JUMP TO CLASS RAIL */}
       <JumpToRail classes={flattenedClasses} />
-
-      {/* ASSIGN MODE FLOATING STATUS BAR & ISSUES DRAWER */}
-      <AssignModeBar
-        isActive={isAssignMode}
-        unassignedCount={totalUnassignedCount}
-        conflictsCount={totalConflictsCount}
-        canUndo={historyStack.length > 0}
-        canRedo={futureStack.length > 0}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        onExitMode={onToggleAssignMode}
-        issuesList={issuesList}
-      />
 
       {/* SLOT ASSIGNMENT DIALOG */}
       {dialogState.isOpen && (
