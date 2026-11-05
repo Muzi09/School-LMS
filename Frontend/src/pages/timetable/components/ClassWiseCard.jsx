@@ -283,8 +283,8 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                 {/* BELL SCHEDULE TIME HEADER FOR THIS GROUP */}
                 <div
                   className={cn(
-                    "w-full",
-                    group.isAmber && "bg-amber-50/70 dark:bg-amber-950/25"
+                    "w-full bg-primary/5 dark:bg-primary/10",
+                    gIdx > 0 && "border-t border-border/70"
                   )}
                   style={{
                     display: "grid",
@@ -293,12 +293,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                 >
                   {/* First Column First Row: Empty cell */}
                   <div
-                    className={cn(
-                      "w-full h-10 border-r",
-                      group.isAmber
-                        ? "border-amber-300/60 dark:border-amber-800/60 border-b-2 border-amber-400 dark:border-amber-500 bg-amber-100/30"
-                        : "border-b border-border/70 bg-muted/20"
-                    )}
+                    className="w-full h-10 border-r border-b border-border/70 bg-primary/5 dark:bg-primary/10"
                   />
 
                   {/* Period Columns Header */}
@@ -313,48 +308,25 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                       <div
                         key={period.id || period.period_number}
                         className={cn(
-                          "relative min-w-[130px] h-10 flex items-center justify-center border-b",
-                          group.isAmber
-                            ? "border-b-2 border-amber-400 dark:border-amber-500"
-                            : "border-border/70",
+                          "relative min-w-[130px] h-10 flex items-center justify-center border-b border-border/70",
                           isBreak
-                            ? group.isAmber
-                              ? "bg-amber-100/50 dark:bg-amber-950/40"
-                              : "bg-muted/35 dark:bg-muted/20"
-                            : group.isAmber
-                            ? ""
-                            : "bg-muted/15",
-                          !isLast &&
-                            (group.isAmber
-                              ? "border-r border-amber-300/50 dark:border-amber-800/50"
-                              : "border-r border-border/70")
+                            ? "bg-primary/10 dark:bg-primary/15"
+                            : "bg-primary/5 dark:bg-primary/10",
+                          !isLast && "border-r border-border/70"
                         )}
                       >
                         {/* Period label & duration */}
                         <div className="flex items-center justify-center">
                           <span
                             className={cn(
-                              "text-xs",
-                              isBreak
-                                ? group.isAmber
-                                  ? "font-bold text-amber-800 dark:text-amber-300 tracking-wider"
-                                  : "font-bold text-amber-700 dark:text-amber-400 tracking-wider"
-                                : group.isAmber
-                                ? "font-bold text-amber-900 dark:text-amber-200"
-                                : "font-semibold text-foreground"
+                              "text-xs font-semibold text-muted-foreground",
+                              isBreak && "font-bold tracking-wider"
                             )}
                           >
                             {isBreak ? (period.label || "BREAK") : formatPeriodShortLabel(period)}
                           </span>
                           {duration && (
-                            <span
-                              className={cn(
-                                "text-[10px] ml-1.5 font-normal",
-                                group.isAmber
-                                  ? "text-amber-700/80 dark:text-amber-400"
-                                  : "text-muted-foreground"
-                              )}
-                            >
+                            <span className="text-[10px] ml-1.5 font-normal text-muted-foreground">
                               {duration}
                             </span>
                           )}
@@ -363,14 +335,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                         {/* Start time pill for first column */}
                         {index === 0 && startFmt && (
                           <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 pointer-events-none">
-                            <span
-                              className={cn(
-                                "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border bg-background shadow-2xs whitespace-nowrap",
-                                group.isAmber
-                                  ? "border-amber-300/80 dark:border-amber-700/80 text-amber-800 dark:text-amber-300 font-semibold"
-                                  : "border-border/80 text-muted-foreground"
-                              )}
-                            >
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background shadow-2xs whitespace-nowrap text-muted-foreground">
                               {startFmt}
                             </span>
                           </div>
@@ -384,14 +349,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                               isLast ? "right-1" : "right-0 translate-x-1/2"
                             )}
                           >
-                            <span
-                              className={cn(
-                                "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border bg-background shadow-2xs whitespace-nowrap",
-                                group.isAmber
-                                  ? "border-amber-300/80 dark:border-amber-700/80 text-amber-800 dark:text-amber-300 font-semibold"
-                                  : "border-border/80 text-muted-foreground"
-                              )}
-                            >
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background shadow-2xs whitespace-nowrap text-muted-foreground">
                               {endFmt}
                             </span>
                           </div>
@@ -418,18 +376,11 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                       {/* Day Label Cell */}
                       <div
                         className={cn(
-                          "w-full h-full flex items-center justify-center border-r font-bold text-xs tracking-wider",
-                          group.isAmber
-                            ? "border-amber-300/60 dark:border-amber-800/60"
-                            : "border-border/70",
+                          "w-full h-full flex items-center justify-center border-r border-border/70 font-bold text-xs tracking-wider",
                           !isLastRow && "border-b border-border/70",
                           isToday
-                            ? group.isAmber
-                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 font-extrabold"
-                              : "bg-primary/5 text-primary font-extrabold"
-                            : group.isAmber
-                            ? "bg-amber-50/40 dark:bg-amber-950/15 text-amber-700 dark:text-amber-400"
-                            : "bg-muted/10 text-foreground/85"
+                            ? "bg-primary/15 dark:bg-primary/20 text-foreground font-extrabold"
+                            : "bg-primary/5 dark:bg-primary/10 text-muted-foreground"
                         )}
                       >
                         {DAY_LABELS[day]}
@@ -482,10 +433,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                             data-slot-key={slotKey}
                             className={cn(
                               "relative min-w-[130px] overflow-hidden",
-                              !isLastCol &&
-                                (group.isAmber
-                                  ? "border-r border-amber-300/40 dark:border-amber-800/40"
-                                  : "border-r border-border/70"),
+                              !isLastCol && "border-r border-border/70",
                               !isLastRow && "border-b border-border/70"
                             )}
                           >
