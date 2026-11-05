@@ -99,7 +99,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
           days: daysInSched,
           periods,
           isAmber,
-          gridTemplate: `minmax(56px, 64px) repeat(${periods.length}, minmax(130px, 1fr))`,
+          gridTemplate: `minmax(56px, 64px) repeat(${periods.length}, minmax(130px, 1fr)) 48px`,
         }
       }).filter((g) => g.days.length > 0)
     }
@@ -119,7 +119,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
           days: appDays.filter((d) => d !== "SATURDAY"),
           periods: sortedWeekday,
           isAmber: false,
-          gridTemplate: `minmax(56px, 64px) repeat(${sortedWeekday.length}, minmax(130px, 1fr))`,
+          gridTemplate: `minmax(56px, 64px) repeat(${sortedWeekday.length}, minmax(130px, 1fr)) 48px`,
         },
       ]
       if (hasSat) {
@@ -128,7 +128,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
           days: ["SATURDAY"],
           periods: sortedSaturday,
           isAmber: true,
-          gridTemplate: `minmax(56px, 64px) repeat(${sortedSaturday.length}, minmax(130px, 1fr))`,
+          gridTemplate: `minmax(56px, 64px) repeat(${sortedSaturday.length}, minmax(130px, 1fr)) 48px`,
         })
       }
     }
@@ -200,8 +200,8 @@ export const ClassWiseCard = memo(function ClassWiseCard({
   const minCellWidth = 130
 
   // Rigid CSS Grid column tracks guaranteeing 100% pixel-perfect alignment across all rows
-  const weekdayGridTemplate = `minmax(56px, 64px) repeat(${weekdayPeriods.length}, minmax(130px, 1fr))`
-  const saturdayGridTemplate = `minmax(56px, 64px) repeat(${saturdayPeriods.length}, minmax(130px, 1fr))`
+  const weekdayGridTemplate = `minmax(56px, 64px) repeat(${weekdayPeriods.length}, minmax(130px, 1fr)) 48px`
+  const saturdayGridTemplate = `minmax(56px, 64px) repeat(${saturdayPeriods.length}, minmax(130px, 1fr)) 48px`
 
   return (
     <div
@@ -302,17 +302,15 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                     const startFmt = formatTime12h(period.start_time)
                     const endFmt = formatTime12h(period.end_time)
                     const duration = calculateDuration(period.start_time, period.end_time)
-                    const isLast = index === group.periods.length - 1
 
                     return (
                       <div
                         key={period.id || period.period_number}
                         className={cn(
-                          "relative min-w-[130px] h-10 flex items-center justify-center border-b border-border/70",
+                          "relative min-w-[130px] h-10 flex items-center justify-center border-b border-border/70 border-r border-border/70",
                           isBreak
                             ? "bg-primary/10 dark:bg-primary/15"
-                            : "bg-primary/5 dark:bg-primary/10",
-                          !isLast && "border-r border-border/70"
+                            : "bg-primary/5 dark:bg-primary/10"
                         )}
                       >
                         {/* Period label & duration */}
@@ -343,12 +341,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
 
                         {/* End time pill on divider */}
                         {endFmt && (
-                          <div
-                            className={cn(
-                              "absolute top-1/2 -translate-y-1/2 z-20 pointer-events-none",
-                              isLast ? "right-1" : "right-0 translate-x-1/2"
-                            )}
-                          >
+                          <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 pointer-events-none">
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background shadow-2xs whitespace-nowrap text-muted-foreground">
                               {endFmt}
                             </span>
@@ -357,6 +350,9 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                       </div>
                     )
                   })}
+
+                  {/* Empty space trailing cell to compensate last time badge & provide breathing room */}
+                  <div className="w-full h-10 border-b border-border/70 bg-primary/5 dark:bg-primary/10" />
                 </div>
 
                 {/* DAY ROWS FOR THIS GROUP */}
@@ -388,7 +384,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
 
                       {/* Period Cells */}
                       {group.periods.map((period, index) => {
-                        const isLastCol = index === group.periods.length - 1
                         const entry =
                           entryLookup.get(`${day}_${period.id}`) ||
                           entryLookup.get(`${day}_p${period.period_number}`) ||
@@ -432,8 +427,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                             key={period.id || period.period_number}
                             data-slot-key={slotKey}
                             className={cn(
-                              "relative min-w-[130px] overflow-hidden",
-                              !isLastCol && "border-r border-border/70",
+                              "relative min-w-[130px] overflow-hidden border-r border-border/70",
                               !isLastRow && "border-b border-border/70"
                             )}
                           >
@@ -497,6 +491,14 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                           </div>
                         )
                       })}
+
+                      {/* Empty space trailing cell */}
+                      <div
+                        className={cn(
+                          "w-full bg-muted/5 dark:bg-muted/10",
+                          !isLastRow && "border-b border-border/70"
+                        )}
+                      />
                     </div>
                   )
                 })}
