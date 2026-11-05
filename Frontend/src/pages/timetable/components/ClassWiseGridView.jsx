@@ -907,7 +907,7 @@ export function ClassWiseGridView({
             <div className="space-y-5">
               {wing.classes?.map((cls) => {
                 return (
-                  <div key={cls.id} id={`class-group-${cls.id}`} className="space-y-4">
+                  <div key={cls.id} id={`class-group-${cls.id}`} className="space-y-4 scroll-mt-32 sm:scroll-mt-36">
                     {cls.sections?.map((section) => {
                       const secSetup = setupMap.get(section.setup_id) || setups[0]
                       const secEntries = entriesBySection.get(section.id) || []

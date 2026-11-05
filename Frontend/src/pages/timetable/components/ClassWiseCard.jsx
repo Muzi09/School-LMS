@@ -207,7 +207,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
     <div
       id={`class-section-${section.id}`}
       className={cn(
-        "bg-card text-card-foreground rounded-2xl border border-primary/25 shadow-xs transition-all overflow-hidden",
+        "bg-card text-card-foreground rounded-2xl border border-primary/25 shadow-xs transition-all overflow-hidden scroll-mt-32 sm:scroll-mt-36",
         "hover:shadow-sm"
       )}
     >

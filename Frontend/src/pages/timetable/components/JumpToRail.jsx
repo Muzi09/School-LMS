@@ -106,21 +106,58 @@ export function JumpToRail({
     }, 250)
   }
 
+  const scrollToTargetWithOffset = (el) => {
+    if (!el) return
+
+    // Find the scroll container (typically AppLayout <main> or window)
+    const scrollContainer = el.closest("main") || document.scrollingElement || document.documentElement
+
+    // Dynamic header height measurement (AppHeader + TimetableHeader)
+    const stickyHeader = document.querySelector("header.sticky") || document.querySelector("header")
+    const headerHeight = stickyHeader ? stickyHeader.offsetHeight : 72
+    // Comfortable padding buffer above the target element so the card header is fully visible
+    const buffer = 24
+    const totalOffset = headerHeight + buffer
+
+    if (
+      scrollContainer &&
+      scrollContainer !== document.documentElement &&
+      scrollContainer !== document.body &&
+      scrollContainer.scrollHeight > scrollContainer.clientHeight
+    ) {
+      const containerRect = scrollContainer.getBoundingClientRect()
+      const elRect = el.getBoundingClientRect()
+      const targetScroll = scrollContainer.scrollTop + (elRect.top - containerRect.top) - totalOffset
+      scrollContainer.scrollTo({
+        top: Math.max(0, targetScroll),
+        behavior: "smooth",
+      })
+    } else {
+      // Window scroll fallback
+      const elRect = el.getBoundingClientRect()
+      const targetScroll = window.scrollY + elRect.top - totalOffset
+      window.scrollTo({
+        top: Math.max(0, targetScroll),
+        behavior: "smooth",
+      })
+    }
+
+    // Visual pulse highlight
+    el.classList.add("ring-2", "ring-primary", "ring-offset-4", "transition-all")
+    setTimeout(() => {
+      el.classList.remove("ring-2", "ring-primary", "ring-offset-4")
+    }, 1500)
+  }
+
   const handleJump = (cls) => {
     setActiveId(cls.id)
     onJumpToClass?.(cls)
 
-    // Smooth scroll to the first section of this class or its container
+    // Smooth scroll to the first section of this class or its container with sticky header offset
     const el =
       document.getElementById(`class-group-${cls.id}`) ||
       document.getElementById(`class-section-${cls.sections?.[0]?.id}`)
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" })
-      el.classList.add("ring-2", "ring-primary", "ring-offset-4", "transition-all")
-      setTimeout(() => {
-        el.classList.remove("ring-2", "ring-primary", "ring-offset-4")
-      }, 1500)
-    }
+    scrollToTargetWithOffset(el)
   }
 
   const handleJumpToSection = (cls, section) => {
@@ -128,18 +165,16 @@ export function JumpToRail({
     setActiveSectionId(section.id)
     onJumpToSection?.(cls, section)
 
-    // Smooth scroll directly to that class's section
+    // Smooth scroll directly to that class's section with sticky header offset
     const el = document.getElementById(`class-section-${section.id}`)
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" })
-      el.classList.add("ring-2", "ring-primary", "ring-offset-4", "transition-all")
-      setTimeout(() => {
-        el.classList.remove("ring-2", "ring-primary", "ring-offset-4")
-      }, 1500)
-    }
+    scrollToTargetWithOffset(el)
   }
 
   const scrollToTop = () => {
+    const scrollContainer = document.querySelector("main")
+    if (scrollContainer && scrollContainer.scrollHeight > scrollContainer.clientHeight) {
+      scrollContainer.scrollTo({ top: 0, behavior: "smooth" })
+    }
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
