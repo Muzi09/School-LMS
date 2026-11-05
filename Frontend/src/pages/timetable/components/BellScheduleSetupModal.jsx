@@ -1,97 +1,67 @@
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useReducer, useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   Clock,
   Plus,
-  Trash2,
-  Copy,
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  Coffee,
-  Calendar,
-  Layers,
-  Sparkles,
-  Info,
-  Loader2,
   X,
-  ArrowRight,
+  Layers,
+  Send,
+  Loader2,
+  AlertTriangle,
+  RotateCcw,
+  Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-  useBatchSaveSetups,
+  SetupCard,
+  PeriodModal,
+  DaySplitModal,
+  DayMergeModal,
+  MoveScheduleModal,
+  ImpactWarningDialog,
+  UnsavedBar,
+  bellTimingReducer,
+  createDefaultSetup,
+  validateSchedule,
+  validateSetupDayInvariants,
+  validateAssignments,
+} from "../bellTiming"
+import {
   useSetups,
+  useBatchSaveSetups,
 } from "@/hooks/useTimetable"
 import { previewSetupsImpactApi } from "@/api/timetableService"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
-const ALL_DAYS = [
-  { id: "MONDAY", short: "Mon", full: "Monday" },
-  { id: "TUESDAY", short: "Tue", full: "Tuesday" },
-  { id: "WEDNESDAY", short: "Wed", full: "Wednesday" },
-  { id: "THURSDAY", short: "Thu", full: "Thursday" },
-  { id: "FRIDAY", short: "Fri", full: "Friday" },
-  { id: "SATURDAY", short: "Sat", full: "Saturday" },
-]
-
-function parseMinutes(timeStr = "08:30") {
-  const [h, m] = timeStr.split(":").map(Number)
-  return (h || 0) * 60 + (m || 0)
-}
-
-function formatMinutes(minutes) {
-  const norm = ((minutes % 1440) + 1440) % 1440
-  const h = Math.floor(norm / 60)
-  const m = norm % 60
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
-}
-
-function format12h(timeStr = "08:30") {
-  const [hStr, mStr] = timeStr.split(":")
-  let h = parseInt(hStr, 10) || 0
-  const m = mStr || "00"
-  const ampm = h >= 12 ? "PM" : "AM"
-  h = h % 12 || 12
-  return `${h}:${m} ${ampm}`
-}
-
 export function BellScheduleSetupModal({
   isOpen,
   onClose,
   timetableId,
-  schoolId,
   wings = [],
   onSaved,
+  readOnly = false,
 }) {
-  const { data: initialSetups = [], isLoading } = useSetups(timetableId)
+  // Query setups from API
+  const {
+    data: rawSetupsData = [],
+    isLoading: isFetchingSetups,
+    error: fetchError,
+    refetch,
+  } = useSetups(timetableId)
+
   const batchSaveMutation = useBatchSaveSetups()
 
-  // Setups state
-  const [setups, setSetups] = useState([])
-  // Mapping of sectionId -> setupId
-  const [sectionAssignments, setSectionAssignments] = useState({})
-
-  // Impact dialog state
-  const [impactModalData, setImpactModalData] = useState(null)
-  const [isCheckingImpact, setIsCheckingImpact] = useState(false)
-
-  // Shift downstream periods toggle state
-  const [autoShift, setAutoShift] = useState(true)
-
-  // Extract all sections across all wings
+  // Flatten all sections in all wings
   const allSections = useMemo(() => {
     const list = []
     wings.forEach((w) => {
-      w.classes?.forEach((c) => {
-        c.sections?.forEach((s) => {
+      (w.classes || []).forEach((c) => {
+        (c.sections || []).forEach((s) => {
           list.push({
             id: s.id,
             name: s.name,
-            classId: c.id,
             className: c.name,
-            wingId: w.id,
             wingName: w.name,
           })
         })
@@ -100,411 +70,486 @@ export function BellScheduleSetupModal({
     return list
   }, [wings])
 
-  // Initialize setups and assignments when modal opens or initialSetups load
+  // Schedule Reducer State
+  const [state, dispatch] = useReducer(bellTimingReducer, null, () => ({
+    setups: [],
+    sectionAssignments: {},
+    activeSetupId: null,
+    activeScheduleId: null,
+    isDirty: false,
+    history: { past: [], future: [] },
+  }))
+
+  // Multi-select sections state
+  const [selectedSectionIds, setSelectedSectionIds] = useState([])
+
+  // Sub-modal state: null | { type: "PERIOD" | "SPLIT" | "MERGE" | "MOVE" | "IMPACT", ...props }
+  const [modalState, setModalState] = useState(null)
+  const [isCheckingImpact, setIsCheckingImpact] = useState(false)
+  const hasInitializedRef = useRef(false)
+
+  useEffect(() => {
+    hasInitializedRef.current = false
+  }, [timetableId, isOpen])
+
+  // Initialize or re-sync reducer state when API data arrives
+  useEffect(() => {
+    if (!isOpen || hasInitializedRef.current) return
+    if (isFetchingSetups) return
+
+    // If state is not dirty, populate from API data or synthesize initial setup
+    if (!state.isDirty) {
+      if (rawSetupsData && rawSetupsData.length > 0) {
+        const assignments = {}
+        const mappedSetups = rawSetupsData.map((s, idx) => {
+          (s.assigned_section_ids || []).forEach((secId) => {
+            assignments[secId] = s.id
+          })
+
+          const appDays = s.applicable_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+          let schedules = s.schedules || []
+
+          if (!schedules || schedules.length === 0) {
+            const rawPeriods = s.periods || []
+            schedules = [
+              {
+                id: "regular",
+                days: appDays.filter((d) => d !== "SATURDAY"),
+                periods: rawPeriods.map((p) => ({
+                  ...p,
+                  type: p.period_type || (p.is_break ? "RECESS" : "CLASS"),
+                })),
+              },
+            ]
+            if (appDays.includes("SATURDAY")) {
+              schedules.push({
+                id: "saturday",
+                days: ["SATURDAY"],
+                periods: rawPeriods.map((p) => ({
+                  ...p,
+                  type: p.period_type || (p.is_break ? "RECESS" : "CLASS"),
+                })),
+              })
+            }
+          }
+
+          return {
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            is_default: Boolean(s.is_default),
+            order_index: s.order_index ?? idx,
+            version: s.version ?? 1,
+            applicable_days: appDays,
+            schedules,
+          }
+        })
+
+        // Assign any orphan sections to the first setup by default
+        const firstSetupId = mappedSetups[0]?.id
+        allSections.forEach((sec) => {
+          if (!assignments[sec.id] && firstSetupId) {
+            assignments[sec.id] = firstSetupId
+          }
+        })
+
+        hasInitializedRef.current = true
+        dispatch({
+          type: "SET_INITIAL_STATE",
+          payload: {
+            setups: mappedSetups,
+            sectionAssignments: assignments,
+          },
+        })
+      } else if (!isFetchingSetups) {
+        // No setups exist yet: create initial default setup and assign all classes to it
+        const defaultSetup = createDefaultSetup("Setup 1", 1)
+        const assignments = {}
+        allSections.forEach((sec) => {
+          assignments[sec.id] = defaultSetup.id
+        })
+
+        hasInitializedRef.current = true
+        dispatch({
+          type: "SET_INITIAL_STATE",
+          payload: {
+            setups: [defaultSetup],
+            sectionAssignments: assignments,
+          },
+        })
+      }
+    }
+  }, [isOpen, rawSetupsData, isFetchingSetups, allSections, state.isDirty])
+
+  // Setup Actions
+  const handleRenameSetup = (setupId, name) => {
+    dispatch({ type: "RENAME_SETUP", payload: { setupId, name } })
+  }
+
+  const handleDuplicateSetup = (setupId) => {
+    dispatch({ type: "DUPLICATE_SETUP", payload: { setupId } })
+    toast.success("Setup duplicated with empty class assignments.")
+  }
+
+  const handleDeleteSetup = (setupId) => {
+    const targetSetup = state.setups.find((s) => s.id === setupId)
+    dispatch({ type: "DELETE_SETUP", payload: { setupId } })
+    toast.info(`Deleted ${targetSetup?.name || "Setup"}`)
+  }
+
+  const handleCreateSetup = () => {
+    const nextIdx = state.setups.length + 1
+    dispatch({ type: "CREATE_SETUP", payload: { name: `Setup ${nextIdx}` } })
+  }
+
+  // Day Schedule Split & Merge
+  const handleOpenSplitModal = (setupId, schedule, days) => {
+    setModalState({
+      type: "SPLIT",
+      setupId,
+      schedule,
+      daysToSplit: days,
+    })
+  }
+
+  const handleConfirmSplit = (setupId, scheduleId, daysToSplit) => {
+    dispatch({
+      type: "SPLIT_DAYS",
+      payload: { setupId, scheduleId, daysToSplit },
+    })
+    toast.success(`Split ${daysToSplit.join(", ")} into an independent schedule.`, {
+      action: {
+        label: "Undo",
+        onClick: () => dispatch({ type: "UNDO" }),
+      },
+    })
+  }
+
+  const handleOpenMergeModal = (setupId, sourceSchedule, day) => {
+    const targetSetup = state.setups.find((s) => s.id === setupId)
+    setModalState({
+      type: "MERGE",
+      setupId,
+      sourceSchedule,
+      allSchedules: targetSetup?.schedules || [],
+      day,
+    })
+  }
+
+  const handleConfirmMerge = (setupId, { sourceScheduleId, targetScheduleId, day }) => {
+    dispatch({
+      type: "MERGE_DAYS",
+      payload: { setupId, sourceScheduleId, targetScheduleId },
+    })
+    toast.info(`Merged ${day} back into shared schedule.`, {
+      action: {
+        label: "Undo",
+        onClick: () => dispatch({ type: "UNDO" }),
+      },
+    })
+  }
+
+  // Period Actions
+  const handleOpenPeriodModal = (setupId, scheduleId, period, periodIndex) => {
+    const setup = state.setups.find((s) => s.id === setupId)
+    const schedule = setup?.schedules?.find((sch) => sch.id === scheduleId)
+    setModalState({
+      type: "PERIOD",
+      mode: "edit",
+      setupId,
+      scheduleId,
+      periodData: period,
+      periodIndex,
+      schedule,
+    })
+  }
+
+  const handleInsertPeriodAtBoundary = (setupId, scheduleId, insertAfterIndex) => {
+    const setup = state.setups.find((s) => s.id === setupId)
+    const schedule = setup?.schedules?.find((sch) => sch.id === scheduleId)
+    setModalState({
+      type: "PERIOD",
+      mode: "add",
+      setupId,
+      scheduleId,
+      insertAfterIndex,
+      schedule,
+    })
+  }
+
+  const handleSavePeriod = (payload) => {
+    if (payload.mode === "add") {
+      dispatch({
+        type: "INSERT_PERIOD",
+        payload: {
+          setupId: payload.setupId,
+          scheduleId: payload.scheduleId,
+          insertAfterIndex: payload.insertAfterIndex,
+          periodData: payload.periodData,
+          cascadeMode: payload.cascadeMode,
+        },
+      })
+    } else {
+      dispatch({
+        type: "EDIT_PERIOD",
+        payload: {
+          setupId: payload.setupId,
+          scheduleId: payload.scheduleId,
+          periodIndex: payload.periodIndex,
+          periodData: payload.periodData,
+          cascadeMode: payload.cascadeMode,
+          shiftEntireDay: payload.shiftEntireDay,
+        },
+      })
+    }
+  }
+
+  const handleDeletePeriod = (setupId, scheduleId, periodIndex) => {
+    dispatch({
+      type: "DELETE_PERIOD",
+      payload: { setupId, scheduleId, periodIndex },
+    })
+  }
+
+  const handleEditBoundaryTime = (setupId, scheduleId, boundaryIndex, newTime, isFirst) => {
+    dispatch({
+      type: "EDIT_BOUNDARY_TIME",
+      payload: { setupId, scheduleId, boundaryIndex, newTime, isFirst },
+    })
+  }
+
+  const handleApplyTemplate = (setupId, scheduleId, templateType = "standard") => {
+    dispatch({
+      type: "APPLY_TEMPLATE",
+      payload: { setupId, scheduleId, templateType },
+    })
+    toast.success("Applied standard 8-period template.")
+  }
+
+  // Class Movement Actions
+  const handleWingClick = (wing, sectionIds, currentSetupId) => {
+    setModalState({
+      type: "MOVE",
+      targetType: "WING",
+      targetInfo: {
+        name: wing.name,
+        wingName: wing.name,
+        sectionCount: sectionIds.length,
+        sectionIds,
+      },
+      currentSetupId,
+    })
+  }
+
+  const handleClassClick = (cls, wingName, sectionIds, currentSetupId) => {
+    setModalState({
+      type: "MOVE",
+      targetType: "CLASS",
+      targetInfo: {
+        name: cls.name,
+        className: cls.name,
+        wingName,
+        sectionCount: sectionIds.length,
+        sectionIds,
+      },
+      currentSetupId,
+    })
+  }
+
+  const handleSectionClick = (e, sec, className, wingName, currentSetupId) => {
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      // Toggle selection for multi-select
+      setSelectedSectionIds((prev) =>
+        prev.includes(sec.id) ? prev.filter((id) => id !== sec.id) : [...prev, sec.id]
+      )
+      return
+    }
+
+    setModalState({
+      type: "MOVE",
+      targetType: "SECTION",
+      targetInfo: {
+        name: sec.name,
+        className,
+        wingName,
+        sectionCount: 1,
+        sectionIds: [sec.id],
+      },
+      currentSetupId,
+    })
+  }
+
+  const handleOpenMultiMove = () => {
+    if (selectedSectionIds.length === 0) return
+    const firstAssignedSetupId = state.sectionAssignments[selectedSectionIds[0]] || state.setups[0]?.id
+
+    setModalState({
+      type: "MOVE",
+      targetType: "MULTI",
+      targetInfo: {
+        sectionCount: selectedSectionIds.length,
+        sectionIds: selectedSectionIds,
+      },
+      currentSetupId: firstAssignedSetupId,
+    })
+  }
+
+  const handleMoveToSetup = ({ sectionIds, targetSetupId, count }) => {
+    const targetSetup = state.setups.find((s) => s.id === targetSetupId)
+    dispatch({
+      type: "MOVE_CLASSES",
+      payload: { sectionIds, targetSetupId },
+    })
+    setSelectedSectionIds([])
+    const label = count === 1 ? "1 class" : `${count} classes`
+    toast.success(`Moved ${label} to ${targetSetup?.name || "Setup"}`, {
+      action: {
+        label: "Undo",
+        onClick: () => dispatch({ type: "UNDO" }),
+      },
+    })
+  }
+
+  const handleCreateAndMove = ({ sectionIds, sourceSetupId, count }) => {
+    const nextIdx = state.setups.length + 1
+    const newName = `Setup ${nextIdx}`
+
+    dispatch({
+      type: "CREATE_AND_MOVE",
+      payload: { sectionIds, sourceSetupId, name: newName },
+    })
+    setSelectedSectionIds([])
+    const label = count === 1 ? "1 class" : `${count} classes`
+    toast.success(`Created ${newName} and moved ${label}`, {
+      action: {
+        label: "Undo",
+        onClick: () => dispatch({ type: "UNDO" }),
+      },
+    })
+  }
+
+  // Keyboard Shortcuts & Escape Key
   useEffect(() => {
     if (!isOpen) return
 
-    if (initialSetups.length > 0) {
-      // Deep clone initial setups
-      const cloned = initialSetups.map((s, idx) => ({
-        id: s.id,
-        name: s.name || `Setup ${idx + 1}`,
-        description: s.description || "",
-        is_default: Boolean(s.is_default),
-        applicable_days: s.applicable_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
-        periods: (s.periods || []).map((p) => ({
-          id: p.id,
-          period_number: p.period_number,
-          start_time: p.start_time,
-          end_time: p.end_time,
-          is_break: Boolean(p.is_break),
-          label: p.label || (p.is_break ? "RECESS" : `Period ${p.period_number}`),
-        })),
-        saturdayPeriods: (s.schedules?.find((sch) => sch.days?.includes("SATURDAY"))?.periods || []).map((p) => ({
-          id: p.id,
-          period_number: p.period_number,
-          start_time: p.start_time,
-          end_time: p.end_time,
-          is_break: Boolean(p.is_break),
-          label: p.label || (p.is_break ? "RECESS" : `Period ${p.period_number}`),
-        })),
-      }))
-
-      setSetups(cloned)
-
-      // Initialize section assignments
-      const map = {}
-      const defaultSetupId = cloned.find((s) => s.is_default)?.id || cloned[0]?.id
-
-      allSections.forEach((sec) => {
-        // Find which setup contains this section ID
-        const matched = initialSetups.find((st) => st.assigned_section_ids?.includes(sec.id))
-        map[sec.id] = matched ? matched.id : defaultSetupId
-      })
-      setSectionAssignments(map)
-    } else {
-      // Default initial Setup 1
-      const defaultSetupId = "temp-setup-1"
-      const defaultPeriods = [
-        { period_number: 1, start_time: "08:30", end_time: "09:15", is_break: false, label: "P1" },
-        { period_number: 2, start_time: "09:15", end_time: "10:00", is_break: false, label: "P2" },
-        { period_number: 3, start_time: "10:00", end_time: "10:45", is_break: false, label: "P3" },
-        { period_number: 4, start_time: "10:45", end_time: "11:30", is_break: false, label: "P4" },
-        { period_number: 5, start_time: "11:30", end_time: "11:45", is_break: true, label: "RECESS" },
-        { period_number: 6, start_time: "11:45", end_time: "12:30", is_break: false, label: "P5" },
-        { period_number: 7, start_time: "12:30", end_time: "13:15", is_break: false, label: "P6" },
-        { period_number: 8, start_time: "13:15", end_time: "14:00", is_break: false, label: "P7" },
-        { period_number: 9, start_time: "14:00", end_time: "14:45", is_break: false, label: "P8" },
-      ]
-      const defaultSatPeriods = [
-        { period_number: 1, start_time: "08:30", end_time: "09:05", is_break: false, label: "P1" },
-        { period_number: 2, start_time: "09:05", end_time: "09:40", is_break: false, label: "P2" },
-        { period_number: 3, start_time: "09:40", end_time: "10:15", is_break: false, label: "P3" },
-        { period_number: 4, start_time: "10:15", end_time: "10:50", is_break: false, label: "P4" },
-        { period_number: 5, start_time: "10:50", end_time: "11:25", is_break: false, label: "P5" },
-        { period_number: 6, start_time: "11:25", end_time: "12:00", is_break: false, label: "P6" },
-        { period_number: 7, start_time: "12:00", end_time: "12:35", is_break: false, label: "P7" },
-        { period_number: 8, start_time: "12:35", end_time: "13:10", is_break: false, label: "P8" },
-      ]
-
-      setSetups([
-        {
-          id: defaultSetupId,
-          name: "Setup 1",
-          description: "Main Regular Bell Schedule",
-          is_default: true,
-          applicable_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"],
-          periods: defaultPeriods,
-          saturdayPeriods: defaultSatPeriods,
-        },
-      ])
-
-      const map = {}
-      allSections.forEach((sec) => {
-        map[sec.id] = defaultSetupId
-      })
-      setSectionAssignments(map)
-    }
-  }, [isOpen, initialSetups, allSections])
-
-  if (!isOpen) return null
-
-  // ---------------------------------------------------------------------------
-  // Setup Actions (Add, Duplicate, Delete)
-  // ---------------------------------------------------------------------------
-
-  const handleAddSetup = () => {
-    const nextIndex = setups.length + 1
-    const newId = `temp-setup-${Date.now()}`
-    const basePeriods = setups[0]?.periods?.map((p) => ({ ...p, id: undefined })) || [
-      { period_number: 1, start_time: "08:30", end_time: "09:15", is_break: false, label: "P1" },
-      { period_number: 2, start_time: "09:15", end_time: "10:00", is_break: false, label: "P2" },
-      { period_number: 3, start_time: "10:00", end_time: "10:45", is_break: false, label: "P3" },
-      { period_number: 4, start_time: "10:45", end_time: "11:30", is_break: false, label: "P4" },
-    ]
-
-    setSetups([
-      ...setups,
-      {
-        id: newId,
-        name: `Setup ${nextIndex}`,
-        description: `Alternative Bell Schedule ${nextIndex}`,
-        is_default: false,
-        applicable_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
-        periods: basePeriods,
-        saturdayPeriods: setups[0]?.saturdayPeriods || [],
-      },
-    ])
-  }
-
-  const handleDuplicateSetup = (setupToDuplicate) => {
-    const nextIndex = setups.length + 1
-    const newId = `temp-setup-${Date.now()}`
-    const duplicated = {
-      ...setupToDuplicate,
-      id: newId,
-      name: `Copy of ${setupToDuplicate.name}`,
-      is_default: false,
-      periods: setupToDuplicate.periods.map((p) => ({ ...p, id: undefined })),
-      saturdayPeriods: setupToDuplicate.saturdayPeriods?.map((p) => ({ ...p, id: undefined })) || [],
-    }
-    setSetups([...setups, duplicated])
-  }
-
-  const handleDeleteSetup = (setupIdToDelete) => {
-    if (setups.length <= 1) {
-      toast.error("You must have at least one bell setup.")
-      return
-    }
-
-    const remainingSetups = setups.filter((s) => s.id !== setupIdToDelete)
-    // Make sure one is default
-    const fallbackSetupId = remainingSetups.find((s) => s.is_default)?.id || remainingSetups[0].id
-
-    // Reassign sections from the deleted setup to the fallback setup
-    const nextMap = { ...sectionAssignments }
-    Object.keys(nextMap).forEach((secId) => {
-      if (nextMap[secId] === setupIdToDelete) {
-        nextMap[secId] = fallbackSetupId
-      }
-    })
-
-    setSetups(remainingSetups)
-    setSectionAssignments(nextMap)
-  }
-
-  // ---------------------------------------------------------------------------
-  // Period Operations (Edit time, shift downstream, insert, delete, toggle break)
-  // ---------------------------------------------------------------------------
-
-  const handlePeriodChange = (setupIdx, periodIdx, field, value) => {
-    const nextSetups = [...setups]
-    const setup = { ...nextSetups[setupIdx] }
-    const periods = [...setup.periods]
-    const currentPeriod = { ...periods[periodIdx] }
-
-    if (field === "start_time" || field === "end_time") {
-      const oldStartMin = parseMinutes(currentPeriod.start_time)
-      const oldEndMin = parseMinutes(currentPeriod.end_time)
-      const oldDuration = oldEndMin - oldStartMin
-
-      currentPeriod[field] = value
-
-      if (field === "start_time" && autoShift) {
-        // Keep duration constant by shifting end time
-        const newStartMin = parseMinutes(value)
-        const newEndMin = newStartMin + Math.max(15, oldDuration)
-        currentPeriod.end_time = formatMinutes(newEndMin)
-
-        // Shift subsequent periods
-        let lastEndMin = newEndMin
-        for (let i = periodIdx + 1; i < periods.length; i++) {
-          const p = { ...periods[i] }
-          const pDuration = parseMinutes(p.end_time) - parseMinutes(p.start_time)
-          p.start_time = formatMinutes(lastEndMin)
-          lastEndMin += Math.max(15, pDuration)
-          p.end_time = formatMinutes(lastEndMin)
-          periods[i] = p
+    const handleKeyDown = (e) => {
+      // Escape closes sub-modal first, then main modal
+      if (e.key === "Escape") {
+        if (modalState) {
+          setModalState(null)
+          return
         }
-      } else if (field === "end_time" && autoShift) {
-        // Shift subsequent periods start from this new end time
-        let lastEndMin = parseMinutes(value)
-        for (let i = periodIdx + 1; i < periods.length; i++) {
-          const p = { ...periods[i] }
-          const pDuration = parseMinutes(p.end_time) - parseMinutes(p.start_time)
-          p.start_time = formatMinutes(lastEndMin)
-          lastEndMin += Math.max(15, pDuration)
-          p.end_time = formatMinutes(lastEndMin)
-          periods[i] = p
+        handleRequestClose()
+        return
+      }
+
+      // Undo: Ctrl+Z / Cmd+Z (without Shift)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        if (state.history.past.length > 0 && !readOnly) {
+          e.preventDefault()
+          dispatch({ type: "UNDO" })
         }
       }
-    } else {
-      currentPeriod[field] = value
-    }
 
-    periods[periodIdx] = currentPeriod
-    setup.periods = periods
-    nextSetups[setupIdx] = setup
-    setSetups(nextSetups)
-  }
-
-  const handleInsertPeriod = (setupIdx, insertAfterIdx) => {
-    const nextSetups = [...setups]
-    const setup = { ...nextSetups[setupIdx] }
-    const periods = [...setup.periods]
-
-    const prevPeriod = periods[insertAfterIdx]
-    const prevEndMin = parseMinutes(prevPeriod.end_time)
-    const newStartMin = prevEndMin
-    const newEndMin = prevEndMin + 45
-
-    const newPeriod = {
-      period_number: insertAfterIdx + 2,
-      start_time: formatMinutes(newStartMin),
-      end_time: formatMinutes(newEndMin),
-      is_break: false,
-      label: `P${insertAfterIdx + 2}`,
-    }
-
-    // Insert into array
-    periods.splice(insertAfterIdx + 1, 0, newPeriod)
-
-    // Re-index period numbers and auto-shift following
-    let lastEnd = newEndMin
-    for (let i = insertAfterIdx + 1; i < periods.length; i++) {
-      const p = { ...periods[i] }
-      p.period_number = i + 1
-      if (i > insertAfterIdx + 1 && autoShift) {
-        const dur = parseMinutes(p.end_time) - parseMinutes(p.start_time)
-        p.start_time = formatMinutes(lastEnd)
-        lastEnd += Math.max(15, dur)
-        p.end_time = formatMinutes(lastEnd)
-      } else {
-        lastEnd = parseMinutes(p.end_time)
-      }
-      if (!p.is_break) {
-        p.label = `P${p.period_number}`
-      }
-      periods[i] = p
-    }
-
-    setup.periods = periods
-    nextSetups[setupIdx] = setup
-    setSetups(nextSetups)
-  }
-
-  const handleDeletePeriod = (setupIdx, periodIdx) => {
-    const nextSetups = [...setups]
-    const setup = { ...nextSetups[setupIdx] }
-    if (setup.periods.length <= 1) {
-      toast.error("A setup must have at least one period.")
-      return
-    }
-
-    const periods = setup.periods.filter((_, idx) => idx !== periodIdx)
-    // Re-index period numbers
-    const reindexed = periods.map((p, i) => ({
-      ...p,
-      period_number: i + 1,
-      label: p.is_break ? p.label : `P${i + 1}`,
-    }))
-
-    setup.periods = reindexed
-    nextSetups[setupIdx] = setup
-    setSetups(nextSetups)
-  }
-
-  // ---------------------------------------------------------------------------
-  // Applicability Tree Handling
-  // ---------------------------------------------------------------------------
-
-  const handleAssignSection = (secId, targetSetupId) => {
-    setSectionAssignments((prev) => ({
-      ...prev,
-      [secId]: targetSetupId,
-    }))
-  }
-
-  const handleAssignClass = (classId, targetSetupId) => {
-    const targetClass = wings.flatMap((w) => w.classes || []).find((c) => c.id === classId)
-    if (!targetClass) return
-
-    setSectionAssignments((prev) => {
-      const next = { ...prev }
-      targetClass.sections?.forEach((s) => {
-        next[s.id] = targetSetupId
-      })
-      return next
-    })
-  }
-
-  const handleAssignWing = (wingId, targetSetupId) => {
-    const targetWing = wings.find((w) => w.id === wingId)
-    if (!targetWing) return
-
-    setSectionAssignments((prev) => {
-      const next = { ...prev }
-      targetWing.classes?.forEach((c) => {
-        c.sections?.forEach((s) => {
-          next[s.id] = targetSetupId
-        })
-      })
-      return next
-    })
-  }
-
-  const handleAssignAllRemaining = (targetSetupId) => {
-    setSectionAssignments((prev) => {
-      const next = { ...prev }
-      allSections.forEach((s) => {
-        if (!next[s.id]) {
-          next[s.id] = targetSetupId
+      // Redo: Ctrl+Y or Cmd+Shift+Z
+      if (
+        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z")
+      ) {
+        if (state.history.future.length > 0 && !readOnly) {
+          e.preventDefault()
+          dispatch({ type: "REDO" })
         }
-      })
-      return next
-    })
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isOpen, modalState, state.isDirty, state.history, readOnly])
+
+  const handleRequestClose = () => {
+    if (state.isDirty && !readOnly) {
+      const confirmDiscard = window.confirm(
+        "You have unsaved changes to your bell timing setups. Discard changes and close?"
+      )
+      if (!confirmDiscard) return
+    }
+    onClose()
   }
 
-  // Validation
+  // Validation checks across setups and assignments
   const validationErrors = useMemo(() => {
     const errors = []
 
-    setups.forEach((s, sIdx) => {
-      s.periods.forEach((p, pIdx) => {
-        const startMin = parseMinutes(p.start_time)
-        const endMin = parseMinutes(p.end_time)
+    state.setups.forEach((setup) => {
+      // Day invariant check
+      const dayInv = validateSetupDayInvariants(setup)
+      if (!dayInv.isValid) {
+        errors.push(...dayInv.errors)
+      }
 
-        if (startMin >= endMin) {
-          errors.push(`${s.name} ${p.label || `Period ${p.period_number}`}: Start time must be before end time.`)
-        }
-
-        // Check overlap with next period
-        if (pIdx < s.periods.length - 1) {
-          const nextP = s.periods[pIdx + 1]
-          const nextStart = parseMinutes(nextP.start_time)
-          if (endMin > nextStart) {
-            errors.push(`${s.name} ${p.label} overlaps with ${nextP.label}.`)
-          }
+      // Period sequence check
+      setup.schedules?.forEach((sch, sIdx) => {
+        const valRes = validateSchedule(sch)
+        if (!valRes.isValid) {
+          valRes.errors.forEach((err) => {
+            errors.push(`${setup.name} Schedule ${sIdx + 1}: ${err}`)
+          })
         }
       })
     })
 
-    // Check orphaned sections
-    const orphanedCount = allSections.filter((s) => !sectionAssignments[s.id]).length
-    if (orphanedCount > 0) {
-      errors.push(`${orphanedCount} section(s) do not have a bell setup assigned. Every section must have a setup.`)
+    // Class assignments completeness check
+    const assignVal = validateAssignments(allSections, state.sectionAssignments, state.setups)
+    if (!assignVal.isValid) {
+      errors.push(...assignVal.errors)
     }
 
     return errors
-  }, [setups, allSections, sectionAssignments])
+  }, [state.setups, state.sectionAssignments, allSections])
 
-  // ---------------------------------------------------------------------------
-  // Save Flow with Impact Preview
-  // ---------------------------------------------------------------------------
-
-  const handleCheckAndSave = async () => {
+  // Save Flow with Impact Detection
+  const handleSaveClick = async () => {
     if (validationErrors.length > 0) {
-      toast.error(validationErrors[0])
+      toast.error(validationErrors[0] || "Please resolve validation errors before saving.")
       return
     }
 
-    // Build batch payload
-    const assignmentsPayload = []
-    Object.entries(sectionAssignments).forEach(([secId, setupId]) => {
-      assignmentsPayload.push({
-        setup_id: setupId,
-        target_type: "SECTION",
-        target_id: secId,
-      })
-    })
+    const assignmentsPayload = Object.entries(state.sectionAssignments).map(([secId, setupId]) => ({
+      setup_id: setupId,
+      target_type: "SECTION",
+      target_id: secId,
+    }))
 
     const payload = {
       timetable_id: timetableId,
-      setups: setups.map((s) => ({
-        id: s.id.startsWith("temp-") ? null : s.id,
+      setups: state.setups.map((s, idx) => ({
+        id: String(s.id).startsWith("setup-") ? null : s.id,
         name: s.name,
         description: s.description,
-        is_default: s.is_default,
+        is_default: idx === 0,
+        order_index: idx,
+        version: s.version,
         applicable_days: s.applicable_days,
-        periods: s.periods,
+        schedules: s.schedules,
       })),
       assignments: assignmentsPayload,
     }
 
-    // Check impact
     setIsCheckingImpact(true)
     try {
       const impact = await previewSetupsImpactApi(payload)
-      if (impact.affected_slots_count > 0) {
-        setImpactModalData({
-          impact,
-          payload,
+      if (impact?.affected_slots_count > 0) {
+        setModalState({
+          type: "IMPACT",
+          impactData: impact,
+          pendingPayload: payload,
         })
       } else {
         await executeSave(payload)
       }
-    } catch (err) {
-      // Fallback directly to save if preview unavailable
+    } catch {
+      // Direct save fallback
       await executeSave(payload)
     } finally {
       setIsCheckingImpact(false)
@@ -522,25 +567,27 @@ export function BellScheduleSetupModal({
     }
   }
 
+  if (!isOpen) return null
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in-0 duration-150"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="bell-setup-title"
+    >
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-200"
-        onClick={onClose}
+        className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity"
+        onClick={handleRequestClose}
       />
 
       {/* Main Large Modal Dialog */}
-      <div
-        className="relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl z-10 animate-in zoom-in-95 duration-200 overflow-hidden"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="bell-setup-title"
-      >
+      <div className="relative w-full max-w-6xl max-h-[92vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl z-10 animate-in zoom-in-95 duration-150 overflow-hidden">
         {/* Top Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-muted/15 shrink-0">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-muted/15 shrink-0 flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+            <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <Clock className="size-5" />
             </div>
             <div>
@@ -549,29 +596,31 @@ export function BellScheduleSetupModal({
                   Timetable Frame & Bell Schedule Setup
                 </h2>
                 <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5">
-                  {setups.length} {setups.length === 1 ? "SETUP" : "SETUPS"}
+                  {state.setups.length} {state.setups.length === 1 ? "SETUP" : "SETUPS"}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Define timing schedules, periods, and class applicability across your school wings.
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Configure period frames, independent day timings, and class wing allocations.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleAddSetup}
-              className="h-8 px-3 text-xs font-semibold gap-1.5 shadow-2xs"
-            >
-              <Plus className="size-3.5 text-primary" />
-              <span>Add Setup</span>
-            </Button>
+            {!readOnly && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCreateSetup}
+                className="h-8 px-3 text-xs font-semibold gap-1.5 shadow-2xs"
+              >
+                <Plus className="size-3.5 text-primary" />
+                <span>Add Setup</span>
+              </Button>
+            )}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleRequestClose}
               className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer"
               aria-label="Close modal"
             >
@@ -580,424 +629,205 @@ export function BellScheduleSetupModal({
           </div>
         </div>
 
-        {/* Scrollable Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-          {/* Global Controls & Notices */}
-          <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/80 text-xs">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Info className="size-4 text-primary shrink-0" />
-              <span>
-                Each section is mapped to exactly one bell setup. Zero orphans allowed.
-              </span>
-            </div>
-            <label className="flex items-center gap-2 cursor-pointer font-medium select-none">
-              <input
-                type="checkbox"
-                checked={autoShift}
-                onChange={(e) => setAutoShift(e.target.checked)}
-                className="size-4 rounded text-primary border-input focus:ring-primary"
-              />
-              <span className="text-xs text-foreground">Shift following periods when editing</span>
-            </label>
+        {/* Loading / Error States */}
+        {isFetchingSetups && state.setups.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-12 space-y-3">
+            <Loader2 className="size-8 text-primary animate-spin" />
+            <p className="text-xs text-muted-foreground font-medium">Loading bell schedules and classes...</p>
           </div>
-
-          {/* List of Setups */}
-          {setups.map((setup, sIdx) => {
-            const assignedCount = allSections.filter((s) => sectionAssignments[s.id] === setup.id).length
-            const isOnlySetup = setups.length <= 1
-
-            return (
-              <div
-                key={setup.id}
-                className="rounded-2xl border border-border/90 bg-card shadow-xs overflow-hidden space-y-4 p-4 sm:p-5"
-              >
-                {/* Setup Card Header */}
-                <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-3 flex-wrap">
-                  <div className="flex items-center gap-2.5">
-                    <span className="size-6 rounded-lg bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shrink-0">
-                      {sIdx + 1}
-                    </span>
-                    <Input
-                      value={setup.name}
-                      onChange={(e) => {
-                        const next = [...setups]
-                        next[sIdx].name = e.target.value
-                        setSetups(next)
-                      }}
-                      className="h-8 w-44 font-bold text-xs"
-                      placeholder="Setup Name"
-                    />
-                    <Badge variant="secondary" className="text-[11px] font-bold px-2 py-0.5">
-                      {assignedCount} {assignedCount === 1 ? "Class" : "Classes"}
-                    </Badge>
-                  </div>
-
-                  {/* Duplicate & Delete Actions */}
-                  <div className="flex items-center gap-1.5 ml-auto">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDuplicateSetup(setup)}
-                      className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1.5"
-                    >
-                      <Copy className="size-3.5" />
-                      <span>Duplicate</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteSetup(setup.id)}
-                      disabled={isOnlySetup}
-                      className="h-7 px-2.5 text-xs text-destructive hover:bg-destructive/10 gap-1.5 disabled:opacity-40"
-                    >
-                      <Trash2 className="size-3.5" />
-                      <span>Delete</span>
-                    </Button>
-                  </div>
+        ) : fetchError && state.setups.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-12 space-y-3 text-center">
+            <AlertTriangle className="size-8 text-destructive" />
+            <p className="text-sm font-bold text-foreground">Failed to load bell setups</p>
+            <Button size="sm" variant="outline" onClick={() => refetch()}>
+              Retry
+            </Button>
+          </div>
+        ) : (
+          /* Scrollable Body: Vertical List of Setup Cards */
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            {/* Validation Alerts Banner */}
+            {validationErrors.length > 0 && (
+              <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs space-y-1">
+                <div className="flex items-center gap-2 font-bold">
+                  <AlertTriangle className="size-4 shrink-0" />
+                  <span>Validation Invariants Violated ({validationErrors.length})</span>
                 </div>
-
-                {/* 1. BELL TIMINGS & VISUAL TIMELINE TRACK */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-[10px] text-muted-foreground">
-                      <Clock className="size-3.5 text-primary" />
-                      <span>Bell Timings Schedule</span>
-                    </div>
-                    {/* Day selector chips for this setup */}
-                    <div className="flex items-center gap-1">
-                      {ALL_DAYS.map((d) => {
-                        const active = setup.applicable_days?.includes(d.id)
-                        return (
-                          <button
-                            key={d.id}
-                            type="button"
-                            onClick={() => {
-                              const days = setup.applicable_days || []
-                              const nextDays = active
-                                ? days.filter((x) => x !== d.id)
-                                : [...days, d.id]
-                              const next = [...setups]
-                              next[sIdx].applicable_days = nextDays
-                              setSetups(next)
-                            }}
-                            className={cn(
-                              "px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer border",
-                              active
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted"
-                            )}
-                          >
-                            {d.short}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Visual Period Track Container */}
-                  <div className="p-3 rounded-xl bg-muted/20 border border-border/70 overflow-x-auto [scrollbar-gutter:stable]">
-                    <div className="flex items-center gap-1.5 min-w-max py-2">
-                      {setup.periods.map((period, pIdx) => {
-                        const duration = parseMinutes(period.end_time) - parseMinutes(period.start_time)
-                        const isBreak = period.is_break
-
-                        return (
-                          <React.Fragment key={pIdx}>
-                            {/* Period Box */}
-                            <div
-                              className={cn(
-                                "relative flex flex-col justify-between p-2 rounded-xl border text-center transition-all min-w-[105px]",
-                                isBreak
-                                  ? "bg-amber-100/60 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/60 text-amber-900 dark:text-amber-200"
-                                  : "bg-background border-border/90 shadow-2xs hover:border-primary/50"
-                              )}
-                            >
-                              {/* Top Bar: Start Time & Delete */}
-                              <div className="flex items-center justify-between gap-1 pb-1 border-b border-border/40">
-                                <input
-                                  type="time"
-                                  value={period.start_time}
-                                  onChange={(e) => handlePeriodChange(sIdx, pIdx, "start_time", e.target.value)}
-                                  className="text-[11px] font-mono font-bold bg-transparent border-0 p-0 text-foreground cursor-pointer focus:ring-1 focus:ring-primary rounded-xs"
-                                  title="Edit start time"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeletePeriod(sIdx, pIdx)}
-                                  className="text-muted-foreground hover:text-destructive p-0.5 rounded-xs transition-colors cursor-pointer"
-                                  title="Delete period"
-                                >
-                                  <Trash2 className="size-3" />
-                                </button>
-                              </div>
-
-                              {/* Center Label & Recess toggle */}
-                              <div className="py-1.5 flex flex-col items-center justify-center">
-                                <div className="flex items-center gap-1 font-bold text-xs">
-                                  {isBreak && <Coffee className="size-3 text-amber-600 dark:text-amber-400" />}
-                                  <input
-                                    type="text"
-                                    value={period.label || ""}
-                                    onChange={(e) => handlePeriodChange(sIdx, pIdx, "label", e.target.value)}
-                                    className="w-16 text-center text-xs font-bold bg-transparent border-0 p-0 text-foreground focus:ring-1 focus:ring-primary rounded-xs truncate"
-                                  />
-                                </div>
-                                <span className="text-[10px] text-muted-foreground font-medium">
-                                  {duration}m
-                                </span>
-                              </div>
-
-                              {/* Bottom Bar: End Time & Break Toggle */}
-                              <div className="flex items-center justify-between gap-1 pt-1 border-t border-border/40">
-                                <input
-                                  type="time"
-                                  value={period.end_time}
-                                  onChange={(e) => handlePeriodChange(sIdx, pIdx, "end_time", e.target.value)}
-                                  className="text-[11px] font-mono font-bold bg-transparent border-0 p-0 text-foreground cursor-pointer focus:ring-1 focus:ring-primary rounded-xs"
-                                  title="Edit end time"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const nextBreak = !isBreak
-                                    const nextLabel = nextBreak ? "RECESS" : `P${period.period_number}`
-                                    handlePeriodChange(sIdx, pIdx, "is_break", nextBreak)
-                                    handlePeriodChange(sIdx, pIdx, "label", nextLabel)
-                                  }}
-                                  className={cn(
-                                    "p-0.5 rounded-xs text-[10px] font-bold cursor-pointer transition-colors",
-                                    isBreak ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground hover:text-foreground"
-                                  )}
-                                  title={isBreak ? "Convert to Teaching Period" : "Convert to Break / Recess"}
-                                >
-                                  <Coffee className="size-3" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* + Affordance to Insert Period */}
-                            <button
-                              type="button"
-                              onClick={() => handleInsertPeriod(sIdx, pIdx)}
-                              className="size-5 rounded-full border border-dashed border-border/80 bg-background hover:bg-primary hover:text-primary-foreground hover:border-primary text-muted-foreground flex items-center justify-center transition-all cursor-pointer shadow-2xs shrink-0"
-                              title="Insert slot here"
-                            >
-                              <Plus className="size-3" />
-                            </button>
-                          </React.Fragment>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. CLASS APPLICABILITY PICKER (Wing -> Class -> Section Tree) */}
-                <div className="space-y-2 pt-2 border-t border-border/60">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5 font-bold text-foreground">
-                      <Check className="size-3.5 text-emerald-500" />
-                      <span>The above bell timings are applicable to these classes:</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleAssignAllRemaining(setup.id)}
-                      className="text-[11px] text-primary hover:underline font-semibold cursor-pointer"
-                    >
-                      Select all unassigned
-                    </button>
-                  </div>
-
-                  {/* Wings Boxes Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5">
-                    {wings.map((w) => {
-                      const wingSecs = w.classes?.flatMap((c) => c.sections || []) || []
-                      const assignedInThisWing = wingSecs.filter((s) => sectionAssignments[s.id] === setup.id)
-                      const isAllWingAssigned = wingSecs.length > 0 && assignedInThisWing.length === wingSecs.length
-
-                      return (
-                        <div
-                          key={w.id}
-                          className="rounded-xl border border-border/80 bg-background p-2.5 space-y-2 text-xs flex flex-col justify-between"
-                        >
-                          {/* Wing Header with quick toggle */}
-                          <div className="flex items-center justify-between pb-1.5 border-b border-border/60">
-                            <span className="font-bold text-foreground truncate">{w.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleAssignWing(w.id, setup.id)}
-                              className={cn(
-                                "size-5 rounded-md text-[10px] font-bold flex items-center justify-center transition-colors cursor-pointer",
-                                isAllWingAssigned
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-                              )}
-                              title="Assign entire wing"
-                            >
-                              {assignedInThisWing.length}
-                            </button>
-                          </div>
-
-                          {/* Classes & Sections list */}
-                          <div className="space-y-1.5 overflow-y-auto max-h-32 pr-0.5">
-                            {w.classes?.map((c) => (
-                              <div key={c.id} className="flex items-center justify-between gap-1 text-[11px]">
-                                <button
-                                  type="button"
-                                  onClick={() => handleAssignClass(c.id, setup.id)}
-                                  className="text-left font-semibold text-muted-foreground hover:text-foreground truncate cursor-pointer"
-                                  title="Click to toggle entire class"
-                                >
-                                  {c.name}:
-                                </button>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {c.sections?.map((sec) => {
-                                    const isAssigned = sectionAssignments[sec.id] === setup.id
-                                    return (
-                                      <button
-                                        key={sec.id}
-                                        type="button"
-                                        onClick={() => handleAssignSection(sec.id, setup.id)}
-                                        className={cn(
-                                          "size-5 rounded-md text-[10px] font-bold flex items-center justify-center transition-all cursor-pointer border",
-                                          isAssigned
-                                            ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                                            : "bg-muted/30 text-muted-foreground/70 border-border/60 hover:bg-muted hover:text-foreground"
-                                        )}
-                                        title={`${c.name} ${sec.name}`}
-                                      >
-                                        {sec.name}
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
+                <ul className="list-disc pl-5 space-y-0.5 text-[11px] opacity-90">
+                  {validationErrors.slice(0, 3).map((err, i) => (
+                    <li key={i}>{err}</li>
+                  ))}
+                  {validationErrors.length > 3 && (
+                    <li>...and {validationErrors.length - 3} more issue(s)</li>
+                  )}
+                </ul>
               </div>
-            )
-          })}
-        </div>
+            )}
 
-        {/* Validation Errors Notice */}
-        {validationErrors.length > 0 && (
-          <div className="mx-4 mb-2 p-2.5 rounded-xl bg-destructive/10 border border-destructive/25 text-destructive text-xs flex items-center gap-2 animate-in fade-in-0 duration-150">
-            <AlertTriangle className="size-4 shrink-0 text-destructive" />
-            <span className="font-medium text-[11px] leading-tight">{validationErrors[0]}</span>
+            {/* List of Setups */}
+            {state.setups.map((setup, sIdx) => (
+              <SetupCard
+                key={setup.id}
+                setup={setup}
+                setupIndex={sIdx}
+                isOnlySetup={state.setups.length <= 1}
+                wings={wings}
+                sectionAssignments={state.sectionAssignments}
+                selectedSectionIds={selectedSectionIds}
+                activeScheduleId={state.activeScheduleId}
+                readOnly={readOnly}
+                onSelectSchedule={(schedId) => dispatch({ type: "SELECT_SCHEDULE", payload: { scheduleId: schedId } })}
+                onRenameSetup={handleRenameSetup}
+                onDuplicateSetup={handleDuplicateSetup}
+                onDeleteSetup={handleDeleteSetup}
+                onOpenSplitModal={handleOpenSplitModal}
+                onOpenMergeModal={handleOpenMergeModal}
+                onOpenPeriodModal={handleOpenPeriodModal}
+                onInsertPeriodAtBoundary={handleInsertPeriodAtBoundary}
+                onEditBoundaryTime={handleEditBoundaryTime}
+                onApplyTemplate={handleApplyTemplate}
+                onWingClick={handleWingClick}
+                onClassClick={handleClassClick}
+                onSectionClick={handleSectionClick}
+                otherSetups={state.setups.filter((s) => s.id !== setup.id)}
+              />
+            ))}
+
+            {/* Bottom Dashed "+ Create Setup N" Card */}
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={handleCreateSetup}
+                className="w-full p-6 border-2 border-dashed border-border/80 hover:border-primary/60 hover:bg-primary/5 rounded-2xl flex items-center justify-center gap-2.5 text-sm font-bold text-primary transition-all cursor-pointer shadow-2xs group"
+              >
+                <div className="size-8 rounded-xl bg-primary/10 group-hover:bg-primary group-hover:text-primary-foreground flex items-center justify-center transition-colors">
+                  <Plus className="size-4" />
+                </div>
+                <span>+ Create Setup {state.setups.length + 1}</span>
+              </button>
+            )}
           </div>
         )}
 
-        {/* Modal Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-border bg-muted/20 shrink-0">
-          <div className="text-xs text-muted-foreground">
-            <strong className="text-foreground font-bold">{allSections.length}</strong> sections total ·{" "}
-            <strong className="text-foreground font-bold">{setups.length}</strong> {setups.length === 1 ? "setup" : "setups"} ·{" "}
-            {allSections.filter((s) => !sectionAssignments[s.id]).length === 0 ? (
-              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">0 unassigned</span>
-            ) : (
-              <span className="text-destructive font-semibold">
-                {allSections.filter((s) => !sectionAssignments[s.id]).length} unassigned
-              </span>
-            )}
+        {/* Floating Multi-Select Action Bar */}
+        {selectedSectionIds.length > 0 && !readOnly && (
+          <div className="sticky bottom-14 inset-x-0 mx-auto w-max max-w-[90vw] z-40 p-2.5 px-4 bg-foreground text-background shadow-2xl rounded-2xl flex items-center gap-3 animate-in slide-in-from-bottom-3 duration-150">
+            <span className="text-xs font-bold">
+              {selectedSectionIds.length} {selectedSectionIds.length === 1 ? "class" : "classes"} selected
+            </span>
+            <Button
+              type="button"
+              size="xs"
+              onClick={handleOpenMultiMove}
+              className="bg-primary text-primary-foreground font-semibold text-xs h-7 px-3 shadow-2xs gap-1.5"
+            >
+              <Send className="size-3" />
+              <span>Move {selectedSectionIds.length} Classes</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() => setSelectedSectionIds([])}
+              className="text-background/80 hover:text-background h-7 px-2 text-xs"
+            >
+              Clear
+            </Button>
           </div>
+        )}
 
-          <div className="flex items-center gap-2.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="h-9 px-4 text-xs font-semibold"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleCheckAndSave}
-              disabled={batchSaveMutation.isPending || isCheckingImpact || validationErrors.length > 0}
-              className="h-9 px-4 text-xs font-bold gap-1.5 bg-primary text-primary-foreground"
-            >
-              {(batchSaveMutation.isPending || isCheckingImpact) && (
-                <Loader2 className="size-3.5 animate-spin" />
-              )}
-              <Check className="size-4" />
-              <span>Apply & Save Timetable Frame</span>
-            </Button>
-          </div>
-        </div>
+        {/* Sticky Unsaved Changes Bar */}
+        {!readOnly && (
+          <UnsavedBar
+            isDirty={state.isDirty}
+            isSaving={batchSaveMutation.isPending || isCheckingImpact}
+            canUndo={state.history.past.length > 0}
+            canRedo={state.history.future.length > 0}
+            onUndo={() => dispatch({ type: "UNDO" })}
+            onRedo={() => dispatch({ type: "REDO" })}
+            onDiscard={() => dispatch({ type: "DISCARD_CHANGES" })}
+            onSave={handleSaveClick}
+          />
+        )}
       </div>
 
-      {/* Impact Confirmation Dialog */}
-      {impactModalData && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-background/80 backdrop-blur-xs"
-            onClick={() => setImpactModalData(null)}
-          />
-          <div className="relative w-full max-w-md bg-card border border-border rounded-2xl p-6 shadow-2xl space-y-4 z-10 animate-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="size-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-                <AlertTriangle className="size-5" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-semibold text-foreground">
-                  Confirm Schedule Timing Changes
-                </h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {impactModalData.impact.message}
-                </p>
-              </div>
-            </div>
+      {/* Sub-modals */}
+      {modalState?.type === "PERIOD" && (
+        <PeriodModal
+          isOpen={true}
+          onClose={() => setModalState(null)}
+          mode={modalState.mode}
+          periodData={modalState.periodData}
+          periodIndex={modalState.periodIndex}
+          insertAfterIndex={modalState.insertAfterIndex}
+          schedule={modalState.schedule}
+          onSave={(data) => {
+            handleSavePeriod({
+              ...data,
+              mode: modalState.mode,
+              setupId: modalState.setupId,
+              scheduleId: modalState.scheduleId,
+              insertAfterIndex: modalState.insertAfterIndex,
+              periodIndex: modalState.periodIndex,
+            })
+            setModalState(null)
+          }}
+          onDelete={(idx) => {
+            handleDeletePeriod(modalState.setupId, modalState.scheduleId, idx)
+            setModalState(null)
+          }}
+        />
+      )}
 
-            {impactModalData.impact.affected_entries?.length > 0 && (
-              <div className="p-2.5 rounded-xl bg-muted/40 border border-border text-[11px] max-h-36 overflow-y-auto space-y-1">
-                <div className="font-bold text-foreground">Affected scheduled slots:</div>
-                {impactModalData.impact.affected_entries.slice(0, 10).map((e, idx) => (
-                  <div key={idx} className="text-muted-foreground">
-                    • {e.subject} on {e.day} Period {e.period_number}
-                  </div>
-                ))}
-                {impactModalData.impact.affected_entries.length > 10 && (
-                  <div className="text-muted-foreground italic">
-                    ...and {impactModalData.impact.affected_entries.length - 10} more.
-                  </div>
-                )}
-              </div>
-            )}
+      {modalState?.type === "SPLIT" && (
+        <DaySplitModal
+          isOpen={true}
+          onClose={() => setModalState(null)}
+          schedule={modalState.schedule}
+          daysToSplit={modalState.daysToSplit}
+          onConfirmSplit={(days) => {
+            handleConfirmSplit(modalState.setupId, modalState.schedule.id, days)
+            setModalState(null)
+          }}
+        />
+      )}
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setImpactModalData(null)}
-                className="h-8 text-xs"
-              >
-                Cancel & Review
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  const p = impactModalData.payload
-                  setImpactModalData(null)
-                  executeSave(p)
-                }}
-                className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white"
-              >
-                Proceed & Apply Changes
-              </Button>
-            </div>
-          </div>
-        </div>
+      {modalState?.type === "MERGE" && (
+        <DayMergeModal
+          isOpen={true}
+          onClose={() => setModalState(null)}
+          sourceSchedule={modalState.sourceSchedule}
+          allSchedules={modalState.allSchedules}
+          day={modalState.day}
+          onConfirmMerge={(args) => {
+            handleConfirmMerge(modalState.setupId, args)
+            setModalState(null)
+          }}
+        />
+      )}
+
+      {modalState?.type === "MOVE" && (
+        <MoveScheduleModal
+          isOpen={true}
+          onClose={() => setModalState(null)}
+          targetType={modalState.targetType}
+          targetInfo={modalState.targetInfo}
+          currentSetupId={modalState.currentSetupId}
+          setups={state.setups}
+          sectionAssignments={state.sectionAssignments}
+          onMoveToSetup={handleMoveToSetup}
+          onCreateAndMove={handleCreateAndMove}
+        />
+      )}
+
+      {modalState?.type === "IMPACT" && (
+        <ImpactWarningDialog
+          isOpen={true}
+          onClose={() => setModalState(null)}
+          impactData={modalState.impactData}
+          onConfirmSave={() => executeSave(modalState.pendingPayload)}
+        />
       )}
     </div>
   )
 }
-

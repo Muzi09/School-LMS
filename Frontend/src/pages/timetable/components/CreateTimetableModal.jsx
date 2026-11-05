@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react"
-import { Calendar, Copy, Clock, Layers, Loader2, Sparkles } from "lucide-react"
+import { Calendar, Copy, Clock, Loader2, Sparkles } from "lucide-react"
 import {
   Dialog,
   DialogHeader,
@@ -14,13 +14,6 @@ import { useCreateTimetable } from "@/hooks/useTimetable"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
-const TIMETABLE_TYPES = [
-  { value: "Academic", label: "Academic Timetable" },
-  { value: "Winter", label: "Winter Bell Timetable" },
-  { value: "Exam", label: "Examination Timetable" },
-  { value: "Custom", label: "Custom Schedule" },
-]
-
 export function CreateTimetableModal({
   isOpen,
   onClose,
@@ -28,8 +21,7 @@ export function CreateTimetableModal({
   onCreated,
 }) {
   const [name, setName] = useState("")
-  const [type, setType] = useState("Academic")
-  const [academicYear, setAcademicYear] = useState("2026-27")
+  const [academicYear] = useState("2026-2027")
   const [startOption, setStartOption] = useState("blank") // "blank" | "duplicate" | "copy_bell"
   const [sourceTimetableId, setSourceTimetableId] = useState(
     existingTimetables[0]?.id || ""
@@ -68,9 +60,9 @@ export function CreateTimetableModal({
     try {
       const payload = {
         name: name.trim(),
-        description: `${type} Timetable for ${academicYear}`,
-        academic_year: academicYear.trim(),
-        type,
+        description: `Timetable for ${academicYear}`,
+        academic_year: academicYear,
+        type: "Academic",
         start_option: startOption,
         source_timetable_id: startOption !== "blank" ? sourceTimetableId : null,
         is_active: isActive,
@@ -108,12 +100,16 @@ export function CreateTimetableModal({
       </DialogHeader>
 
       <form onSubmit={handleSubmit} noValidate className="space-y-4 py-2">
-        {/* Timetable Name Field */}
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-foreground">
-            Timetable Name <span className="text-destructive">*</span>
+        {/* Timetable Name Field (styled to follow student/staff form fields) */}
+        <div>
+          <label
+            htmlFor="timetable_name"
+            className="text-xs sm:text-sm font-medium text-foreground block mb-0.5"
+          >
+            Timetable Name
           </label>
           <Input
+            id="timetable_name"
             value={name}
             onChange={(e) => {
               setName(e.target.value)
@@ -121,10 +117,9 @@ export function CreateTimetableModal({
                 setErrors((prev) => ({ ...prev, name: undefined }))
               }
             }}
-            placeholder="e.g. Winter Bell Timetable 2026–27"
             className={cn(
-              "h-10 text-xs sm:text-sm rounded-xl px-3.5",
-              errors.name && "border-destructive focus-visible:ring-destructive"
+              "h-10 text-sm rounded-xl px-3.5",
+              errors.name && "border-destructive/80 ring-1 ring-destructive/30"
             )}
             autoFocus
           />
@@ -135,33 +130,9 @@ export function CreateTimetableModal({
           )}
         </div>
 
-        {/* Type & Academic Year */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-foreground">Type</label>
-            <Combobox
-              options={TIMETABLE_TYPES}
-              value={type}
-              onValueChange={(val) => setType(val || "Academic")}
-              placeholder="Select timetable type"
-              className="w-full h-10 text-xs sm:text-sm rounded-xl bg-background border border-border"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-foreground">Academic Year</label>
-            <Input
-              value={academicYear}
-              onChange={(e) => setAcademicYear(e.target.value)}
-              placeholder="e.g. 2026-27"
-              className="h-10 text-xs sm:text-sm rounded-xl px-3.5"
-            />
-          </div>
-        </div>
-
         {/* Start Option: Blank vs Duplicate vs Bell Only */}
         <div className="space-y-2 pt-1">
-          <label className="text-xs font-semibold text-foreground">
+          <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
             Starting Configuration
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -178,16 +149,23 @@ export function CreateTimetableModal({
                   : "border-border/80 hover:bg-muted/40 text-foreground"
               )}
             >
-              <Sparkles className="size-4 mb-1 text-primary" />
-              <div className="text-xs font-bold leading-tight">Blank Template</div>
-              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-primary shrink-0" />
+                <div className="text-xs font-bold leading-tight">Blank Template</div>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
                 Fresh schedule from scratch
               </div>
             </button>
 
             <button
               type="button"
-              onClick={() => setStartOption("duplicate")}
+              onClick={() => {
+                setStartOption("duplicate")
+                if (!sourceTimetableId && existingTimetables.length > 0) {
+                  setSourceTimetableId(String(existingTimetables[0].id))
+                }
+              }}
               disabled={existingTimetables.length === 0}
               className={cn(
                 "p-3 rounded-xl border text-left transition-all cursor-pointer",
@@ -197,16 +175,23 @@ export function CreateTimetableModal({
                   : "border-border/80 hover:bg-muted/40 text-foreground"
               )}
             >
-              <Copy className="size-4 mb-1 text-blue-500" />
-              <div className="text-xs font-bold leading-tight">Full Clone</div>
-              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+              <div className="flex items-center gap-2">
+                <Copy className="size-4 text-blue-500 shrink-0" />
+                <div className="text-xs font-bold leading-tight">Full Clone</div>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
                 Copy setups & all entries
               </div>
             </button>
 
             <button
               type="button"
-              onClick={() => setStartOption("copy_bell")}
+              onClick={() => {
+                setStartOption("copy_bell")
+                if (!sourceTimetableId && existingTimetables.length > 0) {
+                  setSourceTimetableId(String(existingTimetables[0].id))
+                }
+              }}
               disabled={existingTimetables.length === 0}
               className={cn(
                 "p-3 rounded-xl border text-left transition-all cursor-pointer",
@@ -216,9 +201,11 @@ export function CreateTimetableModal({
                   : "border-border/80 hover:bg-muted/40 text-foreground"
               )}
             >
-              <Clock className="size-4 mb-1 text-amber-500" />
-              <div className="text-xs font-bold leading-tight">Bell Schedule</div>
-              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+              <div className="flex items-center gap-2">
+                <Clock className="size-4 text-amber-500 shrink-0" />
+                <div className="text-xs font-bold leading-tight">Bell Schedule</div>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
                 Copy period timings only
               </div>
             </button>
@@ -228,8 +215,11 @@ export function CreateTimetableModal({
         {/* Source Timetable Selection (if cloning or copying bell) */}
         {startOption !== "blank" && existingTimetables.length > 0 && (
           <div className="space-y-1 animate-in fade-in-0 duration-150">
-            <label className="text-xs font-semibold text-foreground">
-              Source Timetable <span className="text-destructive">*</span>
+            <label
+              htmlFor="source_timetable"
+              className="text-xs sm:text-sm font-medium text-foreground block mb-0.5"
+            >
+              Source Timetable
             </label>
             <Combobox
               options={sourceTimetableOptions}

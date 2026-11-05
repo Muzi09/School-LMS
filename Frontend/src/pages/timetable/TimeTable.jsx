@@ -17,7 +17,7 @@ import {
 } from "@/hooks/useTimetable"
 
 import { TimetableHeader } from "./components/TimetableHeader"
-import { TimetableSelector } from "./components/TimetableSelector"
+import { PerspectiveSelector } from "./components/PerspectiveSelector"
 import { ClassWiseGridView } from "./components/ClassWiseGridView"
 import { BellScheduleSetupModal } from "./components/BellScheduleSetupModal"
 import { CreateTimetableModal } from "./components/CreateTimetableModal"
@@ -238,20 +238,10 @@ export function TimeTable() {
         isRefreshing={isTimetablesLoading || isClassWiseLoading}
         actions={
           <>
-            <TimetableSelector
-              timetables={timetables}
-              selectedTimetableId={selectedTimetableId}
-              onSelectTimetable={handleSelectTimetable}
-              onCreateNew={() => setIsCreateTimetableOpen(true)}
-              canManage={canManage}
+            <PerspectiveSelector
+              currentPerspective={perspective}
+              onChange={handlePerspectiveChange}
             />
-
-            {!isViewingActiveTimetable && currentTimetable && (
-              <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[11px] font-semibold shrink-0 animate-in fade-in-0 duration-200">
-                <AlertCircle className="size-3.5 text-amber-500 shrink-0" />
-                <span>Draft</span>
-              </div>
-            )}
 
             {canManage && (
               <Button
@@ -296,8 +286,10 @@ export function TimeTable() {
 
       {/* 3. Sticky Contextual Timetable Controls Header */}
       <TimetableHeader
-        perspective={perspective}
-        onPerspectiveChange={handlePerspectiveChange}
+        timetables={timetables}
+        selectedTimetableId={selectedTimetableId}
+        onSelectTimetable={handleSelectTimetable}
+        onCreateNewTimetable={() => setIsCreateTimetableOpen(true)}
         wings={wingsData}
         selectedWingIds={activeWingId ? [activeWingId] : []}
         onSelectWingIds={handleSelectWingIds}

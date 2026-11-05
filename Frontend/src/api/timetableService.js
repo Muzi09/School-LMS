@@ -127,6 +127,18 @@ export const batchSaveSetupsApi = async (payload) => {
   return await apiClient.post("/timetable/setups/batch-save", payload)
 }
 
+export const splitDaysApi = async (payload) => {
+  return await apiClient.post("/timetable/setups/split-days", payload)
+}
+
+export const mergeDaysApi = async (payload) => {
+  return await apiClient.post("/timetable/setups/merge-days", payload)
+}
+
+export const moveClassesApi = async (payload) => {
+  return await apiClient.post("/timetable/setups/move-classes", payload)
+}
+
 // Class-Wise Aggregated Perspective APIs
 export const getClassWiseTimetableApi = async ({ timetableId = null, wingId = null } = {}) => {
   const params = new URLSearchParams()

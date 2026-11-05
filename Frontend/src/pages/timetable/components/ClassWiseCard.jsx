@@ -1,4 +1,4 @@
-import { useMemo, memo } from "react"
+import React, { useMemo, memo, Fragment } from "react"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -80,28 +80,74 @@ export const ClassWiseCard = memo(function ClassWiseCard({
   // Parsed search query
   const parsedQuery = useMemo(() => parseTimetableQuery(searchQuery), [searchQuery])
 
-  // Setup periods: split weekday vs saturday if schedules exist
-  const { weekdayPeriods, saturdayPeriods, hasSaturday } = useMemo(() => {
+  // Setup schedules & period groups (supports arbitrary day schedule splits)
+  const { scheduleGroups, weekdayPeriods, saturdayPeriods, hasSaturday, totalSlotsCount } = useMemo(() => {
     if (!setup) {
-      return { weekdayPeriods: [], saturdayPeriods: [], hasSaturday: false }
+      return { scheduleGroups: [], weekdayPeriods: [], saturdayPeriods: [], hasSaturday: false, totalSlotsCount: 0 }
     }
-    const appDays = setup.applicable_days || []
+    const appDays = setup.applicable_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
     const hasSat = appDays.includes("SATURDAY")
 
-    // Check if separate saturday schedule exists
-    const satSched = setup.schedules?.find((s) => s.id === "saturday" || s.days?.includes("SATURDAY"))
-    const wkSched = setup.schedules?.find((s) => s.id !== "saturday" && !s.days?.every((d) => d === "SATURDAY"))
+    let groups = []
+    if (setup.schedules && setup.schedules.length > 0) {
+      groups = setup.schedules.map((sch) => {
+        const daysInSched = (sch.days || []).filter((d) => appDays.includes(d))
+        const periods = [...(sch.periods || [])].sort((a, b) => a.period_number - b.period_number)
+        const isAmber = sch.id === "saturday" || sch.days?.includes("SATURDAY") || sch.days?.length === 1
+        return {
+          id: sch.id,
+          days: daysInSched,
+          periods,
+          isAmber,
+          gridTemplate: `minmax(56px, 64px) repeat(${periods.length}, minmax(130px, 1fr))`,
+        }
+      }).filter((g) => g.days.length > 0)
+    }
 
-    const rawWeekdayPeriods = wkSched?.periods || setup.periods || []
-    const rawSaturdayPeriods = satSched?.periods || setup.periods || []
+    if (groups.length === 0) {
+      // Fallback
+      const satSched = setup.schedules?.find((s) => s.id === "saturday" || s.days?.includes("SATURDAY"))
+      const wkSched = setup.schedules?.find((s) => s.id !== "saturday" && !s.days?.every((d) => d === "SATURDAY"))
+      const rawWeekdayPeriods = wkSched?.periods || setup.periods || []
+      const rawSaturdayPeriods = satSched?.periods || setup.periods || []
+      const sortedWeekday = [...rawWeekdayPeriods].sort((a, b) => a.period_number - b.period_number)
+      const sortedSaturday = [...rawSaturdayPeriods].sort((a, b) => a.period_number - b.period_number)
 
-    const sortedWeekday = [...rawWeekdayPeriods].sort((a, b) => a.period_number - b.period_number)
-    const sortedSaturday = [...rawSaturdayPeriods].sort((a, b) => a.period_number - b.period_number)
+      groups = [
+        {
+          id: "weekdays",
+          days: appDays.filter((d) => d !== "SATURDAY"),
+          periods: sortedWeekday,
+          isAmber: false,
+          gridTemplate: `minmax(56px, 64px) repeat(${sortedWeekday.length}, minmax(130px, 1fr))`,
+        },
+      ]
+      if (hasSat) {
+        groups.push({
+          id: "saturday",
+          days: ["SATURDAY"],
+          periods: sortedSaturday,
+          isAmber: true,
+          gridTemplate: `minmax(56px, 64px) repeat(${sortedSaturday.length}, minmax(130px, 1fr))`,
+        })
+      }
+    }
+
+    const wkGroup = groups.find((g) => !g.isAmber) || groups[0]
+    const satGroup = groups.find((g) => g.days.includes("SATURDAY"))
+
+    let totalSlots = 0
+    groups.forEach((g) => {
+      const teachingCount = g.periods.filter((p) => !p.is_break).length
+      totalSlots += teachingCount * g.days.length
+    })
 
     return {
-      weekdayPeriods: sortedWeekday,
-      saturdayPeriods: sortedSaturday,
+      scheduleGroups: groups,
+      weekdayPeriods: wkGroup?.periods || [],
+      saturdayPeriods: satGroup?.periods || [],
       hasSaturday: hasSat,
+      totalSlotsCount: totalSlots,
     }
   }, [setup])
 
@@ -120,9 +166,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
   }, [entries])
 
   // Aggregate stats
-  const teachingPeriodsCount = weekdayPeriods.filter((p) => !p.is_break).length
-  const satTeachingCount = saturdayPeriods.filter((p) => !p.is_break).length
-  const totalSlotsCount = teachingPeriodsCount * 5 + (hasSaturday ? satTeachingCount : 0)
   const assignedSlotsCount = entries.length
   const unassignedSlotsCount = Math.max(0, totalSlotsCount - assignedSlotsCount)
   const completionPct = totalSlotsCount > 0 ? Math.round((assignedSlotsCount / totalSlotsCount) * 100) : 100
@@ -233,396 +276,285 @@ export const ClassWiseCard = memo(function ClassWiseCard({
             zoom: zoom / 100,
           }}
         >
-          {/* WEEKDAY BELL SCHEDULE TIME HEADER */}
-          <div
-            className="w-full"
-            style={{
-              display: "grid",
-              gridTemplateColumns: weekdayGridTemplate,
-            }}
-          >
-            {/* First Column First Row: Empty cell */}
-            <div className="w-full h-10 border-r border-b border-border/70 bg-muted/20" />
-
-            {/* Period Columns Header */}
-            {weekdayPeriods.map((period, index) => {
-              const isBreak = Boolean(period.is_break)
-              const startFmt = formatTime12h(period.start_time)
-              const endFmt = formatTime12h(period.end_time)
-              const duration = calculateDuration(period.start_time, period.end_time)
-              const isLast = index === weekdayPeriods.length - 1
-
-              return (
-                <div
-                  key={period.id || period.period_number}
-                  className={cn(
-                    "relative min-w-[130px] h-10 flex items-center justify-center border-b border-border/70",
-                    isBreak ? "bg-muted/35 dark:bg-muted/20" : "bg-muted/15",
-                    !isLast && "border-r border-border/70"
-                  )}
-                >
-                  {/* Period label & duration */}
-                  <div className="flex items-center justify-center">
-                    <span
-                      className={cn(
-                        "text-xs",
-                        isBreak
-                          ? "font-bold text-amber-700 dark:text-amber-400 tracking-wider"
-                          : "font-semibold text-foreground"
-                      )}
-                    >
-                      {isBreak ? (period.label || "BREAK") : formatPeriodShortLabel(period)}
-                    </span>
-                    {duration && (
-                      <span className="text-[10px] text-muted-foreground ml-1.5 font-normal">
-                        {duration}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Start time pill for first column */}
-                  {index === 0 && startFmt && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 pointer-events-none">
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background text-muted-foreground shadow-2xs whitespace-nowrap">
-                        {startFmt}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* End time pill on divider */}
-                  {endFmt && (
-                    <div
-                      className={cn(
-                        "absolute top-1/2 -translate-y-1/2 z-20 pointer-events-none",
-                        isLast ? "right-1" : "right-0 translate-x-1/2"
-                      )}
-                    >
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background text-muted-foreground shadow-2xs whitespace-nowrap">
-                        {endFmt}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* WEEKDAYS ROWS (Mon - Fri) */}
-          {WEEKDAYS.map((day, dIdx) => {
-            const isToday = day === todayWeekday
-            const isLastRow = !hasSaturday && dIdx === WEEKDAYS.length - 1
-
+          {/* Render Schedule Groups (Weekdays, Split Days, Saturday) */}
+          {scheduleGroups.map((group, gIdx) => {
             return (
-              <div
-                key={day}
-                className="w-full"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: weekdayGridTemplate,
-                }}
-              >
-                {/* Day Label Cell */}
+              <React.Fragment key={group.id || gIdx}>
+                {/* BELL SCHEDULE TIME HEADER FOR THIS GROUP */}
                 <div
                   className={cn(
-                    "w-full h-full flex items-center justify-center border-r border-border/70 font-bold text-xs tracking-wider",
-                    !isLastRow && "border-b border-border/70",
-                    isToday
-                      ? "bg-primary/5 text-primary font-extrabold"
-                      : "bg-muted/10 text-foreground/85"
+                    "w-full",
+                    group.isAmber && "bg-amber-50/70 dark:bg-amber-950/25"
                   )}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: group.gridTemplate,
+                  }}
                 >
-                  {DAY_LABELS[day]}
-                </div>
+                  {/* First Column First Row: Empty cell */}
+                  <div
+                    className={cn(
+                      "w-full h-10 border-r",
+                      group.isAmber
+                        ? "border-amber-300/60 dark:border-amber-800/60 border-b-2 border-amber-400 dark:border-amber-500 bg-amber-100/30"
+                        : "border-b border-border/70 bg-muted/20"
+                    )}
+                  />
 
-                {/* Period Cells */}
-                {weekdayPeriods.map((period, index) => {
-                  const isLastCol = index === weekdayPeriods.length - 1
-                  const entry =
-                    entryLookup.get(`${day}_${period.id}`) ||
-                    entryLookup.get(`${day}_p${period.period_number}`) ||
-                    null
+                  {/* Period Columns Header */}
+                  {group.periods.map((period, index) => {
+                    const isBreak = Boolean(period.is_break)
+                    const startFmt = formatTime12h(period.start_time)
+                    const endFmt = formatTime12h(period.end_time)
+                    const duration = calculateDuration(period.start_time, period.end_time)
+                    const isLast = index === group.periods.length - 1
 
-                  const isBreak = Boolean(period.is_break)
-                  const conflictInfo = entry ? conflictMap[entry.id] : null
-                  const slotKey = `${section.id}_${day}_${period.id || period.period_number}`
-                  const isSelected = selectedSlot === slotKey
-                  const isCopied = copiedSlot?.entry?.id === entry?.id
-
-                  // Current period calculation
-                  let isCurrentPeriod = false
-                  if (isToday && !isBreak && period.start_time && period.end_time) {
-                    const [sh, sm] = period.start_time.split(":").map(Number)
-                    const [eh, em] = period.end_time.split(":").map(Number)
-                    const startM = sh * 60 + sm
-                    const endM = eh * 60 + em
-                    if (currentMinutes >= startM && currentMinutes <= endM) {
-                      isCurrentPeriod = true
-                    }
-                  }
-
-                  // Search highlights
-                  const { isHighlighted: isSearchHighlighted, isDimmed: isSearchDimmed } =
-                    cellMatchesHighlight(entry, parsedQuery)
-                  let isHighlighted = isSearchHighlighted
-                  let isDimmed = isSearchDimmed
-
-                  if (unassignedOnly) {
-                    if (entry) isDimmed = true
-                    else isHighlighted = true
-                  }
-                  if (conflictsOnly) {
-                    if (conflictInfo) isHighlighted = true
-                    else isDimmed = true
-                  }
-
-                  return (
-                    <div
-                      key={period.id || period.period_number}
-                      data-slot-key={slotKey}
-                      className={cn(
-                        "relative min-w-[130px] overflow-hidden",
-                        !isLastCol && "border-r border-border/70",
-                        !isLastRow && "border-b border-border/70"
-                      )}
-                    >
-                      <ClassWiseCell
-                        entry={entry}
-                        day={day}
-                        period={period}
-                        section={section}
-                        isAssignMode={isAssignMode}
-                        isSelected={isSelected}
-                        isCopied={isCopied}
-                        conflictInfo={conflictInfo}
-                        isHighlighted={isHighlighted}
-                        isDimmed={isDimmed}
-                        density={density}
-                        isToday={isToday}
-                        isCurrentPeriod={isCurrentPeriod}
-                        onClick={() => {
-                          if (!isAssignMode) return
-                          onSelectSlot?.(slotKey, {
-                            section,
-                            day,
-                            period,
-                            entry,
-                          })
-                          onOpenAssignDialog?.({
-                            section,
-                            day,
-                            period,
-                            currentEntry: entry,
-                          })
-                        }}
-                        onDoubleClick={() => {
-                          if (!isAssignMode) return
-                          onOpenAssignDialog?.({
-                            section,
-                            day,
-                            period,
-                            currentEntry: entry,
-                          })
-                        }}
-                        draggable={Boolean(entry)}
-                        onDragStart={(e) =>
-                          handleDragStart(e, {
-                            section,
-                            day,
-                            period,
-                            entry,
-                          })
-                        }
-                        onDragOver={handleDragOver}
-                        onDrop={(e) =>
-                          handleDrop(e, {
-                            section,
-                            day,
-                            period,
-                            entry,
-                          })
-                        }
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
-
-          {/* SATURDAY SCHEDULE */}
-          {hasSaturday && (
-            <>
-              {/* Saturday Bell Schedule Header */}
-              <div
-                className="w-full bg-amber-50/70 dark:bg-amber-950/25"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: saturdayGridTemplate,
-                }}
-              >
-                {/* First Column Saturday Header: Empty cell */}
-                <div className="w-full h-10 border-r border-amber-300/60 dark:border-amber-800/60 border-b-2 border-amber-400 dark:border-amber-500" />
-
-                {saturdayPeriods.map((period, index) => {
-                  const isBreak = Boolean(period.is_break)
-                  const startFmt = formatTime12h(period.start_time)
-                  const endFmt = formatTime12h(period.end_time)
-                  const duration = calculateDuration(period.start_time, period.end_time)
-                  const isLast = index === saturdayPeriods.length - 1
-
-                  return (
-                    <div
-                      key={period.id || period.period_number}
-                      className={cn(
-                        "relative min-w-[130px] h-10 flex items-center justify-center border-b-2 border-amber-400 dark:border-amber-500",
-                        isBreak ? "bg-amber-100/50 dark:bg-amber-950/40" : "",
-                        !isLast && "border-r border-amber-300/50 dark:border-amber-800/50"
-                      )}
-                    >
-                      <div className="flex items-center justify-center">
-                        <span
-                          className={cn(
-                            "text-xs",
-                            isBreak
-                              ? "font-bold text-amber-800 dark:text-amber-300 tracking-wider"
-                              : "font-bold text-amber-900 dark:text-amber-200"
-                          )}
-                        >
-                          {isBreak ? (period.label || "BREAK") : formatPeriodShortLabel(period)}
-                        </span>
-                        {duration && (
-                          <span className="text-[10px] text-amber-700/80 dark:text-amber-400 ml-1.5 font-normal">
-                            {duration}
+                    return (
+                      <div
+                        key={period.id || period.period_number}
+                        className={cn(
+                          "relative min-w-[130px] h-10 flex items-center justify-center border-b",
+                          group.isAmber
+                            ? "border-b-2 border-amber-400 dark:border-amber-500"
+                            : "border-border/70",
+                          isBreak
+                            ? group.isAmber
+                              ? "bg-amber-100/50 dark:bg-amber-950/40"
+                              : "bg-muted/35 dark:bg-muted/20"
+                            : group.isAmber
+                            ? ""
+                            : "bg-muted/15",
+                          !isLast &&
+                            (group.isAmber
+                              ? "border-r border-amber-300/50 dark:border-amber-800/50"
+                              : "border-r border-border/70")
+                        )}
+                      >
+                        {/* Period label & duration */}
+                        <div className="flex items-center justify-center">
+                          <span
+                            className={cn(
+                              "text-xs",
+                              isBreak
+                                ? group.isAmber
+                                  ? "font-bold text-amber-800 dark:text-amber-300 tracking-wider"
+                                  : "font-bold text-amber-700 dark:text-amber-400 tracking-wider"
+                                : group.isAmber
+                                ? "font-bold text-amber-900 dark:text-amber-200"
+                                : "font-semibold text-foreground"
+                            )}
+                          >
+                            {isBreak ? (period.label || "BREAK") : formatPeriodShortLabel(period)}
                           </span>
+                          {duration && (
+                            <span
+                              className={cn(
+                                "text-[10px] ml-1.5 font-normal",
+                                group.isAmber
+                                  ? "text-amber-700/80 dark:text-amber-400"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              {duration}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Start time pill for first column */}
+                        {index === 0 && startFmt && (
+                          <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 pointer-events-none">
+                            <span
+                              className={cn(
+                                "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border bg-background shadow-2xs whitespace-nowrap",
+                                group.isAmber
+                                  ? "border-amber-300/80 dark:border-amber-700/80 text-amber-800 dark:text-amber-300 font-semibold"
+                                  : "border-border/80 text-muted-foreground"
+                              )}
+                            >
+                              {startFmt}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* End time pill on divider */}
+                        {endFmt && (
+                          <div
+                            className={cn(
+                              "absolute top-1/2 -translate-y-1/2 z-20 pointer-events-none",
+                              isLast ? "right-1" : "right-0 translate-x-1/2"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border bg-background shadow-2xs whitespace-nowrap",
+                                group.isAmber
+                                  ? "border-amber-300/80 dark:border-amber-700/80 text-amber-800 dark:text-amber-300 font-semibold"
+                                  : "border-border/80 text-muted-foreground"
+                              )}
+                            >
+                              {endFmt}
+                            </span>
+                          </div>
                         )}
                       </div>
-
-                      {index === 0 && startFmt && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 pointer-events-none">
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold border border-amber-300/80 dark:border-amber-700/80 bg-background text-amber-800 dark:text-amber-300 shadow-2xs whitespace-nowrap">
-                            {startFmt}
-                          </span>
-                        </div>
-                      )}
-
-                      {endFmt && (
-                        <div
-                          className={cn(
-                            "absolute top-1/2 -translate-y-1/2 z-20 pointer-events-none",
-                            isLast ? "right-1" : "right-0 translate-x-1/2"
-                          )}
-                        >
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold border border-amber-300/80 dark:border-amber-700/80 bg-background text-amber-800 dark:text-amber-300 shadow-2xs whitespace-nowrap">
-                            {endFmt}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Saturday Row */}
-              <div
-                className="w-full"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: saturdayGridTemplate,
-                }}
-              >
-                <div
-                  className={cn(
-                    "w-full h-full flex items-center justify-center border-r border-border/70 font-bold text-xs tracking-wider",
-                    todayWeekday === "SATURDAY"
-                      ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 font-extrabold"
-                      : "bg-amber-50/40 dark:bg-amber-950/15 text-amber-700 dark:text-amber-400"
-                  )}
-                >
-                  SAT
+                    )
+                  })}
                 </div>
 
-                {saturdayPeriods.map((period, index) => {
-                  const isLastCol = index === saturdayPeriods.length - 1
-                  const entry =
-                    entryLookup.get(`SATURDAY_${period.id}`) ||
-                    entryLookup.get(`SATURDAY_p${period.period_number}`) ||
-                    null
-
-                  const isBreak = Boolean(period.is_break)
-                  const conflictInfo = entry ? conflictMap[entry.id] : null
-                  const slotKey = `${section.id}_SATURDAY_${period.id || period.period_number}`
-                  const isSelected = selectedSlot === slotKey
-                  const isCopied = copiedSlot?.entry?.id === entry?.id
+                {/* DAY ROWS FOR THIS GROUP */}
+                {group.days.map((day, dIdx) => {
+                  const isToday = day === todayWeekday
+                  const isLastRow = dIdx === group.days.length - 1
 
                   return (
                     <div
-                      key={period.id || period.period_number}
-                      data-slot-key={slotKey}
-                      className={cn(
-                        "relative min-w-[130px] overflow-hidden",
-                        !isLastCol && "border-r border-border/70"
-                      )}
+                      key={day}
+                      className="w-full"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: group.gridTemplate,
+                      }}
                     >
-                      <ClassWiseCell
-                        entry={entry}
-                        day="SATURDAY"
-                        period={period}
-                        section={section}
-                        isAssignMode={isAssignMode}
-                        isSelected={isSelected}
-                        isCopied={isCopied}
-                        conflictInfo={conflictInfo}
-                        density={density}
-                        isToday={todayWeekday === "SATURDAY"}
-                        onClick={() => {
-                          if (!isAssignMode) return
-                          onSelectSlot?.(slotKey, {
-                            section,
-                            day: "SATURDAY",
-                            period,
-                            entry,
-                          })
-                          onOpenAssignDialog?.({
-                            section,
-                            day: "SATURDAY",
-                            period,
-                            currentEntry: entry,
-                          })
-                        }}
-                        onDoubleClick={() => {
-                          if (!isAssignMode) return
-                          onOpenAssignDialog?.({
-                            section,
-                            day: "SATURDAY",
-                            period,
-                            currentEntry: entry,
-                          })
-                        }}
-                        draggable={Boolean(entry)}
-                        onDragStart={(e) =>
-                          handleDragStart(e, {
-                            section,
-                            day,
-                            period,
-                            entry,
-                          })
+                      {/* Day Label Cell */}
+                      <div
+                        className={cn(
+                          "w-full h-full flex items-center justify-center border-r font-bold text-xs tracking-wider",
+                          group.isAmber
+                            ? "border-amber-300/60 dark:border-amber-800/60"
+                            : "border-border/70",
+                          !isLastRow && "border-b border-border/70",
+                          isToday
+                            ? group.isAmber
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 font-extrabold"
+                              : "bg-primary/5 text-primary font-extrabold"
+                            : group.isAmber
+                            ? "bg-amber-50/40 dark:bg-amber-950/15 text-amber-700 dark:text-amber-400"
+                            : "bg-muted/10 text-foreground/85"
+                        )}
+                      >
+                        {DAY_LABELS[day]}
+                      </div>
+
+                      {/* Period Cells */}
+                      {group.periods.map((period, index) => {
+                        const isLastCol = index === group.periods.length - 1
+                        const entry =
+                          entryLookup.get(`${day}_${period.id}`) ||
+                          entryLookup.get(`${day}_p${period.period_number}`) ||
+                          null
+
+                        const isBreak = Boolean(period.is_break)
+                        const conflictInfo = entry ? conflictMap[entry.id] : null
+                        const slotKey = `${section.id}_${day}_${period.id || period.period_number}`
+                        const isSelected = selectedSlot === slotKey
+                        const isCopied = copiedSlot?.entry?.id === entry?.id
+
+                        // Current period calculation
+                        let isCurrentPeriod = false
+                        if (isToday && !isBreak && period.start_time && period.end_time) {
+                          const [sh, sm] = period.start_time.split(":").map(Number)
+                          const [eh, em] = period.end_time.split(":").map(Number)
+                          const startM = sh * 60 + sm
+                          const endM = eh * 60 + em
+                          if (currentMinutes >= startM && currentMinutes <= endM) {
+                            isCurrentPeriod = true
+                          }
                         }
-                        onDragOver={handleDragOver}
-                        onDrop={(e) =>
-                          handleDrop(e, {
-                            section,
-                            day,
-                            period,
-                            entry,
-                          })
+
+                        // Search highlights
+                        const { isHighlighted: isSearchHighlighted, isDimmed: isSearchDimmed } =
+                          cellMatchesHighlight(entry, parsedQuery)
+                        let isHighlighted = isSearchHighlighted
+                        let isDimmed = isSearchDimmed
+
+                        if (unassignedOnly) {
+                          if (entry) isDimmed = true
+                          else isHighlighted = true
                         }
-                      />
+                        if (conflictsOnly) {
+                          if (conflictInfo) isHighlighted = true
+                          else isDimmed = true
+                        }
+
+                        return (
+                          <div
+                            key={period.id || period.period_number}
+                            data-slot-key={slotKey}
+                            className={cn(
+                              "relative min-w-[130px] overflow-hidden",
+                              !isLastCol &&
+                                (group.isAmber
+                                  ? "border-r border-amber-300/40 dark:border-amber-800/40"
+                                  : "border-r border-border/70"),
+                              !isLastRow && "border-b border-border/70"
+                            )}
+                          >
+                            <ClassWiseCell
+                              entry={entry}
+                              day={day}
+                              period={period}
+                              section={section}
+                              isAssignMode={isAssignMode}
+                              isSelected={isSelected}
+                              isCopied={isCopied}
+                              conflictInfo={conflictInfo}
+                              isHighlighted={isHighlighted}
+                              isDimmed={isDimmed}
+                              density={density}
+                              isToday={isToday}
+                              isCurrentPeriod={isCurrentPeriod}
+                              onClick={() => {
+                                if (!isAssignMode) return
+                                onSelectSlot?.(slotKey, {
+                                  section,
+                                  day,
+                                  period,
+                                  entry,
+                                })
+                                onOpenAssignDialog?.({
+                                  section,
+                                  day,
+                                  period,
+                                  currentEntry: entry,
+                                })
+                              }}
+                              onDoubleClick={() => {
+                                if (!isAssignMode) return
+                                onOpenAssignDialog?.({
+                                  section,
+                                  day,
+                                  period,
+                                  currentEntry: entry,
+                                })
+                              }}
+                              draggable={Boolean(entry)}
+                              onDragStart={(e) =>
+                                handleDragStart(e, {
+                                  section,
+                                  day,
+                                  period,
+                                  entry,
+                                })
+                              }
+                              onDragOver={handleDragOver}
+                              onDrop={(e) =>
+                                handleDrop(e, {
+                                  section,
+                                  day,
+                                  period,
+                                  entry,
+                                })
+                              }
+                            />
+                          </div>
+                        )
+                      })}
                     </div>
                   )
                 })}
-              </div>
-            </>
-          )}
+              </React.Fragment>
+            )
+          })}
         </div>
       </div>
     </div>

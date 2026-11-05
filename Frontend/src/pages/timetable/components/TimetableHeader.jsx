@@ -4,7 +4,7 @@ import {
   CheckCircle2,
   Loader2,
 } from "lucide-react"
-import { PerspectiveSelector } from "./PerspectiveSelector"
+import { TimetableSelector } from "./TimetableSelector"
 import { WingSelector } from "./WingSelector"
 import { SearchFilterBar } from "./SearchFilterBar"
 import { ZoomControls } from "./ZoomDensityControls"
@@ -12,9 +12,11 @@ import { AssignModeBar } from "./AssignModeBar"
 import { cn } from "@/lib/utils"
 
 export function TimetableHeader({
-  // Perspective
-  perspective,
-  onPerspectiveChange,
+  // Timetables
+  timetables = [],
+  selectedTimetableId,
+  onSelectTimetable,
+  onCreateNewTimetable,
 
   // Wings
   wings = [],
@@ -45,12 +47,15 @@ export function TimetableHeader({
       )}
     >
       <div className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 flex-wrap lg:flex-nowrap">
-        {/* Left Section: Perspective, Wing, Search Bar */}
+        {/* Left Section: Timetable Selector, Wing, Search Bar */}
         <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap flex-1 min-w-0">
-          {/* Perspective Selector */}
-          <PerspectiveSelector
-            currentPerspective={perspective}
-            onChange={onPerspectiveChange}
+          {/* Timetable Selector */}
+          <TimetableSelector
+            timetables={timetables}
+            selectedTimetableId={selectedTimetableId}
+            onSelectTimetable={onSelectTimetable}
+            onCreateNew={onCreateNewTimetable}
+            canManage={canManage}
           />
 
           {/* Wing Selector */}

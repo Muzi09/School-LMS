@@ -1,7 +1,6 @@
 import React, { useState } from "react"
 import {
   Calendar,
-  Check,
   ChevronDown,
   Copy,
   Edit2,
@@ -15,6 +14,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverTrigger, PopoverDialog } from "@/components/ui/popover"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 import { DeleteConfirmDialog } from "@/components/common/DeleteConfirmDialog"
 import {
   useActivateTimetable,
@@ -33,7 +37,6 @@ export function TimetableSelector({
   canManage = false,
 }) {
   const [isOpen, setIsOpen] = useState(false)
-  const [actionMenuOpenId, setActionMenuOpenId] = useState(null)
   const [confirmActiveTarget, setConfirmActiveTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [renameTarget, setRenameTarget] = useState(null)
@@ -48,12 +51,32 @@ export function TimetableSelector({
   const currentTimetable =
     timetables.find((t) => t.id === selectedTimetableId) || timetables[0] || null
 
+  const handleStartSetActive = (target) => {
+    setIsOpen(false)
+    setConfirmActiveTarget(target)
+  }
+
+  const handleStartRename = (target) => {
+    setIsOpen(false)
+    setRenameTarget(target)
+    setRenameValue(target.name)
+    setRenameError("")
+  }
+
+  const handleStartDelete = (target) => {
+    if (timetables.length <= 1) {
+      toast.error("Cannot delete the only remaining timetable.")
+      return
+    }
+    setIsOpen(false)
+    setDeleteTarget(target)
+  }
+
   const handleSetActive = async (target) => {
     try {
       const prevActive = timetables.find((t) => t.is_active)
       await activateMutation.mutateAsync(target.id)
       setConfirmActiveTarget(null)
-      setIsOpen(false)
       toast.success(`"${target.name}" is now the active timetable.`, {
         action: prevActive
           ? {
@@ -71,7 +94,6 @@ export function TimetableSelector({
     try {
       await duplicateMutation.mutateAsync({ timetableId: target.id })
       toast.success(`Timetable "${target.name}" duplicated.`)
-      setActionMenuOpenId(null)
     } catch (err) {
       toast.error(err?.data?.detail || err?.message || "Failed to duplicate timetable.")
     }
@@ -102,6 +124,12 @@ export function TimetableSelector({
     try {
       await deleteMutation.mutateAsync(deleteTarget.id)
       toast.success(`Timetable "${deleteTarget.name}" deleted.`)
+      if (selectedTimetableId === deleteTarget.id) {
+        const remaining = timetables.filter((t) => t.id !== deleteTarget.id)
+        if (remaining.length > 0) {
+          onSelectTimetable(remaining[0].id)
+        }
+      }
       setDeleteTarget(null)
     } catch (err) {
       toast.error(err?.data?.detail || err?.message || "Failed to delete timetable.")
@@ -124,15 +152,20 @@ export function TimetableSelector({
           {/* Status Dot */}
           <span
             className={cn(
-              "size-2.5 rounded-full shrink-0",
+              "size-2 rounded-full shrink-0",
               currentTimetable?.is_active
                 ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-                : "bg-amber-500"
+                : "bg-muted-foreground/40"
             )}
           />
           <span className="truncate font-bold">
-            {currentTimetable?.name || "Select Timetable"}
+            {currentTimetable?.name || "Timetable 2026 - 2027"}
           </span>
+          {currentTimetable?.is_active && (
+            <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+              Active
+            </span>
+          )}
           <ChevronDown
             className={cn(
               "size-3.5 text-muted-foreground transition-transform duration-200 shrink-0",
@@ -153,9 +186,19 @@ export function TimetableSelector({
             </div>
 
             {/* List of timetables */}
-            <div className="max-h-64 overflow-y-auto space-y-1 pr-0.5">
+            <div
+              className={cn(
+                "space-y-1 pr-0.5",
+                timetables.length > 5 ? "max-h-64 overflow-y-auto" : "overflow-visible"
+              )}
+            >
               {timetables.map((t) => {
                 const isSelected = t.id === selectedTimetableId
+                const completionPct =
+                  t.completion_percentage != null
+                    ? Math.round(t.completion_percentage)
+                    : 0
+
                 return (
                   <div
                     key={t.id}
@@ -171,99 +214,82 @@ export function TimetableSelector({
                       onClick={() => {
                         onSelectTimetable(t.id)
                         setIsOpen(false)
-                        setActionMenuOpenId(null)
                       }}
                       className="flex-1 flex items-center gap-2.5 text-left cursor-pointer min-w-0"
                     >
                       <span
                         className={cn(
                           "size-2 rounded-full shrink-0",
-                          t.is_active ? "bg-emerald-500" : "bg-amber-500"
+                          t.is_active ? "bg-emerald-500" : "bg-muted-foreground/30"
                         )}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs truncate font-semibold leading-tight">
-                          {t.name}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-xs truncate font-semibold leading-tight">
+                            {t.name}
+                          </span>
+                          {t.is_active && (
+                            <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 leading-none">
+                              Active
+                            </span>
+                          )}
                         </div>
-                        <div className="text-[10px] text-muted-foreground truncate">
-                          {t.academic_year || "2026-27"} · {t.is_active ? "Active" : "Draft"}
+                        <div className="text-[10px] text-muted-foreground truncate mt-0.5 font-normal">
+                          {completionPct}% completed
                         </div>
                       </div>
                     </button>
 
-                    {/* Secondary Actions Menu (⋯) */}
+                    {/* Secondary Actions 3-Dots Menu */}
                     {canManage && (
-                      <div className="relative shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setActionMenuOpenId(actionMenuOpenId === t.id ? null : t.id)
-                          }}
-                          className="size-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors cursor-pointer"
+                      <DropdownMenuTrigger>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 flex items-center justify-center transition-colors cursor-pointer shrink-0"
                           aria-label="Actions"
                         >
                           <MoreVertical className="size-3.5" />
-                        </button>
-
-                        {actionMenuOpenId === t.id && (
-                          <div
-                            className="absolute right-0 mt-1 w-44 rounded-xl bg-card border border-border shadow-lg p-1 z-60 space-y-0.5 animate-in fade-in-0 zoom-in-95 duration-100"
-                            onClick={(e) => e.stopPropagation()}
+                        </Button>
+                        <DropdownMenu
+                          placement="bottom end"
+                          className="w-44 z-[100] rounded-xl bg-card border border-border shadow-2xl p-1 space-y-0.5"
+                        >
+                          <DropdownMenuItem
+                            isDisabled={t.is_active}
+                            onAction={() => handleStartSetActive(t)}
+                            className="cursor-pointer gap-2 text-xs py-1.5 px-2.5 rounded-lg font-medium"
                           >
-                            {!t.is_active && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActionMenuOpenId(null)
-                                  setConfirmActiveTarget(t)
-                                }}
-                                className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-muted rounded-lg flex items-center gap-2 cursor-pointer font-medium"
-                              >
-                                <CheckCircle2 className="size-3.5 text-emerald-500" />
-                                <span>Set as active</span>
-                              </button>
-                            )}
+                            <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                            <span>Set as active</span>
+                          </DropdownMenuItem>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRenameTarget(t)
-                                setRenameValue(t.name)
-                                setRenameError("")
-                                setActionMenuOpenId(null)
-                              }}
-                              className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-muted rounded-lg flex items-center gap-2 cursor-pointer font-medium"
-                            >
-                              <Edit2 className="size-3.5 text-blue-500" />
-                              <span>Rename</span>
-                            </button>
+                          <DropdownMenuItem
+                            onAction={() => handleStartRename(t)}
+                            className="cursor-pointer gap-2 text-xs py-1.5 px-2.5 rounded-lg font-medium"
+                          >
+                            <Edit2 className="size-3.5 text-blue-500 shrink-0" />
+                            <span>Rename</span>
+                          </DropdownMenuItem>
 
-                            <button
-                              type="button"
-                              onClick={() => handleDuplicate(t)}
-                              className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-muted rounded-lg flex items-center gap-2 cursor-pointer font-medium"
-                            >
-                              <Copy className="size-3.5 text-purple-500" />
-                              <span>Duplicate</span>
-                            </button>
+                          <DropdownMenuItem
+                            onAction={() => handleDuplicate(t)}
+                            className="cursor-pointer gap-2 text-xs py-1.5 px-2.5 rounded-lg font-medium"
+                          >
+                            <Copy className="size-3.5 text-purple-500 shrink-0" />
+                            <span>Duplicate</span>
+                          </DropdownMenuItem>
 
-                            {!t.is_active && timetables.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActionMenuOpenId(null)
-                                  setDeleteTarget(t)
-                                }}
-                                className="w-full text-left px-2.5 py-1.5 text-xs text-destructive hover:bg-destructive/10 rounded-lg flex items-center gap-2 cursor-pointer font-medium"
-                              >
-                                <Trash2 className="size-3.5" />
-                                <span>Delete</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                          <DropdownMenuItem
+                            onAction={() => handleStartDelete(t)}
+                            variant="destructive"
+                            className="cursor-pointer gap-2 text-xs py-1.5 px-2.5 rounded-lg font-medium text-destructive focus:bg-destructive/10 focus:text-destructive"
+                          >
+                            <Trash2 className="size-3.5 shrink-0" />
+                            <span>Delete</span>
+                          </DropdownMenuItem>
+                        </DropdownMenu>
+                      </DropdownMenuTrigger>
                     )}
                   </div>
                 )
@@ -272,7 +298,7 @@ export function TimetableSelector({
 
             {/* Bottom Button: + Create New Timetable... */}
             {canManage && (
-              <div className="pt-1.5 border-t border-border/60">
+              <div className="pt-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -343,52 +369,6 @@ export function TimetableSelector({
         </div>
       )}
 
-      {/* Set Active Confirmation Dialog */}
-      {confirmActiveTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-background/80 backdrop-blur-xs"
-            onClick={() => setConfirmActiveTarget(null)}
-          />
-          <div className="relative w-full max-w-sm bg-card border border-border rounded-2xl p-5 shadow-2xl space-y-4 z-10 animate-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="size-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-                <AlertCircle className="size-5" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-bold text-foreground">
-                  Activate Timetable?
-                </h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Setting <strong>"{confirmActiveTarget.name}"</strong> as active will automatically deactivate the currently active timetable schedule.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={() => setConfirmActiveTarget(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="xs"
-                onClick={() => handleSetActive(confirmActiveTarget)}
-                disabled={activateMutation.isPending}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                {activateMutation.isPending && (
-                  <Loader2 className="size-3 animate-spin mr-1" />
-                )}
-                Confirm & Activate
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmDialog
