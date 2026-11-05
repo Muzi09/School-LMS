@@ -112,9 +112,13 @@ export function JumpToRail({
     // Find the scroll container (typically AppLayout <main> or window)
     const scrollContainer = el.closest("main") || document.scrollingElement || document.documentElement
 
-    // Dynamic header height measurement (AppHeader + TimetableHeader)
-    const stickyHeader = document.querySelector("header.sticky") || document.querySelector("header")
-    const headerHeight = stickyHeader ? stickyHeader.offsetHeight : 72
+    // Dynamic header height measurement (sum all active sticky headers, e.g. AppHeader + TimetableHeader)
+    const stickyHeaders = document.querySelectorAll("header.sticky")
+    let totalHeaderHeight = 0
+    stickyHeaders.forEach((h) => {
+      totalHeaderHeight += h.offsetHeight
+    })
+    const headerHeight = totalHeaderHeight > 0 ? totalHeaderHeight : 128
     // Comfortable padding buffer above the target element so the card header is fully visible
     const buffer = 24
     const totalOffset = headerHeight + buffer

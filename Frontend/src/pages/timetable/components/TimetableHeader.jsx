@@ -42,7 +42,7 @@ export function TimetableHeader({
   return (
     <header
       className={cn(
-        "sticky top-0 z-30 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md overflow-hidden transition-all duration-300",
+        "sticky top-14 z-20 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md overflow-hidden transition-all duration-300",
         className
       )}
     >
