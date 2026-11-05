@@ -17,7 +17,7 @@ export function UnsavedBar({
   return (
     <div className="sticky bottom-0 inset-x-0 z-30 p-3 bg-card/95 backdrop-blur-md border-t border-border shadow-xl flex items-center justify-between gap-3 flex-wrap animate-in slide-in-from-bottom-2 duration-150">
       <div className="flex items-center gap-2">
-        <span className="size-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+        <span className="size-2 rounded-full bg-primary animate-pulse shrink-0" />
         <span className="text-xs font-bold text-foreground">
           You have unsaved changes
         </span>

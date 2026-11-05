@@ -583,7 +583,7 @@ export function BellScheduleSetupModal({
       />
 
       {/* Main Large Modal Dialog */}
-      <div className="relative w-full max-w-6xl max-h-[92vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl z-10 animate-in zoom-in-95 duration-150 overflow-hidden">
+      <div className="relative w-[90vw] max-w-[90vw] max-h-[92vh] flex flex-col bg-card border border-border shadow-2xl rounded-2xl z-10 animate-in zoom-in-95 duration-150 overflow-hidden">
         {/* Top Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-muted/15 shrink-0 flex-wrap gap-3">
           <div className="flex items-center gap-3">

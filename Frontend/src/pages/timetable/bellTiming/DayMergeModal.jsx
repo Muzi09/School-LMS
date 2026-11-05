@@ -57,7 +57,7 @@ export function DayMergeModal({
       <div className="relative w-full max-w-md bg-card border border-border shadow-2xl rounded-2xl z-10 overflow-hidden flex flex-col space-y-4 p-5 animate-in zoom-in-95 duration-150">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="size-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <Merge className="size-5" />
             </div>
             <div>
@@ -80,8 +80,8 @@ export function DayMergeModal({
         </div>
 
         {/* Warning Callout */}
-        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-300 dark:border-amber-700/60 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
-          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+        <div className="p-3 rounded-xl bg-muted/40 border border-border/80 text-xs text-foreground flex items-start gap-2">
+          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-primary" />
           <p>
             Merging {dayFullName} back into a shared schedule will discard its custom period timings. {dayFullName} will follow the target schedule's timings.
           </p>
@@ -151,7 +151,7 @@ export function DayMergeModal({
             size="sm"
             disabled={!selectedTargetId}
             onClick={handleMerge}
-            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-2xs gap-1.5"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs shadow-2xs gap-1.5"
           >
             <Merge className="size-3.5" />
             <span>Confirm & Merge</span>

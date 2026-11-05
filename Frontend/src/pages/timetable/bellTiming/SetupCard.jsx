@@ -69,14 +69,14 @@ export function SetupCard({
     <div
       className={cn(
         "rounded-2xl border bg-card shadow-sm transition-all duration-150 overflow-hidden",
-        assignedCount === 0 ? "border-amber-300 dark:border-amber-700/60" : "border-border/80"
+        assignedCount === 0 ? "border-border/80 bg-muted/5" : "border-border/80"
       )}
     >
       {/* 1. SETUP CARD HEADER */}
       <div className="flex items-center justify-between gap-3 p-4 sm:p-5 bg-muted/20 border-b border-border/70 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
-          {/* Numbered Badge (Indigo square with number) */}
-          <div className="size-9 rounded-xl bg-indigo-600 text-white font-bold text-sm flex items-center justify-center shadow-xs shrink-0">
+          {/* Numbered Badge (Dark version of app theme) */}
+          <div className="size-9 rounded-xl bg-primary text-primary-foreground font-bold text-sm flex items-center justify-center shadow-xs shrink-0">
             {setupIndex + 1}
           </div>
 
@@ -129,14 +129,14 @@ export function SetupCard({
               variant={assignedCount === 0 ? "outline" : "secondary"}
               className={cn(
                 "text-[10px] font-bold tracking-wider px-2 py-0.5 shrink-0",
-                assignedCount === 0 && "bg-amber-500/10 text-amber-600 border-amber-300 dark:border-amber-700/60"
+                assignedCount === 0 && "bg-muted text-muted-foreground border-border/80"
               )}
             >
               {assignedCount} {assignedCount === 1 ? "CLASS" : "CLASSES"}
             </Badge>
 
             {assignedCount === 0 && (
-              <Badge variant="outline" className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-400 gap-1 hidden sm:inline-flex">
+              <Badge variant="outline" className="text-[10px] bg-muted/60 text-muted-foreground border-border/80 gap-1 hidden sm:inline-flex">
                 <AlertTriangle className="size-3" />
                 <span>Empty Setup</span>
               </Badge>
@@ -152,10 +152,10 @@ export function SetupCard({
               variant="outline"
               size="xs"
               onClick={() => onDuplicateSetup(setup.id)}
-              className="h-8 px-2.5 text-xs font-semibold gap-1.5 shadow-2xs hover:border-primary/40"
+              className="h-8 px-2.5 text-xs font-semibold gap-1.5 shadow-2xs hover:border-primary/40 text-foreground"
               title="Duplicate timings into a new setup"
             >
-              <Copy className="size-3.5 text-purple-600 dark:text-purple-400" />
+              <Copy className="size-3.5 text-primary" />
               <span>Duplicate</span>
             </Button>
 
@@ -208,11 +208,8 @@ export function SetupCard({
         {/* All Schedules with their Folder Tabs & Timelines */}
         <div className="space-y-6">
           {schedules.map((schedule, sIdx) => {
-            const isUnique = schedule.days.length === 1
-            const isAmber = isUnique || schedule.days.includes("SATURDAY")
-
             return (
-              <div key={schedule.id || sIdx} className="space-y-2">
+              <div key={schedule.id || sIdx} className="space-y-3">
                 <DayTabs
                   schedules={[schedule]}
                   allSchedules={schedules}
@@ -225,7 +222,6 @@ export function SetupCard({
                 <BellTimeline
                   schedule={schedule}
                   setupId={setup.id}
-                  isAmber={isAmber}
                   readOnly={readOnly}
                   onOpenPeriodModal={(period, idx) => onOpenPeriodModal(setup.id, schedule.id, period, idx)}
                   onInsertPeriodAtBoundary={(insertAfterIdx) =>

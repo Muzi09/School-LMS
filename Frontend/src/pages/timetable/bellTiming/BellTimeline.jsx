@@ -109,7 +109,7 @@ export function BellTimeline({
             onClick={() => onApplyTemplate?.("standard")}
             className="gap-1.5 text-xs font-semibold"
           >
-            <Sparkles className="size-3.5 text-amber-500" />
+            <Sparkles className="size-3.5 text-primary" />
             <span>Start from 8-Period Template</span>
           </Button>
           {otherSetups.length > 0 && (
@@ -134,197 +134,117 @@ export function BellTimeline({
   }, [periods])
 
   return (
-    <div className="space-y-4">
-      {/* Summary Strip */}
+    <div className="w-full space-y-2">
+      {/* Accessible Summary Info */}
       {summaryStats && (
-        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground bg-muted/20 border border-border/60 px-3.5 py-2 rounded-xl">
-          <div className="flex items-center gap-1.5 text-foreground font-semibold">
-            <Clock className="size-3.5 text-primary" />
-            <span>
-              {summaryStats.firstBell} – {summaryStats.lastBell}
-            </span>
-          </div>
-          <span className="text-border/80">|</span>
-          <div>
-            <strong className="text-foreground font-semibold">{summaryStats.classPeriodsCount}</strong> Class Periods
-          </div>
-          <span className="text-border/80">|</span>
-          <div>
-            <strong className="text-foreground font-semibold">{formatDurationHuman(summaryStats.totalTeachingMins)}</strong> Teaching
-          </div>
-          {summaryStats.totalRecessMins > 0 && (
-            <>
-              <span className="text-border/80">|</span>
-              <div className="flex items-center gap-1">
-                <Coffee className="size-3 text-amber-500" />
-                <span>
-                  <strong className="text-foreground font-semibold">{summaryStats.totalRecessMins}m</strong> Recess
-                </span>
-              </div>
-            </>
-          )}
-        </div>
+        <span className="sr-only">
+          {summaryStats.classPeriodsCount} Class Periods, {summaryStats.totalTeachingMins}m Teaching
+        </span>
       )}
 
-      {/* Desktop / Tablet Horizontal Proportional Timeline */}
-      <div className="hidden md:block relative">
-        <div className="overflow-x-auto scrollbar-thin pb-4 pt-2">
-          <div className="min-w-max flex flex-col">
-            {/* Timeline Blocks */}
-            <div
-              className={cn(
-                "flex items-stretch h-14 rounded-xl border overflow-hidden shadow-2xs",
-                isAmber
-                  ? "bg-amber-500/10 border-amber-300 dark:border-amber-700/60 divide-x divide-amber-300/80 dark:divide-amber-800/60"
-                  : "bg-muted/30 border-border/80 divide-x divide-border/60"
-              )}
-            >
-              {periods.map((period, idx) => {
-                const duration = calculateDuration(period.start_time, period.end_time)
-                const pType = period.type || (period.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
-                const isRecess = pType === PERIOD_TYPES.RECESS
-                const isRunning = period.id === currentRunningPeriodId
-
-                // Width proportional with minimum 80px
-                const widthPercent = totalMinutes > 0 ? (duration / totalMinutes) * 100 : 100 / periods.length
-                const minWidthPx = isRecess ? 75 : 95
-
-                return (
+      {/* Desktop / Tablet Single-Row Unified Timeline Strip (just like timetable header) */}
+      <div className="hidden md:block relative w-full">
+        <div className="overflow-x-auto scrollbar-thin py-3 px-1">
+          <div className="min-w-max flex items-stretch h-14 rounded-xl border border-border/70 bg-primary/5 dark:bg-primary/10 select-none">
+            {/* 1. START EMPTY SPACE: Ensures first start time chip and "+" button are 100% visible, not hidden */}
+            <div className="relative w-12 shrink-0 border-r border-border/70 bg-primary/5 dark:bg-primary/10">
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex flex-col items-center gap-1 pointer-events-auto">
+                <BoundaryEditPopover
+                  timeStr={periods[0].start_time}
+                  boundaryIndex={0}
+                  isFirst
+                  disabled={readOnly}
+                  onSaveTime={(newTime) => onEditBoundaryTime?.(0, newTime, true)}
+                />
+                {!readOnly && (
                   <button
-                    key={period.id || idx}
                     type="button"
+                    onClick={() => onInsertPeriodAtBoundary(-1)}
+                    className="size-4.5 rounded-full bg-background border border-border/80 hover:bg-primary hover:text-primary-foreground text-muted-foreground flex items-center justify-center shadow-2xs cursor-pointer transition-all hover:scale-110"
+                    title="Insert period before first period"
+                    aria-label="Insert period before first period"
+                  >
+                    <Plus className="size-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 2. PERIOD CELLS: One row just like timetable header, time chips sit on the divider */}
+            {periods.map((period, idx) => {
+              const duration = calculateDuration(period.start_time, period.end_time)
+              const pType = period.type || (period.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
+              const isRecess = pType === PERIOD_TYPES.RECESS
+              const isRunning = period.id === currentRunningPeriodId
+              const isLast = idx === periods.length - 1
+
+              return (
+                <div
+                  key={period.id || idx}
+                  className={cn(
+                    "relative flex items-center justify-center border-r border-border/70 transition-colors",
+                    isRecess
+                      ? "bg-primary/10 dark:bg-primary/15"
+                      : "bg-primary/5 dark:bg-primary/10 hover:bg-primary/10"
+                  )}
+                  style={{
+                    flexGrow: duration,
+                    minWidth: isRecess ? "85px" : "110px",
+                  }}
+                >
+                  {/* Period Button: click to edit period in modal */}
+                  <button
+                    type="button"
+                    disabled={readOnly}
                     onClick={() => !readOnly && onOpenPeriodModal(period, idx)}
-                    style={{
-                      minWidth: `${minWidthPx}px`,
-                      flexGrow: duration,
-                    }}
-                    title={`${period.label || `P${idx + 1}`}: ${format12h(period.start_time)} – ${format12h(period.end_time)} (${duration} mins)`}
                     className={cn(
-                      "relative px-2.5 py-1 flex flex-col items-center justify-center text-center transition-all duration-150 select-none group",
-                      readOnly ? "cursor-default" : "cursor-pointer",
-                      isRecess
-                        ? "bg-amber-100/70 dark:bg-amber-950/50 hover:bg-amber-200/60 dark:hover:bg-amber-900/50"
-                        : isAmber
-                        ? "hover:bg-amber-400/20 active:bg-amber-400/30 text-amber-950 dark:text-amber-100"
-                        : "hover:bg-primary/5 active:bg-primary/10 text-foreground",
-                      isRunning && "ring-2 ring-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30"
+                      "w-full h-full flex items-center justify-center gap-1.5 px-3 select-none text-center",
+                      readOnly ? "cursor-default" : "cursor-pointer"
                     )}
+                    title={`${period.label || `P${idx + 1}`}: ${format12h(period.start_time)} – ${format12h(period.end_time)} (${duration}m) · Click to edit`}
                     aria-label={`Edit ${period.label || `P${idx + 1}`}`}
                   >
                     {isRunning && (
-                      <span className="absolute top-1 right-1.5 size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                     )}
-                    <div className="flex items-center gap-1">
-                      {isRecess && <Coffee className="size-3 text-amber-600 dark:text-amber-400 shrink-0" />}
-                      <span
-                        className={cn(
-                          "text-xs font-bold truncate",
-                          isRecess ? "text-amber-900 dark:text-amber-200" : isAmber ? "text-amber-950 dark:text-amber-100" : "text-foreground"
-                        )}
-                      >
-                        {period.label || `P${period.period_number}`}
-                      </span>
-                    </div>
-                    <span
-                      className={cn(
-                        "text-[10px] font-medium",
-                        isAmber ? "text-amber-800/80 dark:text-amber-300/80" : "text-muted-foreground"
-                      )}
-                    >
+                    {isRecess && (
+                      <Coffee className="size-3.5 text-muted-foreground shrink-0" />
+                    )}
+                    <span className="text-xs font-bold text-foreground">
+                      {period.label || `P${period.period_number}`}
+                    </span>
+                    <span className="text-[10px] font-normal text-muted-foreground">
                       {duration}m
                     </span>
                   </button>
-                )
-              })}
-            </div>
 
-            {/* Boundaries Row: Time Pills, Ticks, and Circular "+" Buttons */}
-            <div className="relative flex items-center justify-between pt-2">
-              {periods.map((period, idx) => {
-                const isFirst = idx === 0
-                const isLast = idx === periods.length - 1
-
-                return (
-                  <React.Fragment key={`bound-${period.id || idx}`}>
-                    {/* First Boundary (Start of First Period) */}
-                    {isFirst && (
-                      <div className="flex flex-col items-center gap-1 -translate-x-1/2">
-                        <div
-                          className={cn(
-                            "w-px h-2",
-                            isAmber ? "bg-amber-400 dark:bg-amber-600" : "bg-border/80"
-                          )}
-                        />
-                        <BoundaryEditPopover
-                          timeStr={period.start_time}
-                          boundaryIndex={0}
-                          isFirst
-                          disabled={readOnly}
-                          onSaveTime={(newTime) => onEditBoundaryTime?.(0, newTime, true)}
-                        />
-                        {!readOnly && (
-                          <button
-                            type="button"
-                            onClick={() => onInsertPeriodAtBoundary(-1)}
-                            className={cn(
-                              "size-5 rounded-full flex items-center justify-center transition-colors cursor-pointer shadow-2xs mt-0.5",
-                              isAmber
-                                ? "bg-amber-500/20 hover:bg-amber-500 text-amber-900 dark:text-amber-100 hover:text-white"
-                                : "bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground"
-                            )}
-                            title="Insert period before first period"
-                            aria-label="Insert period before first period"
-                          >
-                            <Plus className="size-3" />
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Middle Spacer matching period flex */}
-                    <div
-                      style={{
-                        flexGrow: calculateDuration(period.start_time, period.end_time),
-                        minWidth: (period.type === PERIOD_TYPES.RECESS || period.is_break) ? 75 : 95,
-                      }}
+                  {/* Boundary End Time Chip & Insert Period Between / After Icon */}
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex flex-col items-center gap-1 pointer-events-auto">
+                    <BoundaryEditPopover
+                      timeStr={period.end_time}
+                      boundaryIndex={idx + 1}
+                      isLast={isLast}
+                      disabled={readOnly}
+                      onSaveTime={(newTime) => onEditBoundaryTime?.(idx, newTime, false)}
                     />
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => onInsertPeriodAtBoundary(idx)}
+                        className="size-4.5 rounded-full bg-background border border-border/80 hover:bg-primary hover:text-primary-foreground text-muted-foreground flex items-center justify-center shadow-2xs cursor-pointer transition-all hover:scale-110"
+                        title={`Insert period after ${period.label || `P${idx + 1}`}`}
+                        aria-label={`Insert period after ${period.label || `P${idx + 1}`}`}
+                      >
+                        <Plus className="size-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
 
-                    {/* End Boundary */}
-                    <div className="flex flex-col items-center gap-1 translate-x-1/2">
-                      <div
-                        className={cn(
-                          "w-px h-2",
-                          isAmber ? "bg-amber-400 dark:bg-amber-600" : "bg-border/80"
-                        )}
-                      />
-                      <BoundaryEditPopover
-                        timeStr={period.end_time}
-                        boundaryIndex={idx + 1}
-                        isLast={isLast}
-                        disabled={readOnly}
-                        onSaveTime={(newTime) => onEditBoundaryTime?.(idx, newTime, false)}
-                      />
-                      {!readOnly && (
-                        <button
-                          type="button"
-                          onClick={() => onInsertPeriodAtBoundary(idx)}
-                          className={cn(
-                            "size-5 rounded-full flex items-center justify-center transition-colors cursor-pointer shadow-2xs mt-0.5",
-                            isAmber
-                              ? "bg-amber-500/20 hover:bg-amber-500 text-amber-900 dark:text-amber-100 hover:text-white"
-                              : "bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground"
-                          )}
-                          title={`Insert period after ${period.label || `P${idx + 1}`}`}
-                          aria-label={`Insert period after ${period.label || `P${idx + 1}`}`}
-                        >
-                          <Plus className="size-3" />
-                        </button>
-                      )}
-                    </div>
-                  </React.Fragment>
-                )
-              })}
-            </div>
+            {/* 3. END EMPTY SPACE: Ensures ending time badge & plus icon have comfortable breathing room */}
+            <div className="w-12 shrink-0 bg-primary/5 dark:bg-primary/10" />
           </div>
         </div>
       </div>
@@ -356,7 +276,7 @@ export function BellTimeline({
                 className={cn(
                   "p-2.5 rounded-xl border flex items-center justify-between gap-3 transition-colors",
                   isRecess
-                    ? "bg-amber-500/10 border-amber-300 dark:border-amber-800"
+                    ? "bg-primary/10 border-border/70 text-foreground"
                     : "bg-card border-border/70"
                 )}
               >
@@ -373,7 +293,7 @@ export function BellTimeline({
                         {period.label || `P${period.period_number}`}
                       </span>
                       {isRecess && (
-                        <Badge variant="outline" className="text-[10px] bg-amber-500/15 border-amber-400">
+                        <Badge variant="outline" className="text-[10px] bg-primary/10 border-border/60">
                           Recess
                         </Badge>
                       )}

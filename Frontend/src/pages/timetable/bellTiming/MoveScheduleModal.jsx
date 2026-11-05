@@ -120,7 +120,7 @@ export function MoveScheduleModal({
                       "size-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0",
                       isCurrent
                         ? "bg-muted text-muted-foreground"
-                        : "bg-indigo-600 text-white shadow-2xs"
+                        : "bg-primary text-primary-foreground shadow-2xs"
                     )}
                   >
                     {sIdx + 1}
@@ -136,7 +136,7 @@ export function MoveScheduleModal({
                         </Badge>
                       )}
                       {assignedCount === 0 && !isCurrent && (
-                        <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-300">
+                        <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground border-border/80">
                           Empty
                         </Badge>
                       )}

@@ -41,7 +41,7 @@ export function DaySplitModal({
       <div className="relative w-full max-w-md bg-card border border-border shadow-2xl rounded-2xl z-10 overflow-hidden flex flex-col space-y-4 p-5 animate-in zoom-in-95 duration-150">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="size-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <Split className="size-5" />
             </div>
             <div>
@@ -100,7 +100,7 @@ export function DaySplitModal({
               onConfirmSplit(daysToSplit)
               onClose()
             }}
-            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-2xs gap-1.5"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs shadow-2xs gap-1.5"
           >
             <Split className="size-3.5" />
             <span>Yes, Split Off</span>

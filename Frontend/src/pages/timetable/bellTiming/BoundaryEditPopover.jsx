@@ -51,7 +51,7 @@ export function BoundaryEditPopover({
       <button
         type="button"
         onClick={handleOpen}
-        className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-muted/80 hover:bg-muted text-foreground/90 border border-border/70 shadow-2xs hover:border-primary/50 transition-colors cursor-pointer select-none"
+        className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold border border-border/80 bg-background hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs whitespace-nowrap transition-all cursor-pointer select-none"
         title="Click to edit boundary time"
       >
         {format12h(timeStr)}

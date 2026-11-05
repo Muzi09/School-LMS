@@ -493,7 +493,7 @@ export function PeriodModal({
                         isCur
                           ? "bg-primary text-primary-foreground"
                           : p.type === PERIOD_TYPES.RECESS
-                          ? "bg-amber-400/30 text-amber-900 dark:text-amber-200"
+                          ? "bg-primary/20 text-foreground font-bold"
                           : "text-muted-foreground"
                       )}
                       title={`${p.label}: ${p.start_time}-${p.end_time}`}

@@ -1,5 +1,4 @@
 import React from "react"
-import { Send, ChevronRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { ClassSectionChip } from "./ClassSectionChip"
 import { getWingTheme } from "./theme"
@@ -47,14 +46,14 @@ export function WingCard({
         className={cn(
           "px-3.5 py-2.5 border-b flex items-center justify-between gap-2 transition-colors",
           theme.headerBg,
-          readOnly ? "cursor-default" : "cursor-pointer group"
+          readOnly ? "cursor-default" : "cursor-pointer"
         )}
         onClick={() => !readOnly && onWingClick?.(wing, wingSectionIds)}
         title={readOnly ? undefined : "Click to move all classes in this wing"}
       >
         <div className="flex items-center gap-2 min-w-0">
           <span className={cn("size-2 rounded-full shrink-0", theme.dot)} />
-          <h4 className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
+          <h4 className="text-xs font-bold text-foreground truncate">
             {displayWingName}
           </h4>
         </div>
@@ -62,9 +61,6 @@ export function WingCard({
           <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0.5", theme.badge)}>
             {totalAssignedInWing} {totalAssignedInWing === 1 ? "CLASS" : "CLASSES"}
           </Badge>
-          {!readOnly && (
-            <Send className="size-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-          )}
         </div>
       </div>
 
@@ -76,7 +72,7 @@ export function WingCard({
           return (
             <div
               key={cls.id}
-              className="flex items-center justify-between gap-2 py-1 border-b border-border/40 last:border-0"
+              className="flex items-center justify-between gap-2 py-1.5 border-b border-border/40 last:border-0 min-w-0"
             >
               {/* Class Name (Clickable to move class) */}
               <button
@@ -84,19 +80,16 @@ export function WingCard({
                 disabled={readOnly}
                 onClick={() => !readOnly && onClassClick?.(cls, wing.name, classSectionIds)}
                 className={cn(
-                  "font-semibold text-foreground/90 transition-colors text-left truncate flex items-center gap-1 group",
-                  readOnly ? "cursor-default" : "cursor-pointer hover:text-primary"
+                  "text-[11px] font-semibold text-foreground/90 transition-colors text-left truncate shrink-0",
+                  readOnly ? "cursor-default" : "cursor-pointer"
                 )}
                 title={readOnly ? undefined : `Move ${cls.name} (${cls.sections.length} ${cls.sections.length === 1 ? "class" : "classes"})`}
               >
-                <span>{cls.name}:</span>
-                {!readOnly && (
-                  <Send className="size-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                )}
+                <span>{cls.name}</span>
               </button>
 
-              {/* Section Chips */}
-              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+              {/* Section Chips (Strictly one row) */}
+              <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto scrollbar-none shrink-0 justify-end max-w-[70%]">
                 {cls.sections.map((sec) => (
                   <ClassSectionChip
                     key={sec.id}

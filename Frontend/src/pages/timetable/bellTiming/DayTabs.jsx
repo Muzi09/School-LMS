@@ -1,7 +1,8 @@
 import React, { useState } from "react"
-import { Calendar, Split, CheckSquare, Square, Layers, Info } from "lucide-react"
+import { Calendar, Split, CheckSquare, Square, Layers, Info, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { format12h } from "./timeUtils"
 import { cn } from "@/lib/utils"
 
 const DAY_LABELS = {
@@ -124,129 +125,147 @@ export function DayTabs({
         </div>
       )}
 
-      {/* Folder-style Schedule Groups */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Schedule Groups with Day Tabs on Left and School Timing / Periods Count Right-Aligned */}
+      <div className="flex flex-col gap-3 w-full">
         {schedules.map((schedule, sIdx) => {
           const isUnique = schedule.days.length === 1
-          const isAmber = isUnique || schedule.days.includes("SATURDAY")
           const isActive = schedule.id === activeScheduleId || schedules.length === 1
-          const periodCount = schedule.periods?.length || 0
+          const periods = schedule.periods || []
+          const firstBell = periods[0]?.start_time
+          const lastBell = periods[periods.length - 1]?.end_time
+          const timingStr = firstBell && lastBell ? `${format12h(firstBell)} – ${format12h(lastBell)}` : ""
+          const classPeriodsCount = periods.filter((p) => !p.is_break && p.type !== "Recess").length
+          const totalPeriods = periods.length
 
           return (
             <div
-              key={schedule.id}
-              className={cn(
-                "flex items-center gap-1.5 p-1 rounded-xl border transition-all duration-150",
-                isAmber
-                  ? "bg-amber-500/10 border-amber-300 dark:border-amber-700/60"
-                  : "bg-muted/40 border-border/80",
-                isActive && "ring-1 ring-border/80 shadow-2xs"
-              )}
+              key={schedule.id || sIdx}
+              className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap w-full"
             >
-              {/* Day Tabs */}
-              <div className="flex items-center gap-0.5">
-                {schedule.days.map((day) => {
-                  const dayInfo = DAY_LABELS[day.toUpperCase()] || { short: day, full: day }
-                  const isDaySelected = selectedDays.includes(day) && selectedScheduleId === schedule.id
-                  const canSplit = schedule.days.length > 1
+              {/* Left: Day Tabs Group (Light/dark app theme) */}
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 p-1 rounded-xl border transition-all duration-150 bg-primary/5 dark:bg-primary/10 border-border/80",
+                  isActive && "ring-1 ring-border/80 shadow-2xs"
+                )}
+              >
+                {/* Day Tabs */}
+                <div className="flex items-center gap-0.5">
+                  {schedule.days.map((day) => {
+                    const dayInfo = DAY_LABELS[day.toUpperCase()] || { short: day, full: day }
+                    const isDaySelected = selectedDays.includes(day) && selectedScheduleId === schedule.id
+                    const canSplit = schedule.days.length > 1
 
-                  const tabElement = (
-                    <button
-                      key={day}
-                      type="button"
-                      disabled={readOnly}
-                      onClick={() => handleDayClick(schedule, day, isUnique)}
-                      className={cn(
-                        "relative px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 select-none",
-                        readOnly ? "cursor-default" : "cursor-pointer",
-                        isActive
-                          ? isAmber
-                            ? "bg-amber-400 text-amber-950 font-bold shadow-xs dark:bg-amber-500 dark:text-amber-950"
-                            : "bg-card text-foreground font-bold shadow-xs border border-border/60"
-                          : isAmber
-                          ? "text-amber-800 dark:text-amber-200 hover:bg-amber-400/20"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/80",
-                        isDaySelected && "ring-2 ring-primary bg-primary/20 text-primary font-bold"
-                      )}
-                      aria-label={`Schedule for ${dayInfo.full}`}
-                    >
-                      {isSelectMode && canSplit && (
-                        isDaySelected ? (
-                          <CheckSquare className="size-3 text-primary shrink-0" />
-                        ) : (
-                          <Square className="size-3 text-muted-foreground shrink-0" />
-                        )
-                      )}
-                      <span>{dayInfo.short}</span>
-                      {isUnique && (
-                        <span className="size-1.5 rounded-full bg-amber-500 dark:bg-amber-400" />
-                      )}
-                    </button>
-                  )
-
-                  if (!canSplit && !isUnique) {
-                    return (
-                      <span key={day} title="Only day in this schedule. Cannot split.">
-                        {tabElement}
-                      </span>
+                    const tabElement = (
+                      <button
+                        key={day}
+                        type="button"
+                        disabled={readOnly}
+                        onClick={() => handleDayClick(schedule, day, isUnique)}
+                        className={cn(
+                          "relative px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 select-none",
+                          readOnly ? "cursor-default" : "cursor-pointer",
+                          isActive
+                            ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                            : "text-muted-foreground hover:text-foreground hover:bg-primary/10",
+                          isDaySelected && "ring-2 ring-primary bg-primary/20 text-primary font-bold"
+                        )}
+                        aria-label={`Schedule for ${dayInfo.full}`}
+                      >
+                        {isSelectMode && canSplit && (
+                          isDaySelected ? (
+                            <CheckSquare className="size-3 text-primary shrink-0" />
+                          ) : (
+                            <Square className="size-3 text-muted-foreground shrink-0" />
+                          )
+                        )}
+                        <span>{dayInfo.short}</span>
+                        {isUnique && (
+                          <span className="size-1.5 rounded-full bg-primary/60" />
+                        )}
+                      </button>
                     )
-                  }
 
-                  return tabElement
-                })}
+                    if (!canSplit && !isUnique) {
+                      return (
+                        <span key={day} title="Only day in this schedule. Cannot split.">
+                          {tabElement}
+                        </span>
+                      )
+                    }
+
+                    return tabElement
+                  })}
+                </div>
+
+                {/* Multi-select split button per schedule if header is hidden */}
+                {!showHeader && !readOnly && schedule.days.length > 1 && (
+                  <div className="pl-1 border-l border-border/60">
+                    {isSelectMode ? (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => {
+                            setIsSelectMode(false)
+                            setSelectedDays([])
+                            setSelectedScheduleId(null)
+                          }}
+                          className="h-6 px-1.5 text-[10px]"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="xs"
+                          disabled={selectedDays.length === 0}
+                          onClick={handleExecuteMultiSplit}
+                          className="h-6 px-2 text-[10px] bg-primary text-primary-foreground font-semibold"
+                        >
+                          Split ({selectedDays.length})
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => {
+                          setIsSelectMode(true)
+                          setSelectedScheduleId(schedule.id)
+                        }}
+                        className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+                        title="Select multiple days to split off"
+                      >
+                        <CheckSquare className="size-3" />
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* Periods Count Label */}
-              <span
-                className="px-2 py-1 text-[11px] font-semibold text-muted-foreground"
-                title={`${periodCount} periods in this schedule`}
-              >
-                {periodCount} {periodCount === 1 ? "Period" : "Periods"}
-              </span>
-
-              {/* Multi-select split button per schedule if header is hidden */}
-              {!showHeader && !readOnly && schedule.days.length > 1 && (
-                <div className="pl-1 border-l border-border/60">
-                  {isSelectMode ? (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="ghost"
-                        onClick={() => {
-                          setIsSelectMode(false)
-                          setSelectedDays([])
-                          setSelectedScheduleId(null)
-                        }}
-                        className="h-6 px-1.5 text-[10px]"
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        size="xs"
-                        disabled={selectedDays.length === 0}
-                        onClick={handleExecuteMultiSplit}
-                        className="h-6 px-2 text-[10px] bg-primary text-primary-foreground font-semibold"
-                      >
-                        Split ({selectedDays.length})
-                      </Button>
+              {/* Right: School Timing & Class Periods Count (Same row, right aligned, font size matches days) */}
+              {periods.length > 0 && (
+                <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm font-semibold text-foreground ml-auto shrink-0">
+                  {timingStr && (
+                    <div className="flex items-center gap-1.5 text-foreground">
+                      <Clock className="size-4 text-primary shrink-0" />
+                      <span>{timingStr}</span>
                     </div>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => {
-                        setIsSelectMode(true)
-                        setSelectedScheduleId(schedule.id)
-                      }}
-                      className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
-                      title="Select multiple days to split off"
-                    >
-                      <CheckSquare className="size-3" />
-                    </Button>
                   )}
+                  {timingStr && <span className="text-border/80">•</span>}
+                  <div className="text-muted-foreground flex items-center gap-1.5">
+                    <span className="text-foreground font-bold">
+                      {totalPeriods} {totalPeriods === 1 ? "Period" : "Periods"}
+                    </span>
+                    {totalPeriods !== classPeriodsCount && (
+                      <>
+                        <span className="text-border/80">·</span>
+                        <span>{classPeriodsCount} Class</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
