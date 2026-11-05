@@ -237,4 +237,48 @@ div[data-testid="underlay"] {
     scrollbar-width: thin !important;
     scrollbar-color: color-mix(in oklch, var(--foreground) 25%, transparent) transparent !important;
   }
-}
+}
+
+/* Sleek thin scrollbar utility (both vertical and horizontal) */
+.scrollbar-thin {
+  scrollbar-width: thin !important;
+  scrollbar-color: color-mix(in oklch, var(--foreground) 20%, transparent) transparent !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px !important;
+  height: 3px !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar:horizontal {
+  height: 3px !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar:vertical {
+  width: 4px !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklch, var(--foreground) 22%, transparent) !important;
+  border-radius: 9999px !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklch, var(--foreground) 45%, transparent) !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+

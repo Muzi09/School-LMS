@@ -269,7 +269,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
       </div>
 
       {/* CARD BODY: Timetable Grid */}
-      <div className="relative overflow-x-auto scrollbar-thin ">
+      <div className="relative overflow-x-auto scrollbar-thin">
         <div
           className="w-max min-w-full origin-top-left transition-transform duration-150"
           style={{
