@@ -37,6 +37,13 @@ class BadRequestException(AppException):
         super().__init__(message=message, status_code=400, payload=payload)
 
 
+class UnprocessableEntityException(AppException):
+    """Exception raised when validation fails with 422."""
+
+    def __init__(self, message: str = "Validation failed", errors: Any = None):
+        super().__init__(message=message, status_code=422, payload={"detail": errors or message, "errors": errors or []})
+
+
 class UnauthorizedException(AppException):
     """Exception raised when authentication fails."""
 

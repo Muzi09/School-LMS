@@ -22,6 +22,9 @@ from app.schemas.timetable import (
     FreeTeachersResponse,
     ImpactPreviewResponse,
     MasterTimetableResponse,
+    MergeDaysRequest,
+    MoveClassesRequest,
+    SplitDaysRequest,
     TeacherScheduleResponse,
     TimetableCreate,
     TimetableEntryCreate,
@@ -670,6 +673,61 @@ def batch_save_setups(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     return service.batch_save_setups(school_id=school_id, timetable_id=data.timetable_id, data=data, user_id=current_user.id)
+
+
+@router.post(
+    "/setups/split-days",
+    response_model=TimetableSetupRead,
+    summary="Split Days into New Schedule",
+)
+def split_days(
+    data: SplitDaysRequest,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    setup = service.split_days(school_id=school_id, data=data, user_id=current_user.id)
+    setups = service.list_setups(school_id=school_id, timetable_id=setup.timetable_id)
+    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
+    return matched or setups[0]
+
+
+@router.post(
+    "/setups/merge-days",
+    response_model=TimetableSetupRead,
+    summary="Merge Schedule Days Back",
+)
+def merge_days(
+    data: MergeDaysRequest,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    setup = service.merge_days(school_id=school_id, data=data, user_id=current_user.id)
+    setups = service.list_setups(school_id=school_id, timetable_id=setup.timetable_id)
+    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
+    return matched or setups[0]
+
+
+@router.post(
+    "/setups/move-classes",
+    response_model=MessageResponse,
+    summary="Atomic Move Class Sections Between Setups",
+)
+def move_classes(
+    data: MoveClassesRequest,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    result = service.move_classes(school_id=school_id, data=data, user_id=current_user.id)
+    return MessageResponse(message=result["message"])
 
 
 # ===========================================================================

@@ -166,6 +166,25 @@ class TimetableSetup(Base, AuditMixin):
         default='["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY"]',
     )
 
+    order_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+
+    schedules_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     # Relationships
     timetable: Mapped["Timetable"] = relationship(
         "Timetable",
@@ -323,6 +342,19 @@ class TimetablePeriod(Base, AuditMixin):
         nullable=True,
     )
 
+    schedule_id: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        default="default",
+    )
+
+    period_type: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="CLASS",
+        server_default="CLASS",
+    )
+
     # Relationships
     school: Mapped["School"] = relationship(
         "School",
@@ -356,8 +388,9 @@ class TimetablePeriod(Base, AuditMixin):
             Index("idx_timetable_periods_timetable_id", cls.timetable_id),
             Index("idx_timetable_periods_setup_id", cls.setup_id),
             Index(
-                "uq_timetable_periods_setup_period_num",
+                "uq_timetable_periods_setup_sched_num",
                 cls.setup_id,
+                cls.schedule_id,
                 cls.period_number,
                 unique=True,
                 postgresql_where=(cls.deleted_at.is_(None) & cls.setup_id.is_not(None)),

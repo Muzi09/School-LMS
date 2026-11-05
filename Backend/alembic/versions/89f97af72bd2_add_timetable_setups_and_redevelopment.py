@@ -141,7 +141,7 @@ def upgrade() -> None:
         tt_id = str(uuid.uuid4())
         conn.execute(sa.text("""
             INSERT INTO timetables (id, school_id, name, description, academic_year, is_active, created_at, updated_at)
-            VALUES (:id, :school_id, 'Academic Timetable 2026-27', 'Default migrated school timetable', '2026-2027', true, now(), now())
+            VALUES (:id, :school_id, 'Timetable 2026 - 2027', 'Default migrated school timetable', '2026-2027', true, now(), now())
         """), {"id": tt_id, "school_id": sid})
 
         setup_id = str(uuid.uuid4())

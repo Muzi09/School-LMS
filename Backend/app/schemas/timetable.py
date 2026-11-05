@@ -149,6 +149,7 @@ class TimetableRead(BaseModel):
     description: Optional[str] = None
     academic_year: Optional[str] = None
     is_active: bool
+    completion_percentage: Optional[float] = 0.0
     created_at: datetime
     updated_at: datetime
 
@@ -161,12 +162,14 @@ class TimetableRead(BaseModel):
 
 
 class SetupPeriodItem(BaseModel):
-    id: Optional[UUID] = None
+    id: Optional[str] = None
     period_number: int = Field(..., ge=1)
     start_time: str
     end_time: str
     is_break: bool = False
     label: Optional[str] = None
+    type: Optional[str] = "CLASS"
+    schedule_id: Optional[str] = None
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -191,6 +194,7 @@ class TimetableSetupCreate(BaseModel):
     name: str = Field(..., max_length=100)
     description: Optional[str] = None
     is_default: bool = False
+    order_index: Optional[int] = 0
     applicable_days: Optional[List[str]] = None
     periods: Optional[List[SetupPeriodItem]] = None
     schedules: Optional[List[SetupScheduleItem]] = None
@@ -200,6 +204,8 @@ class TimetableSetupUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_default: Optional[bool] = None
+    order_index: Optional[int] = None
+    version: Optional[int] = None
     applicable_days: Optional[List[str]] = None
     periods: Optional[List[SetupPeriodItem]] = None
     schedules: Optional[List[SetupScheduleItem]] = None
@@ -212,6 +218,8 @@ class TimetableSetupRead(BaseModel):
     name: str
     description: Optional[str] = None
     is_default: bool
+    order_index: int = 0
+    version: int = 1
     applicable_days: List[str] = Field(default_factory=list)
     periods: List[TimetablePeriodRead] = Field(default_factory=list)
     schedules: List[SetupScheduleItem] = Field(default_factory=list)
@@ -227,6 +235,26 @@ class SetupAssignmentTarget(BaseModel):
     setup_id: UUID
     target_type: str = Field(..., description="'WING', 'CLASS', or 'SECTION'")
     target_id: UUID
+
+
+class MoveClassesRequest(BaseModel):
+    timetable_id: UUID
+    target_setup_id: UUID
+    section_ids: List[UUID]
+
+
+class SplitDaysRequest(BaseModel):
+    timetable_id: UUID
+    setup_id: UUID
+    schedule_id: str
+    days: List[str]
+
+
+class MergeDaysRequest(BaseModel):
+    timetable_id: UUID
+    setup_id: UUID
+    source_schedule_id: str
+    target_schedule_id: str
 
 
 class BatchSetupAssignmentsRequest(BaseModel):
