@@ -16,27 +16,55 @@ import {
 } from "./validators"
 
 /**
- * Renumbers Class periods in sequential order: P1, P2, P3...
- * Leaves non-class periods (Recess, Assembly, Activity) with their type/custom name.
+ * Renumbers periods in sequential order:
+ * Class periods: P1, P2, P3...
+ * Recess periods: R1, R2, R3...
+ * Assembly periods: A1, A2, A3...
+ * Extra-curricular periods: E1, E2, E3...
  */
 export function renumberPeriods(periods = []) {
   let classCounter = 1
+  let recessCounter = 1
+  let assemblyCounter = 1
+  let extraCounter = 1
+
   return periods.map((p, idx) => {
     const pType = p.type || (p.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
     const isClass = pType === PERIOD_TYPES.CLASS
 
     // Determine label
     let label = p.label
-    const isStandardPLabel = !label || /^p\d+$/i.test(label) || /^period\s*\d+$/i.test(label)
+    const isStandardLabel =
+      !label ||
+      /^[PRAE]\d+$/i.test(label) ||
+      /^period\s*\d+$/i.test(label) ||
+      /^recess(\s*\d+)?$/i.test(label) ||
+      /^assembly(\s*\d+)?$/i.test(label) ||
+      /^(activity|extra-curricular|extracurricular)(\s*\d+)?$/i.test(label)
 
     if (isClass) {
-      if (isStandardPLabel || !p.hasCustomLabel) {
+      if (isStandardLabel || !p.hasCustomLabel) {
         label = `P${classCounter}`
       }
       classCounter += 1
+    } else if (pType === PERIOD_TYPES.RECESS) {
+      if (isStandardLabel || !p.hasCustomLabel) {
+        label = `R${recessCounter}`
+      }
+      recessCounter += 1
+    } else if (pType === PERIOD_TYPES.ASSEMBLY) {
+      if (isStandardLabel || !p.hasCustomLabel) {
+        label = `A${assemblyCounter}`
+      }
+      assemblyCounter += 1
+    } else if (pType === PERIOD_TYPES.ACTIVITY) {
+      if (isStandardLabel || !p.hasCustomLabel) {
+        label = `E${extraCounter}`
+      }
+      extraCounter += 1
     } else {
-      if (isStandardPLabel || !p.hasCustomLabel) {
-        label = pType === PERIOD_TYPES.RECESS ? "Recess" : pType.charAt(0) + pType.slice(1).toLowerCase()
+      if (isStandardLabel || !p.hasCustomLabel) {
+        label = pType.charAt(0) + pType.slice(1).toLowerCase()
       }
     }
 
@@ -79,7 +107,7 @@ export function createDefaultPeriodsTemplate(startTimeStr = "08:30", periodDurat
     period_number: 5,
     type: PERIOD_TYPES.RECESS,
     is_break: true,
-    label: "Recess",
+    label: "R1",
     start_time: currentStart,
     end_time: recessEnd,
   })
@@ -147,6 +175,7 @@ export function bellTimingReducer(state, action) {
     return {
       ...newState,
       isDirty: true,
+      revision: (state.revision || 0) + 1,
       history: {
         past,
         future: [],
@@ -167,6 +196,7 @@ export function bellTimingReducer(state, action) {
         activeSetupId: initialActiveSetup,
         activeScheduleId: initialActiveSched,
         isDirty: false,
+        revision: 0,
         history: { past: [], future: [] },
       }
     }
@@ -184,6 +214,7 @@ export function bellTimingReducer(state, action) {
         activeSetupId: previous.activeSetupId,
         activeScheduleId: previous.activeScheduleId,
         isDirty: true,
+        revision: (state.revision || 0) + 1,
         history: {
           past: newPast,
           future: newFuture,
@@ -204,6 +235,7 @@ export function bellTimingReducer(state, action) {
         activeSetupId: next.activeSetupId,
         activeScheduleId: next.activeScheduleId,
         isDirty: true,
+        revision: (state.revision || 0) + 1,
         history: {
           past: newPast,
           future: newFuture,
@@ -498,6 +530,70 @@ export function bellTimingReducer(state, action) {
       })
     }
 
+    case "EDIT_BOUNDARY_TIME": {
+      const { setupId, scheduleId, boundaryIndex, newTime, isFirst } = action.payload
+
+      const nextSetups = state.setups.map((setup) => {
+        if (setup.id !== setupId) return setup
+
+        const nextSchedules = setup.schedules.map((sch) => {
+          if (sch.id !== scheduleId) return sch
+
+          let periods = sch.periods.map((p) => ({ ...p }))
+          if (isFirst || boundaryIndex === 0) {
+            if (periods[0]) {
+              const endM = parseTime(periods[0].end_time)?.totalMinutes ?? 0
+              let newStartM = parseTime(newTime)?.totalMinutes ?? 0
+              // Enforce 5m min and 180m max period duration
+              if (endM - newStartM < MIN_PERIOD_DURATION_MINUTES) {
+                newStartM = endM - MIN_PERIOD_DURATION_MINUTES
+              } else if (endM - newStartM > 180) {
+                newStartM = endM - 180
+              }
+              periods[0] = { ...periods[0], start_time: formatMinutes(Math.max(0, newStartM)) }
+            }
+          } else {
+            const idx = boundaryIndex > 0 ? boundaryIndex - 1 : 0
+            if (periods[idx]) {
+              const startM = parseTime(periods[idx].start_time)?.totalMinutes ?? 0
+              let newEndM = parseTime(newTime)?.totalMinutes ?? 0
+              // Enforce 5m min and 180m max period duration
+              if (newEndM - startM < MIN_PERIOD_DURATION_MINUTES) {
+                newEndM = startM + MIN_PERIOD_DURATION_MINUTES
+              } else if (newEndM - startM > 180) {
+                newEndM = startM + 180
+              }
+              const clampedNewTime = formatMinutes(newEndM)
+              periods[idx] = { ...periods[idx], end_time: clampedNewTime }
+
+              // Shift all subsequent periods ahead, preserving their durations and moving school end time ahead
+              let lastEnd = newEndM
+              for (let i = idx + 1; i < periods.length; i++) {
+                const p = { ...periods[i] }
+                const dur = calculateDuration(p.start_time, p.end_time)
+                p.start_time = formatMinutes(lastEnd)
+                lastEnd += Math.max(MIN_PERIOD_DURATION_MINUTES, dur)
+                p.end_time = formatMinutes(lastEnd)
+                periods[i] = p
+              }
+            }
+          }
+
+          return {
+            ...sch,
+            periods,
+          }
+        })
+
+        return { ...setup, schedules: nextSchedules }
+      })
+
+      return pushHistory({
+        ...state,
+        setups: nextSetups,
+      })
+    }
+
     case "SPLIT_DAYS": {
       const { setupId, scheduleId, daysToSplit } = action.payload
       if (!daysToSplit || daysToSplit.length === 0) return state
@@ -596,6 +692,65 @@ export function bellTimingReducer(state, action) {
       return {
         ...state,
         isDirty: false,
+      }
+    }
+
+    case "SAVE_SUCCESS": {
+      const { savedSetups = [], revision } = action.payload || {}
+      const savedMap = new Map()
+      savedSetups.forEach((ss, idx) => {
+        if (ss.id) savedMap.set(String(ss.id), ss)
+        savedMap.set(`idx_${idx}`, ss)
+      })
+
+      // ID mapping in case temporary setup IDs were replaced by server UUIDs
+      const idMap = {}
+      const nextSetups = state.setups.map((setup, idx) => {
+        const matched = savedMap.get(String(setup.id)) || savedMap.get(`idx_${idx}`)
+        if (!matched) return setup
+        if (setup.id !== matched.id) {
+          idMap[setup.id] = matched.id
+        }
+        return {
+          ...setup,
+          id: matched.id,
+          version: matched.version ?? setup.version,
+        }
+      })
+
+      let nextAssignments = state.sectionAssignments
+      let nextActiveSetupId = state.activeSetupId
+      if (Object.keys(idMap).length > 0) {
+        nextAssignments = {}
+        Object.entries(state.sectionAssignments).forEach(([secId, sId]) => {
+          nextAssignments[secId] = idMap[sId] || sId
+        })
+        if (idMap[nextActiveSetupId]) {
+          nextActiveSetupId = idMap[nextActiveSetupId]
+        }
+      }
+
+      // If no new actions were dispatched while the save was in flight, mark clean
+      const isStillDirty = revision !== undefined ? state.revision !== revision : false
+
+      return {
+        ...state,
+        setups: nextSetups,
+        sectionAssignments: nextAssignments,
+        activeSetupId: nextActiveSetupId,
+        isDirty: isStillDirty,
+      }
+    }
+
+    case "SYNC_SERVER_SETUPS": {
+      const { setups, sectionAssignments } = action.payload
+      return {
+        ...state,
+        setups,
+        sectionAssignments: sectionAssignments || state.sectionAssignments,
+        isDirty: false,
+        revision: (state.revision || 0) + 1,
+        history: { past: [], future: [] },
       }
     }
 

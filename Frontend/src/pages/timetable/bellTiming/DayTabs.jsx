@@ -116,7 +116,7 @@ export function DayTabs({
                   onClick={() => setIsSelectMode(true)}
                   className="text-xs text-muted-foreground hover:text-foreground gap-1.5"
                 >
-                  <CheckSquare className="size-3.5" />
+                  <Split className="size-4" />
                   <span>Select multiple days</span>
                 </Button>
               )}
@@ -174,9 +174,9 @@ export function DayTabs({
                       >
                         {isSelectMode && canSplit && (
                           isDaySelected ? (
-                            <CheckSquare className="size-3 text-primary shrink-0" />
+                            <CheckSquare className="size-3.5 text-white shrink-0 stroke-[2.2]" />
                           ) : (
-                            <Square className="size-3 text-muted-foreground shrink-0" />
+                            <Square className="size-3.5 text-white shrink-0 stroke-[2.2]" />
                           )
                         )}
                         <span>{dayInfo.short}</span>
@@ -235,33 +235,33 @@ export function DayTabs({
                           setIsSelectMode(true)
                           setSelectedScheduleId(schedule.id)
                         }}
-                        className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+                        className="size-7 p-0 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
                         title="Select multiple days to split off"
                       >
-                        <CheckSquare className="size-3" />
+                        <Split className="size-4 text-muted-foreground hover:text-foreground" />
                       </Button>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* Right: School Timing & Class Periods Count (Same row, right aligned, font size matches days) */}
+              {/* Right: School Timing & Class Periods Count as a Strip */}
               {periods.length > 0 && (
-                <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm font-semibold text-foreground ml-auto shrink-0">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border/80 bg-primary/5 dark:bg-primary/10 text-xs sm:text-sm font-semibold text-foreground ml-auto shrink-0 shadow-2xs">
                   {timingStr && (
                     <div className="flex items-center gap-1.5 text-foreground">
-                      <Clock className="size-4 text-primary shrink-0" />
+                      <Clock className="size-3.5 sm:size-4 text-primary shrink-0" />
                       <span>{timingStr}</span>
                     </div>
                   )}
-                  {timingStr && <span className="text-border/80">•</span>}
+                  {timingStr && <span className="text-muted-foreground/50">•</span>}
                   <div className="text-muted-foreground flex items-center gap-1.5">
                     <span className="text-foreground font-bold">
                       {totalPeriods} {totalPeriods === 1 ? "Period" : "Periods"}
                     </span>
                     {totalPeriods !== classPeriodsCount && (
                       <>
-                        <span className="text-border/80">·</span>
+                        <span className="text-muted-foreground/50">·</span>
                         <span>{classPeriodsCount} Class</span>
                       </>
                     )}

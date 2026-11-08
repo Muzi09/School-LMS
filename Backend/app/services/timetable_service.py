@@ -991,7 +991,7 @@ class TimetableService:
                         TimetableSetup.timetable_id == timetable_id,
                         TimetableSetup.deleted_at.is_(None),
                     ).first()
-                    if existing and existing.version != s_version:
+                    if existing and (existing.version or 1) != (s_version or 1):
                         raise ConflictException("Setup has been modified by another user. Please reload.")
                 except ValueError:
                     pass
@@ -1114,6 +1114,21 @@ class TimetableService:
                 if key not in new_period_keys:
                     ep.deleted_at = now
                     ep.deleted_by = user_id
+
+        # Soft-delete removed setups
+        saved_setup_ids = set(setup_id_map.values())
+        existing_db_setups = (
+            self.db.query(TimetableSetup)
+            .filter(
+                TimetableSetup.timetable_id == timetable_id,
+                TimetableSetup.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for old_s in existing_db_setups:
+            if old_s.id not in saved_setup_ids:
+                old_s.deleted_at = now
+                old_s.deleted_by = user_id
 
         # 5. Clear and insert assignments atomically
         self.db.query(TimetableSetupAssignment).filter(

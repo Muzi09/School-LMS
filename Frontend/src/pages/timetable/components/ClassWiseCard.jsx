@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
+import { formatPeriodShortLabel } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
 
 const WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
@@ -39,20 +40,6 @@ function calculateDuration(startTime, endTime) {
   if (isNaN(h1) || isNaN(h2)) return ""
   const diff = h2 * 60 + (m2 || 0) - (h1 * 60 + (m1 || 0))
   return diff > 0 ? `${diff}m` : ""
-}
-
-function formatPeriodShortLabel(period) {
-  if (!period) return ""
-  if (period.is_break) return period.label || "BREAK"
-  if (period.period_number != null) {
-    return `P${period.period_number}`
-  }
-  if (typeof period.label === "string") {
-    const match = period.label.match(/\d+/)
-    if (match) return `P${match[0]}`
-    return period.label
-  }
-  return "P"
 }
 
 export const ClassWiseCard = memo(function ClassWiseCard({
@@ -321,7 +308,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                               isBreak && "font-bold tracking-wider"
                             )}
                           >
-                            {isBreak ? (period.label || "BREAK") : formatPeriodShortLabel(period)}
+                            {formatPeriodShortLabel(period, group.periods)}
                           </span>
                           {duration && (
                             <span className="text-[10px] ml-1.5 font-normal text-muted-foreground">

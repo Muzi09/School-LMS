@@ -7,7 +7,6 @@ import {
   Send,
   Loader2,
   AlertTriangle,
-  RotateCcw,
   Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -18,8 +17,7 @@ import {
   DaySplitModal,
   DayMergeModal,
   MoveScheduleModal,
-  ImpactWarningDialog,
-  UnsavedBar,
+  DeleteSetupModal,
   bellTimingReducer,
   createDefaultSetup,
   validateSchedule,
@@ -29,8 +27,9 @@ import {
 import {
   useSetups,
   useBatchSaveSetups,
+  timetableKeys,
 } from "@/hooks/useTimetable"
-import { previewSetupsImpactApi } from "@/api/timetableService"
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -51,6 +50,9 @@ export function BellScheduleSetupModal({
   } = useSetups(timetableId)
 
   const batchSaveMutation = useBatchSaveSetups()
+  const queryClient = useQueryClient()
+  const isSavingRef = useRef(false)
+  const pendingSaveRef = useRef(false)
 
   // Flatten all sections in all wings
   const allSections = useMemo(() => {
@@ -77,15 +79,18 @@ export function BellScheduleSetupModal({
     activeSetupId: null,
     activeScheduleId: null,
     isDirty: false,
+    revision: 0,
     history: { past: [], future: [] },
   }))
+
+  const currentRevisionRef = useRef(0)
+  currentRevisionRef.current = state?.revision || 0
 
   // Multi-select sections state
   const [selectedSectionIds, setSelectedSectionIds] = useState([])
 
-  // Sub-modal state: null | { type: "PERIOD" | "SPLIT" | "MERGE" | "MOVE" | "IMPACT", ...props }
+  // Sub-modal state: null | { type: "PERIOD" | "SPLIT" | "MERGE" | "MOVE" | "DELETE", ...props }
   const [modalState, setModalState] = useState(null)
-  const [isCheckingImpact, setIsCheckingImpact] = useState(false)
   const hasInitializedRef = useRef(false)
 
   useEffect(() => {
@@ -193,8 +198,44 @@ export function BellScheduleSetupModal({
 
   const handleDeleteSetup = (setupId) => {
     const targetSetup = state.setups.find((s) => s.id === setupId)
+    if (!targetSetup) return
+
+    const assignedSectionIds = Object.entries(state.sectionAssignments)
+      .filter(([_, sId]) => sId === setupId)
+      .map(([secId]) => secId)
+
+    setModalState({
+      type: "DELETE",
+      setupToDelete: targetSetup,
+      assignedCount: assignedSectionIds.length,
+      assignedSectionIds,
+      otherSetups: state.setups.filter((s) => s.id !== setupId),
+    })
+  }
+
+  const handleConfirmDeleteSetup = ({ setupId, targetSetupId }) => {
+    const targetSetup = state.setups.find((s) => s.id === setupId)
+    const assignedSectionIds = Object.entries(state.sectionAssignments)
+      .filter(([_, sId]) => sId === setupId)
+      .map(([secId]) => secId)
+
+    if (assignedSectionIds.length > 0 && targetSetupId) {
+      dispatch({
+        type: "MOVE_CLASSES",
+        payload: { sectionIds: assignedSectionIds, targetSetupId },
+      })
+    }
+
     dispatch({ type: "DELETE_SETUP", payload: { setupId } })
-    toast.info(`Deleted ${targetSetup?.name || "Setup"}`)
+
+    const otherSetup = state.setups.find((s) => s.id === targetSetupId)
+    if (assignedSectionIds.length > 0 && otherSetup) {
+      toast.success(
+        `Reassigned ${assignedSectionIds.length} ${assignedSectionIds.length === 1 ? "class" : "classes"} to ${otherSetup.name} and deleted ${targetSetup?.name || "Setup"}`
+      )
+    } else {
+      toast.info(`Deleted ${targetSetup?.name || "Setup"}`)
+    }
   }
 
   const handleCreateSetup = () => {
@@ -217,12 +258,7 @@ export function BellScheduleSetupModal({
       type: "SPLIT_DAYS",
       payload: { setupId, scheduleId, daysToSplit },
     })
-    toast.success(`Split ${daysToSplit.join(", ")} into an independent schedule.`, {
-      action: {
-        label: "Undo",
-        onClick: () => dispatch({ type: "UNDO" }),
-      },
-    })
+    toast.success(`Split ${daysToSplit.join(", ")} into an independent schedule.`)
   }
 
   const handleOpenMergeModal = (setupId, sourceSchedule, day) => {
@@ -241,12 +277,7 @@ export function BellScheduleSetupModal({
       type: "MERGE_DAYS",
       payload: { setupId, sourceScheduleId, targetScheduleId },
     })
-    toast.info(`Merged ${day} back into shared schedule.`, {
-      action: {
-        label: "Undo",
-        onClick: () => dispatch({ type: "UNDO" }),
-      },
-    })
+    toast.info(`Merged ${day} back into shared schedule.`)
   }
 
   // Period Actions
@@ -402,12 +433,7 @@ export function BellScheduleSetupModal({
     })
     setSelectedSectionIds([])
     const label = count === 1 ? "1 class" : `${count} classes`
-    toast.success(`Moved ${label} to ${targetSetup?.name || "Setup"}`, {
-      action: {
-        label: "Undo",
-        onClick: () => dispatch({ type: "UNDO" }),
-      },
-    })
+    toast.success(`Moved ${label} to ${targetSetup?.name || "Setup"}`)
   }
 
   const handleCreateAndMove = ({ sectionIds, sourceSetupId, count }) => {
@@ -420,12 +446,7 @@ export function BellScheduleSetupModal({
     })
     setSelectedSectionIds([])
     const label = count === 1 ? "1 class" : `${count} classes`
-    toast.success(`Created ${newName} and moved ${label}`, {
-      action: {
-        label: "Undo",
-        onClick: () => dispatch({ type: "UNDO" }),
-      },
-    })
+    toast.success(`Created ${newName} and moved ${label}`)
   }
 
   // Keyboard Shortcuts & Escape Key
@@ -440,39 +461,16 @@ export function BellScheduleSetupModal({
           return
         }
         handleRequestClose()
-        return
-      }
-
-      // Undo: Ctrl+Z / Cmd+Z (without Shift)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
-        if (state.history.past.length > 0 && !readOnly) {
-          e.preventDefault()
-          dispatch({ type: "UNDO" })
-        }
-      }
-
-      // Redo: Ctrl+Y or Cmd+Shift+Z
-      if (
-        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") ||
-        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z")
-      ) {
-        if (state.history.future.length > 0 && !readOnly) {
-          e.preventDefault()
-          dispatch({ type: "REDO" })
-        }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isOpen, modalState, state.isDirty, state.history, readOnly])
+  }, [isOpen, modalState])
 
-  const handleRequestClose = () => {
-    if (state.isDirty && !readOnly) {
-      const confirmDiscard = window.confirm(
-        "You have unsaved changes to your bell timing setups. Discard changes and close?"
-      )
-      if (!confirmDiscard) return
+  const handleRequestClose = async () => {
+    if (state.isDirty && !readOnly && validationErrors.length === 0) {
+      await handleAutoSave()
     }
     onClose()
   }
@@ -508,12 +506,19 @@ export function BellScheduleSetupModal({
     return errors
   }, [state.setups, state.sectionAssignments, allSections])
 
-  // Save Flow with Impact Detection
-  const handleSaveClick = async () => {
-    if (validationErrors.length > 0) {
-      toast.error(validationErrors[0] || "Please resolve validation errors before saving.")
+  // Autosave Flow: saves automatically on change
+  const handleAutoSave = useCallback(async () => {
+    if (state.setups.length === 0 || readOnly) return
+    if (validationErrors.length > 0) return
+
+    if (isSavingRef.current) {
+      pendingSaveRef.current = true
       return
     }
+
+    isSavingRef.current = true
+    pendingSaveRef.current = false
+    const revisionToSave = currentRevisionRef.current
 
     const assignmentsPayload = Object.entries(state.sectionAssignments).map(([secId, setupId]) => ({
       setup_id: setupId,
@@ -536,36 +541,59 @@ export function BellScheduleSetupModal({
       assignments: assignmentsPayload,
     }
 
-    setIsCheckingImpact(true)
     try {
-      const impact = await previewSetupsImpactApi(payload)
-      if (impact?.affected_slots_count > 0) {
-        setModalState({
-          type: "IMPACT",
-          impactData: impact,
-          pendingPayload: payload,
-        })
-      } else {
-        await executeSave(payload)
-      }
-    } catch {
-      // Direct save fallback
-      await executeSave(payload)
-    } finally {
-      setIsCheckingImpact(false)
-    }
-  }
-
-  const executeSave = async (payload) => {
-    try {
-      await batchSaveMutation.mutateAsync(payload)
-      toast.success("Bell schedule setups and class applicability saved successfully.")
+      const res = await batchSaveMutation.mutateAsync(payload)
+      const savedSetups = Array.isArray(res) ? res : (res?.data || [])
+      dispatch({
+        type: "SAVE_SUCCESS",
+        payload: {
+          savedSetups,
+          revision: revisionToSave,
+        },
+      })
       if (onSaved) onSaved()
-      onClose()
     } catch (err) {
-      toast.error(err?.data?.detail || err?.message || "Failed to save bell setup.")
+      console.error("Autosave error:", err)
+      const is409 =
+        err?.status === 409 ||
+        err?.data?.detail?.includes("modified by another user") ||
+        err?.message?.includes("modified by another user")
+
+      if (is409) {
+        toast.error("Timetable setup was updated. Reloading latest setup...")
+        hasInitializedRef.current = false
+        queryClient.invalidateQueries({ queryKey: timetableKeys.setups(timetableId) })
+        queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+        dispatch({ type: "DISCARD_CHANGES" })
+      }
+    } finally {
+      isSavingRef.current = false
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false
+        // Trigger subsequent save if modifications happened while in flight
+        setTimeout(() => {
+          handleAutoSaveRef.current?.()
+        }, 150)
+      }
     }
-  }
+  }, [state.setups, state.sectionAssignments, readOnly, validationErrors, timetableId, batchSaveMutation, onSaved, queryClient])
+
+  const handleAutoSaveRef = useRef(handleAutoSave)
+  useEffect(() => {
+    handleAutoSaveRef.current = handleAutoSave
+  }, [handleAutoSave])
+
+  // Automatically save on change whenever state is dirty
+  useEffect(() => {
+    if (!isOpen || !hasInitializedRef.current || !state.isDirty || readOnly) return
+    if (validationErrors.length > 0) return
+
+    const timer = setTimeout(() => {
+      handleAutoSaveRef.current?.()
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [state.revision, state.isDirty, validationErrors.length, isOpen, readOnly])
 
   if (!isOpen) return null
 
@@ -703,7 +731,7 @@ export function BellScheduleSetupModal({
                 <div className="size-8 rounded-xl bg-primary/10 group-hover:bg-primary group-hover:text-primary-foreground flex items-center justify-center transition-colors">
                   <Plus className="size-4" />
                 </div>
-                <span>+ Create Setup {state.setups.length + 1}</span>
+                <span>Create Setup {state.setups.length + 1}</span>
               </button>
             )}
           </div>
@@ -734,20 +762,6 @@ export function BellScheduleSetupModal({
               Clear
             </Button>
           </div>
-        )}
-
-        {/* Sticky Unsaved Changes Bar */}
-        {!readOnly && (
-          <UnsavedBar
-            isDirty={state.isDirty}
-            isSaving={batchSaveMutation.isPending || isCheckingImpact}
-            canUndo={state.history.past.length > 0}
-            canRedo={state.history.future.length > 0}
-            onUndo={() => dispatch({ type: "UNDO" })}
-            onRedo={() => dispatch({ type: "REDO" })}
-            onDiscard={() => dispatch({ type: "DISCARD_CHANGES" })}
-            onSave={handleSaveClick}
-          />
         )}
       </div>
 
@@ -820,12 +834,15 @@ export function BellScheduleSetupModal({
         />
       )}
 
-      {modalState?.type === "IMPACT" && (
-        <ImpactWarningDialog
+      {modalState?.type === "DELETE" && (
+        <DeleteSetupModal
           isOpen={true}
           onClose={() => setModalState(null)}
-          impactData={modalState.impactData}
-          onConfirmSave={() => executeSave(modalState.pendingPayload)}
+          setupToDelete={modalState.setupToDelete}
+          assignedCount={modalState.assignedCount}
+          otherSetups={modalState.otherSetups}
+          sectionAssignments={state.sectionAssignments}
+          onConfirmDelete={handleConfirmDeleteSetup}
         />
       )}
     </div>

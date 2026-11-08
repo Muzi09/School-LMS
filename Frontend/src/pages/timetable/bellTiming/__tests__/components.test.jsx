@@ -87,10 +87,145 @@ describe("Bell Timing Components Integration", () => {
       expect(screen.getByText(/Class Periods/i)).toBeDefined()
       expect(screen.getAllByText(/15m/).length).toBeGreaterThan(0)
     })
+
+    it("renders draggable boundary time chips without popup click behavior", () => {
+      const onEditBoundary = vi.fn()
+      render(
+        <BellTimeline
+          schedule={sampleSchedule}
+          setupId="setup-1"
+          onOpenPeriodModal={vi.fn()}
+          onInsertPeriodAtBoundary={vi.fn()}
+          onEditBoundaryTime={onEditBoundary}
+        />
+      )
+
+      const sliders = screen.getAllByRole("slider")
+      expect(sliders.length).toBeGreaterThan(0)
+      expect(sliders[0].className).toContain("cursor-ew-resize")
+      // Arrow keys trigger boundary time edit
+      fireEvent.keyDown(sliders[0], { key: "ArrowLeft" })
+      expect(onEditBoundary).toHaveBeenCalled()
+    })
+
+    it("shifts subsequent periods and updates boundary times in real time during drag", () => {
+      const onEditBoundary = vi.fn()
+      render(
+        <BellTimeline
+          schedule={sampleSchedule}
+          setupId="setup-1"
+          onOpenPeriodModal={vi.fn()}
+          onInsertPeriodAtBoundary={vi.fn()}
+          onEditBoundaryTime={onEditBoundary}
+        />
+      )
+
+      // Find boundary chip 1 (between period 0 and period 1)
+      const sliders = screen.getAllByRole("slider")
+      // slider 0 is start boundary (8:30 AM), slider 1 is boundary between P1 and Recess (9:15 AM)
+      const boundarySlider = sliders[1]
+
+      // Start drag at clientX = 100
+      fireEvent.pointerDown(boundarySlider, { button: 0, clientX: 100 })
+
+      // Drag right by 20px (+10 minutes: from 09:15 to 09:25)
+      fireEvent.pointerMove(window, { clientX: 120 })
+
+      // P1 end time should now preview 9:25 AM
+      expect(screen.getAllByText("9:25 AM").length).toBeGreaterThan(0)
+
+      // P2 (which was 9:15 - 10:00, 45m) must shift ahead to 9:25 - 10:10 AM
+      expect(screen.getAllByText("10:10 AM").length).toBeGreaterThan(0)
+
+      // Finish drag
+      fireEvent.pointerUp(window)
+
+      // onEditBoundaryTime called with new end time
+      expect(onEditBoundary).toHaveBeenCalledWith(1, "09:25", false)
+    })
+
+    it("enforces minimum 15-minute duration when dragging period boundaries", () => {
+      const onEditBoundary = vi.fn()
+      render(
+        <BellTimeline
+          schedule={sampleSchedule}
+          setupId="setup-1"
+          onOpenPeriodModal={vi.fn()}
+          onInsertPeriodAtBoundary={vi.fn()}
+          onEditBoundaryTime={onEditBoundary}
+        />
+      )
+
+      const sliders = screen.getAllByRole("slider")
+      // Boundary 1 is P1 end time (start 08:30, end 09:15)
+      const boundarySlider = sliders[1]
+
+      // Start drag at clientX = 200
+      fireEvent.pointerDown(boundarySlider, { button: 0, clientX: 200 })
+
+      // Drag left by 100px (attempting to reduce duration from 45m down to -5m)
+      fireEvent.pointerMove(window, { clientX: 100 })
+
+      // P1 end time must be clamped to minimum 15 min duration (08:30 + 15m = 08:45)
+      expect(screen.getAllByText("8:45 AM").length).toBeGreaterThan(0)
+
+      // Finish drag
+      fireEvent.pointerUp(window)
+      expect(onEditBoundary).toHaveBeenCalledWith(1, "08:45", false)
+    })
+
+    it("ensures a 15-minute period has wide cell width so 'P1 15m' is visible and not hidden behind chips", () => {
+      render(
+        <BellTimeline
+          schedule={sampleSchedule}
+          setupId="setup-1"
+          onOpenPeriodModal={vi.fn()}
+          onInsertPeriodAtBoundary={vi.fn()}
+        />
+      )
+
+      // In sampleSchedule, period 5 is Recess 11:30 - 11:45 (15m duration)
+      // Cell width formula: 95 + 15 * 1 = 110px (reduced from 140px, but still plenty of room)
+      const fifteenMinSpans = screen.getAllByText("15m")
+      expect(fifteenMinSpans.length).toBeGreaterThan(0)
+      const periodButton = fifteenMinSpans[0].closest("button")
+      const periodCell = periodButton?.parentElement
+      expect(periodCell?.style.width).toBe("110px")
+    })
   })
 
   describe("PeriodModal", () => {
-    it("shows quick duration chips and updates end time", () => {
+    it("renders Start Time, End Time, and Period Types including Extra-curricular", () => {
+      render(
+        <PeriodModal
+          isOpen={true}
+          onClose={vi.fn()}
+          mode="add"
+          insertAfterIndex={0}
+          schedule={sampleSchedule}
+          onSave={vi.fn()}
+        />
+      )
+
+      expect(screen.getByText("Start Time")).toBeDefined()
+      expect(screen.getByText("End Time")).toBeDefined()
+      expect(screen.getByText("Class")).toBeDefined()
+      expect(screen.getByText("Recess")).toBeDefined()
+      expect(screen.getByText("Assembly")).toBeDefined()
+      expect(screen.getByText("Extra-curricular")).toBeDefined()
+
+      // Selected period type has filled variant (bg-primary text-primary-foreground)
+      const classBtn = screen.getByText("Class")
+      expect(classBtn.className).toContain("bg-primary")
+      expect(classBtn.className).toContain("text-primary-foreground")
+
+      // Removed fields
+      expect(screen.queryByText("TITLE / LABEL")).toBeNull()
+      expect(screen.queryByText("DURATION")).toBeNull()
+      expect(screen.queryByText("CASCADE BEHAVIOR")).toBeNull()
+    })
+
+    it("saves period with default shift cascade mode and auto-labels correctly", () => {
       const onSave = vi.fn()
       render(
         <PeriodModal
@@ -103,28 +238,40 @@ describe("Bell Timing Components Integration", () => {
         />
       )
 
-      // Click 30m quick duration
-      const chip30 = screen.getByText("30m")
-      fireEvent.click(chip30)
-      expect(screen.getByText("30 mins")).toBeDefined()
+      // Select Extra-curricular
+      fireEvent.click(screen.getByText("Extra-curricular"))
+
+      // Click Save Timing
+      fireEvent.click(screen.getByText("Save Timing"))
+
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          periodData: expect.objectContaining({
+            type: "ACTIVITY",
+            label: "E1",
+          }),
+          cascadeMode: "shift",
+          shiftEntireDay: false,
+        })
+      )
     })
 
-    it("displays cascade choice options", () => {
+    it("rejects period duration < 15 minutes and shows validation error", () => {
       render(
         <PeriodModal
           isOpen={true}
           onClose={vi.fn()}
-          mode="add"
-          insertAfterIndex={1}
+          mode="edit"
+          periodIndex={0}
+          periodData={{ start_time: "08:30", end_time: "08:40", type: PERIOD_TYPES.CLASS, label: "P1" }}
           schedule={sampleSchedule}
           onSave={vi.fn()}
         />
       )
 
-      expect(screen.getByText("CASCADE BEHAVIOR")).toBeDefined()
-      expect(screen.getByText("Shift all following periods")).toBeDefined()
-      expect(screen.getByText("Keep day end time fixed")).toBeDefined()
-      expect(screen.getByText("Only this period")).toBeDefined()
+      expect(screen.getByText("Duration must be at least 15 minutes.")).toBeDefined()
+      const saveBtn = screen.getByText("Save Timing").closest("button")
+      expect(saveBtn?.getAttribute("aria-disabled") === "true" || saveBtn?.disabled).toBeTruthy()
     })
   })
 
@@ -208,7 +355,7 @@ describe("Bell Timing Components Integration", () => {
         />
       )
       expect(screen.getByText("Send Class 1 (Primary) (2 classes) to:")).toBeDefined()
-      expect(screen.getByText("+ Create Setup 3 & Move")).toBeDefined()
+      expect(screen.getByText("Create Setup 3 & Move")).toBeDefined()
     })
   })
 })

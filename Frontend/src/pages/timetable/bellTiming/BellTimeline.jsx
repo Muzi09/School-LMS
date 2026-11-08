@@ -1,4 +1,4 @@
-import React, { useMemo } from "react"
+import React, { useMemo, useState } from "react"
 import {
   Plus,
   Coffee,
@@ -11,14 +11,15 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { BoundaryEditPopover } from "./BoundaryEditPopover"
+import { DraggableBoundaryTimeChip } from "./DraggableBoundaryTimeChip"
 import {
   parseTime,
   format12h,
+  formatMinutes,
   calculateDuration,
   formatDurationHuman,
 } from "./timeUtils"
-import { PERIOD_TYPES } from "./validators"
+import { PERIOD_TYPES, formatPeriodShortLabel, MIN_PERIOD_DURATION_MINUTES } from "./validators"
 import { cn } from "@/lib/utils"
 
 export function BellTimeline({
@@ -35,31 +36,73 @@ export function BellTimeline({
   onCopyFromOtherSetup,
 }) {
   const periods = schedule?.periods || []
+  const [liveDrag, setLiveDrag] = useState(null)
+
+  // Compute live display periods during dragging: shifts all subsequent periods ahead and extends school end time
+  const displayPeriods = useMemo(() => {
+    if (!liveDrag || periods.length === 0) return periods
+
+    const { boundaryIndex, isFirst, newTime } = liveDrag
+    const cloned = periods.map((p) => ({ ...p }))
+
+    if (isFirst || boundaryIndex === 0) {
+      if (cloned[0]) {
+        const endM = parseTime(cloned[0].end_time)?.totalMinutes ?? 0
+        let newStartM = parseTime(newTime)?.totalMinutes ?? 0
+        if (endM - newStartM < MIN_PERIOD_DURATION_MINUTES) newStartM = endM - MIN_PERIOD_DURATION_MINUTES
+        else if (endM - newStartM > 180) newStartM = endM - 180
+        cloned[0].start_time = formatMinutes(Math.max(0, newStartM))
+      }
+    } else {
+      const idx = boundaryIndex > 0 ? boundaryIndex - 1 : 0
+      if (cloned[idx]) {
+        const startM = parseTime(cloned[idx].start_time)?.totalMinutes ?? 0
+        let newEndM = parseTime(newTime)?.totalMinutes ?? 0
+        if (newEndM - startM < MIN_PERIOD_DURATION_MINUTES) newEndM = startM + MIN_PERIOD_DURATION_MINUTES
+        else if (newEndM - startM > 180) newEndM = startM + 180
+        const clampedNewTime = formatMinutes(newEndM)
+        cloned[idx].end_time = clampedNewTime
+
+        // Shift all subsequent periods ahead, preserving their durations and moving school end time ahead
+        let lastEnd = newEndM
+        for (let i = idx + 1; i < cloned.length; i++) {
+          const p = { ...cloned[i] }
+          const dur = calculateDuration(p.start_time, p.end_time)
+          p.start_time = formatMinutes(lastEnd)
+          lastEnd += Math.max(MIN_PERIOD_DURATION_MINUTES, dur)
+          p.end_time = formatMinutes(lastEnd)
+          cloned[i] = p
+        }
+      }
+    }
+
+    return cloned
+  }, [periods, liveDrag])
 
   // Check current running period if today
   const currentRunningPeriodId = useMemo(() => {
     if (!isTodaySchedule) return null
     const now = new Date()
     const nowMin = now.getHours() * 60 + now.getMinutes()
-    const active = periods.find((p) => {
+    const active = displayPeriods.find((p) => {
       const s = parseTime(p.start_time)?.totalMinutes ?? -1
       const e = parseTime(p.end_time)?.totalMinutes ?? -1
       return nowMin >= s && nowMin < e
     })
     return active ? active.id : null
-  }, [isTodaySchedule, periods])
+  }, [isTodaySchedule, displayPeriods])
 
   // Summary strip statistics
   const summaryStats = useMemo(() => {
-    if (periods.length === 0) return null
-    const firstBell = periods[0].start_time
-    const lastBell = periods[periods.length - 1].end_time
+    if (displayPeriods.length === 0) return null
+    const firstBell = displayPeriods[0].start_time
+    const lastBell = displayPeriods[displayPeriods.length - 1].end_time
 
     let totalTeachingMins = 0
     let totalRecessMins = 0
     let classPeriodsCount = 0
 
-    periods.forEach((p) => {
+    displayPeriods.forEach((p) => {
       const dur = calculateDuration(p.start_time, p.end_time)
       const pType = p.type || (p.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
       if (pType === PERIOD_TYPES.CLASS) {
@@ -78,7 +121,7 @@ export function BellTimeline({
       totalRecessMins,
       totalDayMins: calculateDuration(firstBell, lastBell),
     }
-  }, [periods])
+  }, [displayPeriods])
 
   if (periods.length === 0) {
     return (
@@ -130,7 +173,7 @@ export function BellTimeline({
 
   // Calculate total timeline minutes for proportional sizing
   const totalMinutes = useMemo(() => {
-    return periods.reduce((acc, p) => acc + Math.max(5, calculateDuration(p.start_time, p.end_time)), 0)
+    return periods.reduce((acc, p) => acc + Math.max(MIN_PERIOD_DURATION_MINUTES, calculateDuration(p.start_time, p.end_time)), 0)
   }, [periods])
 
   return (
@@ -149,12 +192,19 @@ export function BellTimeline({
             {/* 1. START EMPTY SPACE: Ensures first start time chip and "+" button are 100% visible, not hidden */}
             <div className="relative w-12 shrink-0 border-r border-border/70 bg-primary/5 dark:bg-primary/10">
               <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex flex-col items-center gap-1 pointer-events-auto">
-                <BoundaryEditPopover
-                  timeStr={periods[0].start_time}
+                <DraggableBoundaryTimeChip
+                  timeStr={displayPeriods[0].start_time}
                   boundaryIndex={0}
                   isFirst
+                  minLimitMinutes={Math.max(0, (parseTime(displayPeriods[0].end_time)?.totalMinutes ?? 60) - 180)}
+                  maxLimitMinutes={Math.max(0, (parseTime(displayPeriods[0].end_time)?.totalMinutes ?? 60) - MIN_PERIOD_DURATION_MINUTES)}
                   disabled={readOnly}
-                  onSaveTime={(newTime) => onEditBoundaryTime?.(0, newTime, true)}
+                  onDragUpdate={(newTime) => setLiveDrag({ boundaryIndex: 0, isFirst: true, newTime })}
+                  onDragEnd={() => setLiveDrag(null)}
+                  onSaveTime={(newTime) => {
+                    setLiveDrag(null)
+                    onEditBoundaryTime?.(0, newTime, true)
+                  }}
                 />
                 {!readOnly && (
                   <button
@@ -171,25 +221,30 @@ export function BellTimeline({
             </div>
 
             {/* 2. PERIOD CELLS: One row just like timetable header, time chips sit on the divider */}
-            {periods.map((period, idx) => {
+            {displayPeriods.map((period, idx) => {
               const duration = calculateDuration(period.start_time, period.end_time)
               const pType = period.type || (period.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
               const isRecess = pType === PERIOD_TYPES.RECESS
               const isRunning = period.id === currentRunningPeriodId
-              const isLast = idx === periods.length - 1
+              const isLast = idx === displayPeriods.length - 1
+              // Compact width per minute (1px/min) reduces timeline footprint significantly,
+              // while base 95px ensures 15m period (110px) displays "P1 15m" fully without clipping
+              const cellWidth = 95 + duration * 1
 
               return (
                 <div
                   key={period.id || idx}
                   className={cn(
-                    "relative flex items-center justify-center border-r border-border/70 transition-colors",
+                    "relative flex items-center justify-center border-r border-border/70",
+                    liveDrag ? "transition-none" : "transition-[width,background-color] duration-150",
                     isRecess
                       ? "bg-primary/10 dark:bg-primary/15"
                       : "bg-primary/5 dark:bg-primary/10 hover:bg-primary/10"
                   )}
                   style={{
-                    flexGrow: duration,
-                    minWidth: isRecess ? "85px" : "110px",
+                    width: `${cellWidth}px`,
+                    minWidth: `${cellWidth}px`,
+                    flexShrink: 0,
                   }}
                 >
                   {/* Period Button: click to edit period in modal */}
@@ -198,7 +253,7 @@ export function BellTimeline({
                     disabled={readOnly}
                     onClick={() => !readOnly && onOpenPeriodModal(period, idx)}
                     className={cn(
-                      "w-full h-full flex items-center justify-center gap-1.5 px-3 select-none text-center",
+                      "w-full h-full flex items-center justify-center gap-1 px-3 select-none text-center",
                       readOnly ? "cursor-default" : "cursor-pointer"
                     )}
                     title={`${period.label || `P${idx + 1}`}: ${format12h(period.start_time)} – ${format12h(period.end_time)} (${duration}m) · Click to edit`}
@@ -211,7 +266,7 @@ export function BellTimeline({
                       <Coffee className="size-3.5 text-muted-foreground shrink-0" />
                     )}
                     <span className="text-xs font-bold text-foreground">
-                      {period.label || `P${period.period_number}`}
+                      {formatPeriodShortLabel(period, displayPeriods)}
                     </span>
                     <span className="text-[10px] font-normal text-muted-foreground">
                       {duration}m
@@ -220,12 +275,19 @@ export function BellTimeline({
 
                   {/* Boundary End Time Chip & Insert Period Between / After Icon */}
                   <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex flex-col items-center gap-1 pointer-events-auto">
-                    <BoundaryEditPopover
+                    <DraggableBoundaryTimeChip
                       timeStr={period.end_time}
                       boundaryIndex={idx + 1}
                       isLast={isLast}
+                      minLimitMinutes={(parseTime(period.start_time)?.totalMinutes ?? 0) + MIN_PERIOD_DURATION_MINUTES}
+                      maxLimitMinutes={Math.min((parseTime(period.start_time)?.totalMinutes ?? 0) + 180, 1435)}
                       disabled={readOnly}
-                      onSaveTime={(newTime) => onEditBoundaryTime?.(idx, newTime, false)}
+                      onDragUpdate={(newTime) => setLiveDrag({ boundaryIndex: idx + 1, isFirst: false, newTime })}
+                      onDragEnd={() => setLiveDrag(null)}
+                      onSaveTime={(newTime) => {
+                        setLiveDrag(null)
+                        onEditBoundaryTime?.(idx + 1, newTime, false)
+                      }}
                     />
                     {!readOnly && (
                       <button
@@ -266,7 +328,7 @@ export function BellTimeline({
         </div>
 
         <div className="space-y-1.5">
-          {periods.map((period, idx) => {
+          {displayPeriods.map((period, idx) => {
             const dur = calculateDuration(period.start_time, period.end_time)
             const isRecess = period.type === PERIOD_TYPES.RECESS || period.is_break
 
@@ -290,7 +352,7 @@ export function BellTimeline({
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-bold text-foreground truncate">
-                        {period.label || `P${period.period_number}`}
+                        {formatPeriodShortLabel(period, displayPeriods)}
                       </span>
                       {isRecess && (
                         <Badge variant="outline" className="text-[10px] bg-primary/10 border-border/60">

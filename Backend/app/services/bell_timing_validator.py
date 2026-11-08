@@ -5,7 +5,7 @@ Mirrors frontend validators to guarantee invariant enforcement.
 from typing import List, Dict, Any, Tuple
 
 
-MIN_PERIOD_DURATION_MINUTES = 5
+MIN_PERIOD_DURATION_MINUTES = 15
 MAX_PERIOD_DURATION_MINUTES = 180
 MAX_PERIODS_PER_SCHEDULE = 20
 

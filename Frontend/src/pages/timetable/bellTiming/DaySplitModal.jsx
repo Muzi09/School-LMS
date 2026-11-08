@@ -86,15 +86,6 @@ export function DaySplitModal({
           </Button>
           <Button
             type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            className="text-xs text-muted-foreground"
-          >
-            No (Keep Shared)
-          </Button>
-          <Button
-            type="button"
             size="sm"
             onClick={() => {
               onConfirmSplit(daysToSplit)

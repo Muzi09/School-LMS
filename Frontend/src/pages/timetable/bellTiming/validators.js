@@ -5,7 +5,7 @@
 
 import { parseTime, calculateDuration } from "./timeUtils"
 
-export const MIN_PERIOD_DURATION_MINUTES = 5
+export const MIN_PERIOD_DURATION_MINUTES = 15
 export const MAX_PERIOD_DURATION_MINUTES = 180
 export const MAX_PERIODS_PER_SCHEDULE = 20
 
@@ -16,6 +16,95 @@ export const PERIOD_TYPES = {
   RECESS: "RECESS",
   ASSEMBLY: "ASSEMBLY",
   ACTIVITY: "ACTIVITY",
+}
+
+export const PERIOD_TYPE_LABELS = {
+  [PERIOD_TYPES.CLASS]: "Class",
+  [PERIOD_TYPES.RECESS]: "Recess",
+  [PERIOD_TYPES.ASSEMBLY]: "Assembly",
+  [PERIOD_TYPES.ACTIVITY]: "Extra-curricular",
+}
+
+export function formatPeriodShortLabel(period, allPeriods = null) {
+  if (!period) return ""
+  const pType = period.type || (period.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
+
+  // If already formatted like P1, R1, A1, E2, return as is
+  if (typeof period.label === "string" && /^[PRAE]\d+$/i.test(period.label.trim())) {
+    return period.label.trim().toUpperCase()
+  }
+
+  // Preserve explicit custom labels
+  if (period.hasCustomLabel && period.label) {
+    return period.label
+  }
+
+  if (pType === PERIOD_TYPES.RECESS || period.is_break || /^recess/i.test(period.label)) {
+    if (allPeriods && Array.isArray(allPeriods)) {
+      const filtered = allPeriods.filter(
+        (p) => p.type === PERIOD_TYPES.RECESS || p.is_break || /^recess/i.test(p.label)
+      )
+      const idx = filtered.findIndex((p) => (period.id && p.id === period.id) || p === period)
+      return `R${idx >= 0 ? idx + 1 : 1}`
+    }
+    const numMatch = period.label?.match(/\d+/)
+    return numMatch ? `R${numMatch[0]}` : "R1"
+  }
+
+  if (pType === PERIOD_TYPES.ASSEMBLY || /^assembly/i.test(period.label)) {
+    if (allPeriods && Array.isArray(allPeriods)) {
+      const filtered = allPeriods.filter((p) => p.type === PERIOD_TYPES.ASSEMBLY || /^assembly/i.test(p.label))
+      const idx = filtered.findIndex((p) => (period.id && p.id === period.id) || p === period)
+      return `A${idx >= 0 ? idx + 1 : 1}`
+    }
+    const numMatch = period.label?.match(/\d+/)
+    return numMatch ? `A${numMatch[0]}` : "A1"
+  }
+
+  if (pType === PERIOD_TYPES.ACTIVITY || /^(activity|extra-curricular|extracurricular)/i.test(period.label)) {
+    if (allPeriods && Array.isArray(allPeriods)) {
+      const filtered = allPeriods.filter(
+        (p) =>
+          p.type === PERIOD_TYPES.ACTIVITY ||
+          /^(activity|extra-curricular|extracurricular)/i.test(p.label)
+      )
+      const idx = filtered.findIndex((p) => (period.id && p.id === period.id) || p === period)
+      return `E${idx >= 0 ? idx + 1 : 1}`
+    }
+    const numMatch = period.label?.match(/\d+/)
+    return numMatch ? `E${numMatch[0]}` : "E1"
+  }
+
+  if (pType === PERIOD_TYPES.CLASS) {
+    if (allPeriods && Array.isArray(allPeriods)) {
+      const filtered = allPeriods.filter(
+        (p) => (p.type || (p.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)) === PERIOD_TYPES.CLASS
+      )
+      const idx = filtered.findIndex((p) => (period.id && p.id === period.id) || p === period)
+      if (idx >= 0) return `P${idx + 1}`
+    }
+    if (period.period_number != null) {
+      return `P${period.period_number}`
+    }
+    if (typeof period.label === "string") {
+      const match = period.label.match(/\d+/)
+      if (match) return `P${match[0]}`
+      return period.label
+    }
+    return "P1"
+  }
+
+  if (period.period_number != null) {
+    return `P${period.period_number}`
+  }
+
+  if (typeof period.label === "string") {
+    const match = period.label.match(/\d+/)
+    if (match) return `P${match[0]}`
+    return period.label
+  }
+
+  return "P1"
 }
 
 /**

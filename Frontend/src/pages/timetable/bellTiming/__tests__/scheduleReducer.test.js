@@ -9,18 +9,22 @@ import { PERIOD_TYPES } from "../validators"
 
 describe("scheduleReducer", () => {
   describe("renumberPeriods", () => {
-    it("auto-numbers only Class periods in sequential order", () => {
+    it("auto-numbers Class and Non-Class periods (P, R, A, E) with digits in sequential order", () => {
       const periods = [
         { type: PERIOD_TYPES.CLASS, label: "Old1" },
         { type: PERIOD_TYPES.CLASS, label: "Old2" },
         { type: PERIOD_TYPES.RECESS, label: "Recess" },
         { type: PERIOD_TYPES.CLASS, label: "Old3" },
+        { type: PERIOD_TYPES.ASSEMBLY, label: "Assembly" },
+        { type: PERIOD_TYPES.ACTIVITY, label: "Activity" },
       ]
       const renumbered = renumberPeriods(periods)
       expect(renumbered[0].label).toBe("P1")
       expect(renumbered[1].label).toBe("P2")
-      expect(renumbered[2].label).toBe("Recess")
+      expect(renumbered[2].label).toBe("R1")
       expect(renumbered[3].label).toBe("P3")
+      expect(renumbered[4].label).toBe("A1")
+      expect(renumbered[5].label).toBe("E1")
     })
 
     it("preserves custom labels when hasCustomLabel is true", () => {
@@ -104,7 +108,7 @@ describe("scheduleReducer", () => {
       const nextState = bellTimingReducer(initialState, action)
       const sched = nextState.setups[0].schedules[0]
       expect(sched.periods[1].type).toBe(PERIOD_TYPES.RECESS)
-      expect(sched.periods[1].label).toBe("Recess")
+      expect(sched.periods[1].label).toBe("R1")
       expect(sched.periods[2].label).toBe("P2")
     })
 
@@ -148,6 +152,44 @@ describe("scheduleReducer", () => {
       const nextState = bellTimingReducer(initialState, action)
       const sched = nextState.setups[0].schedules[0]
       expect(sched.periods[0].label).toBe("P1") // Former P2 renumbered to P1
+    })
+
+    it("adjusts boundary time between periods and for the first start time", () => {
+      const setupId = initialSetup.id
+      const schedId = initialSetup.schedules[0].id
+
+      // 1. First period start time
+      const actionFirst = {
+        type: "EDIT_BOUNDARY_TIME",
+        payload: {
+          setupId,
+          scheduleId: schedId,
+          boundaryIndex: 0,
+          newTime: "08:15",
+          isFirst: true,
+        },
+      }
+      const state1 = bellTimingReducer(initialState, actionFirst)
+      expect(state1.setups[0].schedules[0].periods[0].start_time).toBe("08:15")
+
+      // 2. Boundary between P1 and P2 (boundaryIndex = 1)
+      const actionBoundary = {
+        type: "EDIT_BOUNDARY_TIME",
+        payload: {
+          setupId,
+          scheduleId: schedId,
+          boundaryIndex: 1,
+          newTime: "09:20",
+          isFirst: false,
+        },
+      }
+      const state2 = bellTimingReducer(state1, actionBoundary)
+      const sched2 = state2.setups[0].schedules[0]
+      expect(sched2.periods[0].end_time).toBe("09:20")
+      expect(sched2.periods[1].start_time).toBe("09:20")
+      expect(sched2.periods[1].end_time).toBe("10:05") // 45m preserved, shifted ahead
+      // Subsequent periods shifted ahead and school end time moved ahead
+      expect(sched2.periods[sched2.periods.length - 1].end_time).toBe("14:50")
     })
 
     it("splits a day off into its own independent schedule", () => {
@@ -267,6 +309,61 @@ describe("scheduleReducer", () => {
       const stateEditedDup = bellTimingReducer(stateWithDup, editDupAction)
       expect(stateEditedDup.setups[0].name).toBe(initialSetup.name)
       expect(stateEditedDup.setups[1].name).toBe("Modified Copy")
+    })
+
+    it("handles SAVE_SUCCESS: updates version, maps temporary IDs, and marks isDirty clean", () => {
+      // Modify setup to make it dirty
+      const editAction = {
+        type: "RENAME_SETUP",
+        payload: { setupId: initialSetup.id, name: "Updated Setup" },
+      }
+      const dirtyState = bellTimingReducer(initialState, editAction)
+      expect(dirtyState.isDirty).toBe(true)
+      const currentRev = dirtyState.revision
+
+      // Server returns updated setups with incremented version
+      const saveSuccessAction = {
+        type: "SAVE_SUCCESS",
+        payload: {
+          savedSetups: [{ id: initialSetup.id, version: 2, name: "Updated Setup" }],
+          revision: currentRev,
+        },
+      }
+      const savedState = bellTimingReducer(dirtyState, saveSuccessAction)
+      expect(savedState.isDirty).toBe(false)
+      expect(savedState.setups[0].version).toBe(2)
+      expect(savedState.setups[0].name).toBe("Updated Setup")
+    })
+
+    it("keeps isDirty true if new changes occurred while save was in flight", () => {
+      // First modification (revision 1)
+      const editAction = {
+        type: "RENAME_SETUP",
+        payload: { setupId: initialSetup.id, name: "First Edit" },
+      }
+      const state1 = bellTimingReducer(initialState, editAction)
+      const flightRevision = state1.revision
+
+      // Second modification while in flight (revision 2)
+      const editAction2 = {
+        type: "RENAME_SETUP",
+        payload: { setupId: initialSetup.id, name: "Second Edit" },
+      }
+      const state2 = bellTimingReducer(state1, editAction2)
+      expect(state2.revision).toBeGreaterThan(flightRevision)
+
+      // First save resolves
+      const saveSuccessAction = {
+        type: "SAVE_SUCCESS",
+        payload: {
+          savedSetups: [{ id: initialSetup.id, version: 2, name: "First Edit" }],
+          revision: flightRevision,
+        },
+      }
+      const savedState = bellTimingReducer(state2, saveSuccessAction)
+      // Since revision didn't match latest revision, state remains dirty for next save
+      expect(savedState.isDirty).toBe(true)
+      expect(savedState.setups[0].version).toBe(2)
     })
   })
 })

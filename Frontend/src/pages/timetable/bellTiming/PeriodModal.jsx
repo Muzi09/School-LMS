@@ -5,13 +5,9 @@ import {
   AlertTriangle,
   Check,
   X,
-  Sparkles,
-  Layers,
-  ArrowRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { TimePicker } from "@/components/ui/time-picker"
 import {
   parseTime,
   format12h,
@@ -21,12 +17,13 @@ import {
 } from "./timeUtils"
 import {
   PERIOD_TYPES,
+  PERIOD_TYPE_LABELS,
+  formatPeriodShortLabel,
   MIN_PERIOD_DURATION_MINUTES,
   MAX_PERIOD_DURATION_MINUTES,
 } from "./validators"
+import { renumberPeriods } from "./scheduleReducer"
 import { cn } from "@/lib/utils"
-
-const QUICK_DURATIONS = [15, 20, 30, 35, 40, 45, 50, 60]
 
 export function PeriodModal({
   isOpen,
@@ -40,16 +37,11 @@ export function PeriodModal({
   onDelete,
 }) {
   const isEdit = mode === "edit"
-  const isFirstPeriod = isEdit && periodIndex === 0
 
   // Form states
   const [type, setType] = useState(PERIOD_TYPES.CLASS)
-  const [label, setLabel] = useState("")
-  const [hasCustomLabel, setHasCustomLabel] = useState(false)
   const [startTime, setStartTime] = useState("08:30")
   const [endTime, setEndTime] = useState("09:15")
-  const [cascadeMode, setCascadeMode] = useState("shift") // "shift" | "fixed_end" | "none"
-  const [shiftEntireDay, setShiftEntireDay] = useState(false)
 
   // Initialize data on open
   useEffect(() => {
@@ -58,12 +50,8 @@ export function PeriodModal({
     if (isEdit && periodData) {
       const pType = periodData.type || (periodData.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
       setType(pType)
-      setLabel(periodData.label || `P${periodIndex + 1}`)
-      setHasCustomLabel(Boolean(periodData.hasCustomLabel))
       setStartTime(periodData.start_time || "08:30")
       setEndTime(periodData.end_time || "09:15")
-      setCascadeMode("shift")
-      setShiftEntireDay(false)
     } else {
       // Add mode: derive sensible defaults from neighbors
       const prevPeriod = insertAfterIndex >= 0 && schedule?.periods?.[insertAfterIndex] ? schedule.periods[insertAfterIndex] : null
@@ -80,42 +68,24 @@ export function PeriodModal({
       const defaultEnd = addMinutesToTime(defaultStart, defaultDur > 0 ? defaultDur : 45)
 
       setType(PERIOD_TYPES.CLASS)
-      setLabel(`P${insertAfterIndex + 2}`)
-      setHasCustomLabel(false)
       setStartTime(defaultStart)
       setEndTime(defaultEnd)
-      setCascadeMode("shift")
-      setShiftEntireDay(false)
     }
   }, [isOpen, isEdit, periodData, periodIndex, insertAfterIndex, schedule])
 
-  // Duration in minutes
-  const currentDuration = useMemo(() => {
-    return calculateDuration(startTime, endTime)
-  }, [startTime, endTime])
-
-  // Handle quick duration click
-  const handleQuickDuration = (minutes) => {
-    const s = parseTime(startTime)
-    if (!s) return
-    const newEnd = addMinutesToTime(startTime, minutes)
-    setEndTime(newEnd)
-  }
-
-  // Handle Type Change: auto-update label if not custom
+  // Handle Type Change
   const handleTypeChange = (newType) => {
     setType(newType)
-    if (!hasCustomLabel) {
-      if (newType === PERIOD_TYPES.RECESS) {
-        setLabel("Recess")
-        // Default 15m for recess
-        handleQuickDuration(15)
-      } else if (newType === PERIOD_TYPES.ASSEMBLY) {
-        setLabel("Assembly")
-      } else if (newType === PERIOD_TYPES.ACTIVITY) {
-        setLabel("Activity")
-      } else {
-        setLabel(`P${isEdit ? periodIndex + 1 : insertAfterIndex + 2}`)
+    // Adjust default durations if switching to/from recess
+    if (newType === PERIOD_TYPES.RECESS) {
+      const curDur = calculateDuration(startTime, endTime)
+      if (curDur > 30 || curDur <= 0) {
+        setEndTime(addMinutesToTime(startTime, 15))
+      }
+    } else if (newType === PERIOD_TYPES.CLASS) {
+      const curDur = calculateDuration(startTime, endTime)
+      if (curDur < 30) {
+        setEndTime(addMinutesToTime(startTime, 45))
       }
     }
   }
@@ -129,73 +99,69 @@ export function PeriodModal({
     if (s.totalMinutes >= e.totalMinutes) return "End time must be after start time (cannot cross midnight)."
     const dur = e.totalMinutes - s.totalMinutes
     if (dur < MIN_PERIOD_DURATION_MINUTES) return `Duration must be at least ${MIN_PERIOD_DURATION_MINUTES} minutes.`
-    if (dur > MAX_PERIOD_DURATION_MINUTES) return `Duration cannot exceed ${MAX_PERIOD_DURATION_MINUTES} minutes.`
+    if (dur > 180) return "Duration cannot exceed 180 minutes."
     return null
   }, [startTime, endTime])
 
-  // Check if cascade choices should appear:
-  // In edit mode: if duration changed or start time changed.
-  // In add mode: if inserting into non-empty schedule.
-  const showCascadeChoice = useMemo(() => {
-    if (isEdit && periodData) {
-      const origDur = calculateDuration(periodData.start_time, periodData.end_time)
-      return currentDuration !== origDur || startTime !== periodData.start_time
-    }
-    return schedule && schedule.periods?.length > 0
-  }, [isEdit, periodData, currentDuration, startTime, schedule])
+  // Boundary limits for time selectors (disables selecting durations < 15 mins)
+  const maxAllowedStartTime = useMemo(() => {
+    const endMinutes = parseTime(endTime)?.totalMinutes
+    if (endMinutes == null) return null
+    // TimePicker checkTimeDisabled checks totalM >= maxM. Setting maxM = end - 10 disables end - 10, end - 5, end
+    return format24h(endMinutes - (MIN_PERIOD_DURATION_MINUTES - 5))
+  }, [endTime])
 
-  // Next period squeeze check for fixed-end mode
-  const canSqueezeNext = useMemo(() => {
-    const nextIdx = isEdit ? periodIndex + 1 : insertAfterIndex + 1
-    const nextP = schedule?.periods?.[nextIdx]
-    if (!nextP) return false
-    const squeezed = calculateDuration(endTime, nextP.end_time)
-    return squeezed >= MIN_PERIOD_DURATION_MINUTES
-  }, [isEdit, periodIndex, insertAfterIndex, schedule, endTime])
+  const minAllowedEndTime = useMemo(() => {
+    const startMinutes = parseTime(startTime)?.totalMinutes
+    if (startMinutes == null) return null
+    // TimePicker checkTimeDisabled checks totalM <= minM. Setting minM = start + 10 disables start, start + 5, start + 10
+    return format24h(startMinutes + (MIN_PERIOD_DURATION_MINUTES - 5))
+  }, [startTime])
 
-  // Live timeline preview generator
+  // Live timeline preview generator (always follows shift behavior)
   const previewPeriods = useMemo(() => {
     if (!schedule || validationError) return []
     let periods = [...(schedule.periods || [])].map((p) => ({ ...p }))
 
+    let defaultLabel = `P${isEdit ? periodIndex + 1 : insertAfterIndex + 2}`
+    if (type === PERIOD_TYPES.RECESS) defaultLabel = "R1"
+    else if (type === PERIOD_TYPES.ASSEMBLY) defaultLabel = "A1"
+    else if (type === PERIOD_TYPES.ACTIVITY) defaultLabel = "E1"
+
     const newP = {
       type,
-      label: label.trim() || "P",
+      label: defaultLabel,
       start_time: startTime,
       end_time: endTime,
     }
 
     if (isEdit) {
       periods[periodIndex] = newP
-      if (cascadeMode === "shift") {
-        let lastEnd = parseTime(endTime).totalMinutes
-        for (let i = periodIndex + 1; i < periods.length; i++) {
-          const p = { ...periods[i] }
-          const dur = calculateDuration(p.start_time, p.end_time)
-          p.start_time = format24h(lastEnd)
-          lastEnd += Math.max(15, dur)
-          p.end_time = format24h(lastEnd)
-          periods[i] = p
-        }
+      let lastEnd = parseTime(endTime)?.totalMinutes || 0
+      for (let i = periodIndex + 1; i < periods.length; i++) {
+        const p = { ...periods[i] }
+        const dur = calculateDuration(p.start_time, p.end_time)
+        p.start_time = format24h(lastEnd)
+        lastEnd += Math.max(MIN_PERIOD_DURATION_MINUTES, dur)
+        p.end_time = format24h(lastEnd)
+        periods[i] = p
       }
     } else {
       const insertIdx = insertAfterIndex === -1 ? 0 : insertAfterIndex + 1
       periods.splice(insertIdx, 0, newP)
-      if (cascadeMode === "shift") {
-        let lastEnd = parseTime(endTime).totalMinutes
-        for (let i = insertIdx + 1; i < periods.length; i++) {
-          const p = { ...periods[i] }
-          const dur = calculateDuration(p.start_time, p.end_time)
-          p.start_time = format24h(lastEnd)
-          lastEnd += Math.max(15, dur)
-          p.end_time = format24h(lastEnd)
-          periods[i] = p
-        }
+      let lastEnd = parseTime(endTime)?.totalMinutes || 0
+      for (let i = insertIdx + 1; i < periods.length; i++) {
+        const p = { ...periods[i] }
+        const dur = calculateDuration(p.start_time, p.end_time)
+        p.start_time = format24h(lastEnd)
+        lastEnd += Math.max(MIN_PERIOD_DURATION_MINUTES, dur)
+        p.end_time = format24h(lastEnd)
+        periods[i] = p
       }
     }
 
-    return periods
-  }, [schedule, validationError, isEdit, periodIndex, insertAfterIndex, type, label, startTime, endTime, cascadeMode])
+    return renumberPeriods(periods)
+  }, [schedule, validationError, isEdit, periodIndex, insertAfterIndex, type, startTime, endTime])
 
   if (!isOpen) return null
 
@@ -204,16 +170,20 @@ export function PeriodModal({
     const parsedStart = parseTime(startTime)?.normalized || startTime
     const parsedEnd = parseTime(endTime)?.normalized || endTime
 
+    let computedLabel = `P${isEdit ? periodIndex + 1 : insertAfterIndex + 2}`
+    if (type === PERIOD_TYPES.RECESS) computedLabel = "R1"
+    else if (type === PERIOD_TYPES.ASSEMBLY) computedLabel = "A1"
+    else if (type === PERIOD_TYPES.ACTIVITY) computedLabel = "E1"
+
     onSave({
       periodData: {
         type,
-        label: label.trim(),
-        hasCustomLabel,
+        label: computedLabel,
         start_time: parsedStart,
         end_time: parsedEnd,
       },
-      cascadeMode,
-      shiftEntireDay,
+      cascadeMode: "shift",
+      shiftEntireDay: false,
     })
     onClose()
   }
@@ -250,7 +220,7 @@ export function PeriodModal({
       />
 
       {/* Modal Dialog */}
-      <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl z-10 overflow-hidden flex flex-col space-y-4 p-5 animate-in zoom-in-95 duration-150">
+      <div className="relative w-full max-w-[490px] bg-card border border-border shadow-2xl rounded-2xl z-10 overflow-hidden flex flex-col space-y-4 p-5 animate-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-border/80">
           <div className="flex items-center gap-2.5">
@@ -280,9 +250,11 @@ export function PeriodModal({
         <div className="space-y-4 text-xs">
           {/* 1. Period Type Segmented Control */}
           <div className="space-y-1.5">
-            <label className="font-semibold text-muted-foreground">PERIOD TYPE</label>
+            <label className="font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
+              PERIOD TYPE
+            </label>
             <div className="grid grid-cols-4 gap-1 p-1 bg-muted/40 rounded-xl border border-border/60">
-              {Object.values(PERIOD_TYPES).map((t) => {
+              {Object.entries(PERIOD_TYPE_LABELS).map(([t, tLabel]) => {
                 const isSel = type === t
                 return (
                   <button
@@ -290,182 +262,45 @@ export function PeriodModal({
                     type="button"
                     onClick={() => handleTypeChange(t)}
                     className={cn(
-                      "py-1.5 px-2 rounded-lg font-semibold text-xs transition-all cursor-pointer select-none text-center",
+                      "py-2 px-1 rounded-lg font-semibold text-xs transition-all cursor-pointer select-none text-center whitespace-nowrap overflow-hidden",
                       isSel
-                        ? "bg-card text-foreground font-bold shadow-xs border border-border/80"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
                     )}
+                    title={tLabel}
                   >
-                    {t.charAt(0) + t.slice(1).toLowerCase()}
+                    {tLabel}
                   </button>
                 )
               })}
             </div>
           </div>
 
-          {/* 2. Label Input with Auto-label chip */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="font-semibold text-muted-foreground">TITLE / LABEL</label>
-              <span className="text-[11px] text-muted-foreground">
-                Auto-numbers Class periods
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Input
-                value={label}
-                onChange={(e) => {
-                  setLabel(e.target.value)
-                  setHasCustomLabel(true)
-                }}
-                placeholder="e.g. P1, Recess, Assembly"
-                className="h-9 text-xs font-semibold"
-              />
-              <Badge variant="outline" className="h-9 px-3 text-xs font-mono font-bold shrink-0">
-                {label || "P"}
-              </Badge>
-            </div>
-          </div>
-
-          {/* 3. In-time and Out-time Inputs */}
+          {/* 2. Start Time and End Time with TimePicker */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="font-semibold text-muted-foreground">IN-TIME (START)</label>
-              <Input
+              <label className="font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
+                Start Time
+              </label>
+              <TimePicker
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                placeholder="08:30"
-                className="h-9 text-xs font-mono font-bold"
+                onChange={(newTime) => setStartTime(newTime)}
+                maxTime={maxAllowedStartTime}
+                placeholder="Start Time"
               />
-              <span className="text-[11px] text-muted-foreground">
-                {format12h(startTime)}
-              </span>
             </div>
             <div className="space-y-1.5">
-              <label className="font-semibold text-muted-foreground">OUT-TIME (END)</label>
-              <Input
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                placeholder="09:15"
-                className="h-9 text-xs font-mono font-bold"
-              />
-              <span className="text-[11px] text-muted-foreground">
-                {format12h(endTime)}
-              </span>
-            </div>
-          </div>
-
-          {/* 4. Duration Read-only row & Quick chips */}
-          <div className="p-3 bg-muted/20 border border-border/70 rounded-xl space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-muted-foreground">DURATION</span>
-              <Badge
-                variant={validationError ? "destructive" : "secondary"}
-                className="font-bold px-2 py-0.5"
-              >
-                {currentDuration > 0 ? `${currentDuration} mins` : "Invalid"}
-              </Badge>
-            </div>
-
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground mr-1">
-                Quick:
-              </span>
-              {QUICK_DURATIONS.map((dur) => (
-                <button
-                  key={dur}
-                  type="button"
-                  onClick={() => handleQuickDuration(dur)}
-                  className={cn(
-                    "px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer select-none",
-                    currentDuration === dur
-                      ? "bg-primary text-primary-foreground border-primary font-bold shadow-2xs"
-                      : "bg-card text-muted-foreground hover:text-foreground border-border hover:border-primary/40"
-                  )}
-                >
-                  {dur}m
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 5. First period entire day shift choice */}
-          {isFirstPeriod && (
-            <div className="p-2.5 rounded-xl border border-primary/20 bg-primary/5 space-y-1">
-              <label className="flex items-center gap-2 cursor-pointer font-semibold select-none text-foreground">
-                <input
-                  type="checkbox"
-                  checked={shiftEntireDay}
-                  onChange={(e) => setShiftEntireDay(e.target.checked)}
-                  className="size-3.5 rounded text-primary"
-                />
-                <span>Shift entire day by start time change</span>
+              <label className="font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
+                End Time
               </label>
-              <p className="text-[11px] text-muted-foreground pl-5.5">
-                Moves all subsequent periods forward or backward preserving individual durations.
-              </p>
+              <TimePicker
+                value={endTime}
+                onChange={(newTime) => setEndTime(newTime)}
+                minTime={minAllowedEndTime}
+                placeholder="End Time"
+              />
             </div>
-          )}
-
-          {/* 6. Cascade Options */}
-          {showCascadeChoice && !shiftEntireDay && (
-            <div className="space-y-1.5 p-3 rounded-xl bg-muted/30 border border-border/70">
-              <label className="font-bold text-foreground">CASCADE BEHAVIOR</label>
-              <div className="space-y-1.5 pt-1">
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="cascade"
-                    value="shift"
-                    checked={cascadeMode === "shift"}
-                    onChange={() => setCascadeMode("shift")}
-                    className="mt-0.5 size-3.5 text-primary"
-                  />
-                  <div>
-                    <span className="font-semibold text-foreground">Shift all following periods</span>
-                    <p className="text-[11px] text-muted-foreground">
-                      Subsequent periods move forward or backward preserving their duration (recommended).
-                    </p>
-                  </div>
-                </label>
-
-                <label className={cn("flex items-start gap-2 cursor-pointer", !canSqueezeNext && "opacity-50")}>
-                  <input
-                    type="radio"
-                    name="cascade"
-                    value="fixed_end"
-                    disabled={!canSqueezeNext}
-                    checked={cascadeMode === "fixed_end"}
-                    onChange={() => setCascadeMode("fixed_end")}
-                    className="mt-0.5 size-3.5 text-primary"
-                  />
-                  <div>
-                    <span className="font-semibold text-foreground">Keep day end time fixed</span>
-                    <p className="text-[11px] text-muted-foreground">
-                      Squeeze the next period (requires at least 5m remaining).
-                    </p>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="cascade"
-                    value="none"
-                    checked={cascadeMode === "none"}
-                    onChange={() => setCascadeMode("none")}
-                    className="mt-0.5 size-3.5 text-primary"
-                  />
-                  <div>
-                    <span className="font-semibold text-foreground">Only this period</span>
-                    <p className="text-[11px] text-muted-foreground">
-                      Do not shift others; fails if it overlaps neighboring periods.
-                    </p>
-                  </div>
-                </label>
-              </div>
-            </div>
-          )}
+          </div>
 
           {/* Validation Alert */}
           {validationError && (
@@ -477,28 +312,31 @@ export function PeriodModal({
 
           {/* Live Preview Bar */}
           {previewPeriods.length > 0 && !validationError && (
-            <div className="space-y-1 pt-1">
-              <span className="text-[11px] font-bold text-muted-foreground uppercase">
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                 Resulting Timeline Preview
               </span>
               <div className="flex h-8 bg-muted/40 rounded-lg border border-border/80 overflow-hidden divide-x divide-border/60">
                 {previewPeriods.map((p, pIdx) => {
                   const isCur = isEdit ? pIdx === periodIndex : pIdx === insertAfterIndex + 1
+                  const shortLabel = formatPeriodShortLabel(p, previewPeriods)
+                  const isRecess = p.type === PERIOD_TYPES.RECESS || p.is_break
+
                   return (
                     <div
                       key={pIdx}
-                      style={{ flexGrow: calculateDuration(p.start_time, p.end_time) }}
+                      style={{ flexGrow: 1}}
                       className={cn(
-                        "flex items-center justify-center text-[10px] font-bold px-1 truncate",
+                        "flex items-center justify-center text-[10px] font-bold px-1 truncate transition-colors",
                         isCur
                           ? "bg-primary text-primary-foreground"
-                          : p.type === PERIOD_TYPES.RECESS
+                          : isRecess
                           ? "bg-primary/20 text-foreground font-bold"
                           : "text-muted-foreground"
                       )}
-                      title={`${p.label}: ${p.start_time}-${p.end_time}`}
+                      title={`${p.label || shortLabel}: ${format12h(p.start_time)} – ${format12h(p.end_time)} (${calculateDuration(p.start_time, p.end_time)}m)`}
                     >
-                      {p.label}
+                      {shortLabel}
                     </div>
                   )
                 })}
@@ -519,7 +357,7 @@ export function PeriodModal({
                   onDelete(periodIndex)
                   onClose()
                 }}
-                className="text-destructive hover:bg-destructive/10 text-xs gap-1.5"
+                className="text-destructive hover:bg-destructive/10 text-xs gap-1.5 cursor-pointer"
               >
                 <Trash2 className="size-3.5" />
                 <span>Delete Period</span>
@@ -533,7 +371,7 @@ export function PeriodModal({
               variant="outline"
               size="sm"
               onClick={onClose}
-              className="text-xs"
+              className="text-xs cursor-pointer"
             >
               Cancel
             </Button>
@@ -541,8 +379,9 @@ export function PeriodModal({
               type="button"
               size="sm"
               disabled={Boolean(validationError)}
+              isDisabled={Boolean(validationError)}
               onClick={handleSave}
-              className="bg-primary text-primary-foreground font-semibold text-xs shadow-2xs gap-1.5"
+              className="bg-primary text-primary-foreground font-semibold text-xs shadow-2xs gap-1.5 cursor-pointer"
             >
               <Check className="size-3.5" />
               <span>Save Timing</span>
@@ -553,4 +392,3 @@ export function PeriodModal({
     </div>
   )
 }
-

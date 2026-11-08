@@ -7,8 +7,23 @@ import { BellScheduleSetupModal } from "../../components/BellScheduleSetupModal"
 // Mock hooks and services
 const mockMutateAsync = vi.fn().mockResolvedValue({ message: "Saved" })
 const mockRefetch = vi.fn()
+const mockInvalidateQueries = vi.fn()
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    useQueryClient: vi.fn(() => ({
+      invalidateQueries: mockInvalidateQueries,
+    })),
+  }
+})
 
 vi.mock("@/hooks/useTimetable", () => ({
+  timetableKeys: {
+    setups: vi.fn((id) => ["setups", id]),
+    all: ["timetables"],
+  },
   useSetups: vi.fn(() => ({
     data: [
       {
@@ -115,10 +130,10 @@ describe("BellScheduleSetupModal Orchestrator Integration", () => {
     expect(screen.getByText("B")).toBeDefined()
 
     // Bottom placeholder card
-    expect(screen.getByText("+ Create Setup 2")).toBeDefined()
+    expect(screen.getByText("Create Setup 2")).toBeDefined()
   })
 
-  it("creates a new setup when clicking '+ Create Setup 2' and shows unsaved bar", () => {
+  it("creates a new setup when clicking 'Create Setup 2' and saves automatically without manual save bar", () => {
     render(
       <BellScheduleSetupModal
         isOpen={true}
@@ -128,18 +143,20 @@ describe("BellScheduleSetupModal Orchestrator Integration", () => {
       />
     )
 
-    const createBtn = screen.getByText("+ Create Setup 2")
+    const createBtn = screen.getByText("Create Setup 2")
     fireEvent.click(createBtn)
-
-    // Unsaved changes bar appears
-    expect(screen.getByText("You have unsaved changes")).toBeDefined()
-    expect(screen.getByText("Save Changes")).toBeDefined()
 
     // Setup 2 is now rendered
     expect(screen.getByText("Setup 2")).toBeDefined()
+
+    // No manual save bar or buttons
+    expect(screen.queryByText("Save Changes")).toBeNull()
+    expect(screen.queryByText("You have unsaved changes")).toBeNull()
+    expect(screen.queryByLabelText("Undo")).toBeNull()
+    expect(screen.queryByLabelText("Redo")).toBeNull()
   })
 
-  it("supports Undo and Redo from the sticky unsaved bar", () => {
+  it("disables delete when only one setup exists, enables filled delete button and prompts reassignment when multiple setups exist", () => {
     render(
       <BellScheduleSetupModal
         isOpen={true}
@@ -149,23 +166,25 @@ describe("BellScheduleSetupModal Orchestrator Integration", () => {
       />
     )
 
+    // With 1 setup: Delete button is disabled
+    const singleDeleteBtn = screen.getByRole("button", { name: /Delete Setup 1/i })
+    expect(singleDeleteBtn.disabled).toBe(true)
+
     // Create Setup 2
-    fireEvent.click(screen.getByText("+ Create Setup 2"))
+    fireEvent.click(screen.getByText("Create Setup 2"))
     expect(screen.getByText("Setup 2")).toBeDefined()
 
-    // Click Undo
-    const undoBtn = screen.getByLabelText("Undo")
-    fireEvent.click(undoBtn)
+    // With 2 setups: Delete button for Setup 1 is enabled
+    const deleteBtns = screen.getAllByRole("button", { name: /Delete Setup/i })
+    expect(deleteBtns[0].disabled).toBe(false)
 
-    // Setup 2 should be gone
-    expect(screen.queryByText("Setup 2")).toBeNull()
+    // Click delete on Setup 1 (which has assigned classes)
+    fireEvent.click(deleteBtns[0])
 
-    // Click Redo
-    const redoBtn = screen.getByLabelText("Redo")
-    fireEvent.click(redoBtn)
-
-    // Setup 2 should be back
-    expect(screen.getByText("Setup 2")).toBeDefined()
+    // Reassignment dialog opens
+    expect(screen.getByText("Delete Setup 1")).toBeDefined()
+    expect(screen.getByText(/Reassign classes before deleting/i)).toBeDefined()
+    expect(screen.getByText(/Reassign & Delete/i)).toBeDefined()
   })
 
   it("opens move modal when clicking a section chip", () => {
@@ -198,8 +217,41 @@ describe("BellScheduleSetupModal Orchestrator Integration", () => {
 
     // Add Setup and Create Setup should not exist
     expect(screen.queryByText("Add Setup")).toBeNull()
-    expect(screen.queryByText("+ Create Setup 2")).toBeNull()
+    expect(screen.queryByText("Create Setup 2")).toBeNull()
     expect(screen.queryByText("Duplicate")).toBeNull()
+  })
+
+  it("autosaves changes with updated version and avoids infinite 409 looping", async () => {
+    mockMutateAsync.mockResolvedValueOnce([
+      {
+        id: "setup-1",
+        version: 2,
+        name: "Setup 1",
+        schedules: [],
+        assigned_section_ids: ["sec-1", "sec-2"],
+      },
+    ])
+
+    render(
+      <BellScheduleSetupModal
+        isOpen={true}
+        onClose={vi.fn()}
+        timetableId="tt-123"
+        wings={mockWings}
+      />
+    )
+
+    const duplicateBtn = screen.getByText("Duplicate")
+    fireEvent.click(duplicateBtn)
+
+    // Wait for debounced autosave mutation to fire
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+    })
+
+    // Wait longer and ensure it doesn't repeatedly loop
+    await new Promise((r) => setTimeout(r, 600))
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1)
   })
 })
 

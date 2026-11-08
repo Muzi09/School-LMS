@@ -222,7 +222,14 @@ def test_atomic_move_classes():
 
     db = SessionLocal()
     service = TimetableService(db=db)
-    setups = db.query(TimetableSetup).filter(TimetableSetup.deleted_at.is_(None)).limit(2).all()
+    from app.models.timetable import Timetable
+    setups = (
+        db.query(TimetableSetup)
+        .join(Timetable, Timetable.id == TimetableSetup.timetable_id)
+        .filter(TimetableSetup.deleted_at.is_(None), Timetable.deleted_at.is_(None))
+        .limit(2)
+        .all()
+    )
     section = db.query(Section).filter(Section.deleted_at.is_(None)).first()
     if len(setups) < 2 or not section:
         db.close()

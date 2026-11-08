@@ -172,7 +172,7 @@ export function MoveScheduleModal({
             className="w-full p-3.5 border-2 border-dashed border-border/80 hover:border-primary/50 hover:bg-primary/5 rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-primary transition-all cursor-pointer"
           >
             <Plus className="size-4" />
-            <span>+ Create Setup {setups.length + 1} & Move</span>
+            <span>Create Setup {setups.length + 1} & Move</span>
           </button>
         </div>
 

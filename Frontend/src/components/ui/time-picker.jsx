@@ -4,7 +4,7 @@ import { Clock, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const HOURS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
-const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"))
+const MINUTES = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"]
 const PERIODS = ["AM", "PM"]
 
 /**
@@ -20,6 +20,15 @@ function parseTimeTo12Hour(timeStr) {
 
   if (isNaN(h)) h = 8
   if (isNaN(m)) m = 0
+
+  // Snap to nearest 5-minute step
+  const roundedM = Math.round(m / 5) * 5
+  if (roundedM >= 60) {
+    h = (h + 1) % 24
+    m = 0
+  } else {
+    m = roundedM
+  }
 
   const period = h >= 12 ? "PM" : "AM"
   let h12 = h % 12
@@ -51,14 +60,45 @@ function formatDisplayTime(timeStr) {
   return `${hour12}:${minute} ${period}`
 }
 
+function toTotalMinutes(hour12, minute, period) {
+  let h = parseInt(hour12, 10)
+  const m = parseInt(minute, 10)
+  if (period === "PM" && h < 12) h += 12
+  if (period === "AM" && h === 12) h = 0
+  return h * 60 + m
+}
+
+function parseTimeToTotalMinutes(timeStr) {
+  if (!timeStr || typeof timeStr !== "string") return null
+  const parts = timeStr.trim().split(":")
+  const h = parseInt(parts[0], 10)
+  const m = parseInt(parts[1], 10)
+  if (isNaN(h) || isNaN(m)) return null
+  return h * 60 + m
+}
+
+function checkTimeDisabled(h12, mStr, pStr, minTime, maxTime) {
+  const totalM = toTotalMinutes(h12, mStr, pStr)
+  if (minTime) {
+    const minM = parseTimeToTotalMinutes(minTime)
+    if (minM != null && totalM <= minM) return true
+  }
+  if (maxTime) {
+    const maxM = parseTimeToTotalMinutes(maxTime)
+    if (maxM != null && totalM >= maxM) return true
+  }
+  return false
+}
+
 /**
  * Theme-aware Shadcn-styled TimePicker Component.
  * Supports light & dark modes with application design tokens.
  * Features:
- * - Reduced column widths for a sleek, compact popover
+ * - Dropdown width expands dynamically to match trigger field's width
  * - Uses the app's default font family (font-sans) with tabular-nums
  * - Ultra-thin scrollbar thumbs without native arrow buttons
  * - Portaled with high z-index to avoid clipping by modal edges
+ * - Disables invalid times based on minTime and maxTime constraints
  */
 export function TimePicker({
   value = "",
@@ -69,6 +109,8 @@ export function TimePicker({
   name,
   placeholder = "Select Time",
   required = false,
+  minTime = null,
+  maxTime = null,
 }) {
   const [isOpen, setIsOpen] = React.useState(false)
   const triggerRef = React.useRef(null)
@@ -80,7 +122,7 @@ export function TimePicker({
     top: undefined,
     bottom: undefined,
     left: 0,
-    width: 142,
+    width: 160,
     openUpwards: false,
   })
 
@@ -91,6 +133,27 @@ export function TimePicker({
   // Draft selection state while time selector is open: { hour12, minute, period }
   const [draft, setDraft] = React.useState(() => parseTimeTo12Hour(value))
 
+  const isMinuteDisabled = React.useCallback(
+    (m, h = draft.hour12, p = draft.period) => {
+      return checkTimeDisabled(h, m, p, minTime, maxTime)
+    },
+    [draft.hour12, draft.period, minTime, maxTime]
+  )
+
+  const isHourDisabled = React.useCallback(
+    (h, p = draft.period) => {
+      return MINUTES.every((m) => checkTimeDisabled(h, m, p, minTime, maxTime))
+    },
+    [draft.period, minTime, maxTime]
+  )
+
+  const isPeriodDisabled = React.useCallback(
+    (p) => {
+      return HOURS.every((h) => isHourDisabled(h, p))
+    },
+    [isHourDisabled]
+  )
+
   // Sync draft whenever value changes while closed
   React.useEffect(() => {
     if (!isOpen) {
@@ -98,7 +161,7 @@ export function TimePicker({
     }
   }, [value, isOpen])
 
-  // Calculate position relative to trigger button
+  // Calculate position relative to trigger button, matching field's width
   const updatePosition = React.useCallback(() => {
     if (!triggerRef.current) return
     const rect = triggerRef.current.getBoundingClientRect()
@@ -110,7 +173,8 @@ export function TimePicker({
     }
 
     const popoverHeight = 230
-    const popoverWidth = 142 // Compact column width: 46px + 46px + 48px + borders = 142px
+    // Dropdown width matches the trigger field width (min 160px)
+    const popoverWidth = Math.max(160, Math.round(rect.width))
 
     const spaceBelow = window.innerHeight - rect.bottom
     const spaceAbove = rect.top
@@ -118,12 +182,6 @@ export function TimePicker({
 
     // Keep within horizontal screen bounds & align properly
     let left = rect.left
-    if (rect.right < rect.left + popoverWidth || rect.right > window.innerWidth - 100) {
-      const rightAlignedLeft = rect.right - popoverWidth
-      if (rightAlignedLeft >= 12) {
-        left = rightAlignedLeft
-      }
-    }
     if (left + popoverWidth > window.innerWidth - 12) {
       left = Math.max(12, window.innerWidth - popoverWidth - 12)
     }
@@ -142,14 +200,25 @@ export function TimePicker({
     if (disabled) return
     if (!isOpen) {
       // Initialize draft from current value when opening
-      setDraft(parseTimeTo12Hour(value))
+      let initial = parseTimeTo12Hour(value)
+      if (checkTimeDisabled(initial.hour12, initial.minute, initial.period, minTime, maxTime)) {
+        const validPeriod = ["AM", "PM"].find((p) => !isPeriodDisabled(p)) || initial.period
+        const validHour = HOURS.find((h) => !isHourDisabled(h, validPeriod)) || initial.hour12
+        const validMin =
+          MINUTES.find((m) => !checkTimeDisabled(validHour, m, validPeriod, minTime, maxTime)) || initial.minute
+        initial = { hour12: validHour, minute: validMin, period: validPeriod }
+      }
+      setDraft(initial)
       updatePosition()
     }
     setIsOpen((prev) => !prev)
   }
 
+  const isDraftDisabled = checkTimeDisabled(draft.hour12, draft.minute, draft.period, minTime, maxTime)
+
   // Confirm selection and commit changes on Done
   const handleDone = () => {
+    if (isDraftDisabled) return
     const final24 = formatTo24Hour(draft.hour12, draft.minute, draft.period)
     if (final24 !== value) {
       onChange?.(final24)
@@ -340,31 +409,32 @@ export function TimePicker({
               }
             `}</style>
 
-            {/* 3-Column Time Selector: Hours (46px) | Minutes (46px) | AM/PM (48px) */}
-            <div className="flex divide-x divide-border/60">
+            {/* 3-Column Time Selector: Hours | Minutes | AM/PM spanning full trigger field width */}
+            <div className="flex divide-x divide-border/60 w-full">
               {/* Hours Column */}
-              <div
-                style={{ width: "46px", minWidth: "46px", maxWidth: "46px" }}
-                className="shrink-0 flex flex-col min-w-0"
-              >
+              <div className="flex-1 min-w-0 flex flex-col">
                 <div className="text-[10px] uppercase font-bold text-muted-foreground/80 text-center py-1 bg-muted/20 border-b border-border/50 font-sans tracking-wide">
                   Hour
                 </div>
                 <div
                   ref={hourColRef}
-                  className="h-40 overflow-y-auto px-0.5 py-0.5 space-y-0.5 ultra-thin-scrollbar"
+                  className="h-40 overflow-y-auto px-1 py-0.5 space-y-0.5 ultra-thin-scrollbar"
                 >
                   {HOURS.map((h) => {
                     const isSelected = h === draft.hour12
+                    const isDisabled = isHourDisabled(h)
                     return (
                       <button
                         key={h}
                         type="button"
+                        disabled={isDisabled}
                         data-selected={isSelected}
                         onClick={() => handleSelectHour(h)}
                         className={cn(
                           "w-full py-1 px-0.5 rounded-md text-xs font-sans text-center font-medium tabular-nums transition-colors cursor-pointer",
-                          isSelected
+                          isDisabled
+                            ? "opacity-25 cursor-not-allowed pointer-events-none text-muted-foreground/50"
+                            : isSelected
                             ? "bg-primary text-primary-foreground font-bold shadow-xs"
                             : "hover:bg-accent hover:text-accent-foreground text-foreground/85"
                         )}
@@ -377,28 +447,29 @@ export function TimePicker({
               </div>
 
               {/* Minutes Column */}
-              <div
-                style={{ width: "46px", minWidth: "46px", maxWidth: "46px" }}
-                className="shrink-0 flex flex-col min-w-0"
-              >
+              <div className="flex-1 min-w-0 flex flex-col">
                 <div className="text-[10px] uppercase font-bold text-muted-foreground/80 text-center py-1 bg-muted/20 border-b border-border/50 font-sans tracking-wide">
                   Min
                 </div>
                 <div
                   ref={minColRef}
-                  className="h-40 overflow-y-auto px-0.5 py-0.5 space-y-0.5 ultra-thin-scrollbar"
+                  className="h-40 overflow-y-auto px-1 py-0.5 space-y-0.5 ultra-thin-scrollbar"
                 >
                   {MINUTES.map((m) => {
                     const isSelected = m === draft.minute
+                    const isDisabled = isMinuteDisabled(m)
                     return (
                       <button
                         key={m}
                         type="button"
+                        disabled={isDisabled}
                         data-selected={isSelected}
                         onClick={() => handleSelectMinute(m)}
                         className={cn(
                           "w-full py-1 px-0.5 rounded-md text-xs font-sans text-center font-medium tabular-nums transition-colors cursor-pointer",
-                          isSelected
+                          isDisabled
+                            ? "opacity-25 cursor-not-allowed pointer-events-none text-muted-foreground/50"
+                            : isSelected
                             ? "bg-primary text-primary-foreground font-bold shadow-xs"
                             : "hover:bg-accent hover:text-accent-foreground text-foreground/85"
                         )}
@@ -411,25 +482,26 @@ export function TimePicker({
               </div>
 
               {/* AM / PM Column */}
-              <div
-                style={{ width: "48px", minWidth: "48px", maxWidth: "48px" }}
-                className="shrink-0 flex flex-col min-w-0"
-              >
+              <div className="flex-1 min-w-0 flex flex-col">
                 <div className="text-[10px] uppercase font-bold text-muted-foreground/80 text-center py-1 bg-muted/20 border-b border-border/50 font-sans tracking-wide">
                   AM/PM
                 </div>
                 <div className="h-40 p-1 flex flex-col justify-center gap-1.5">
                   {PERIODS.map((p) => {
                     const isSelected = p === draft.period
+                    const isDisabled = isPeriodDisabled(p)
                     return (
                       <button
                         key={p}
                         type="button"
+                        disabled={isDisabled}
                         data-selected={isSelected}
                         onClick={() => handleSelectPeriod(p)}
                         className={cn(
                           "w-full py-2 px-0.5 rounded-md text-xs font-sans font-bold text-center transition-colors cursor-pointer",
-                          isSelected
+                          isDisabled
+                            ? "opacity-25 cursor-not-allowed pointer-events-none text-muted-foreground/50"
+                            : isSelected
                             ? "bg-primary text-primary-foreground shadow-xs"
                             : "hover:bg-accent hover:text-accent-foreground text-foreground/85"
                         )}
@@ -446,8 +518,12 @@ export function TimePicker({
             <div className="p-1.5 border-t border-border/80 bg-muted/20">
               <button
                 type="button"
+                disabled={isDraftDisabled}
                 onClick={handleDone}
-                className="w-full h-7 text-xs font-sans font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+                className={cn(
+                  "w-full h-7 text-xs font-sans font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-xs",
+                  isDraftDisabled && "opacity-40 cursor-not-allowed pointer-events-none"
+                )}
               >
                 <Check className="size-3.5" />
                 <span>Done</span>

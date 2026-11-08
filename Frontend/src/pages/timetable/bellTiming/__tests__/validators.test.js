@@ -4,6 +4,7 @@ import {
   validateSchedule,
   validateSetupDayInvariants,
   validateAssignments,
+  formatPeriodShortLabel,
   MIN_PERIOD_DURATION_MINUTES,
   MAX_PERIOD_DURATION_MINUTES,
   PERIOD_TYPES,
@@ -175,6 +176,43 @@ describe("validators", () => {
       expect(res.isValid).toBe(false)
       expect(res.orphanSections.length).toBe(1)
       expect(res.orphanSections[0].id).toBe("sec-2")
+    })
+  })
+
+  describe("formatPeriodShortLabel", () => {
+    it("formats standard periods with digits: P1, P2, R1, A1, E1", () => {
+      expect(formatPeriodShortLabel({ type: PERIOD_TYPES.CLASS, period_number: 1 })).toBe("P1")
+      expect(formatPeriodShortLabel({ type: PERIOD_TYPES.CLASS, label: "Period 2" })).toBe("P2")
+      expect(formatPeriodShortLabel({ type: PERIOD_TYPES.RECESS, label: "Recess" })).toBe("R1")
+      expect(formatPeriodShortLabel({ type: PERIOD_TYPES.ASSEMBLY, label: "Assembly" })).toBe("A1")
+      expect(formatPeriodShortLabel({ type: PERIOD_TYPES.ACTIVITY, label: "Extra-curricular" })).toBe("E1")
+    })
+
+    it("formats sequential digits across multiple non-class periods when allPeriods is supplied", () => {
+      const pR1 = { id: "1", type: PERIOD_TYPES.RECESS, label: "Short Break" }
+      const pR2 = { id: "2", type: PERIOD_TYPES.RECESS, label: "Lunch Break" }
+      const pA1 = { id: "3", type: PERIOD_TYPES.ASSEMBLY, label: "Morning Assembly" }
+      const pE1 = { id: "4", type: PERIOD_TYPES.ACTIVITY, label: "Sports" }
+      const pE2 = { id: "5", type: PERIOD_TYPES.ACTIVITY, label: "Music" }
+      const all = [pA1, pR1, pR2, pE1, pE2]
+
+      expect(formatPeriodShortLabel(pR1, all)).toBe("R1")
+      expect(formatPeriodShortLabel(pR2, all)).toBe("R2")
+      expect(formatPeriodShortLabel(pA1, all)).toBe("A1")
+      expect(formatPeriodShortLabel(pE1, all)).toBe("E1")
+      expect(formatPeriodShortLabel(pE2, all)).toBe("E2")
+    })
+
+    it("returns existing short codes directly: E1, E2, A1, R1, P4", () => {
+      expect(formatPeriodShortLabel({ label: "E1" })).toBe("E1")
+      expect(formatPeriodShortLabel({ label: "E2" })).toBe("E2")
+      expect(formatPeriodShortLabel({ label: "A1" })).toBe("A1")
+      expect(formatPeriodShortLabel({ label: "R1" })).toBe("R1")
+      expect(formatPeriodShortLabel({ label: "P5" })).toBe("P5")
+    })
+
+    it("preserves explicit custom labels when hasCustomLabel is true", () => {
+      expect(formatPeriodShortLabel({ label: "Homeroom", hasCustomLabel: true, type: PERIOD_TYPES.CLASS })).toBe("Homeroom")
     })
   })
 })

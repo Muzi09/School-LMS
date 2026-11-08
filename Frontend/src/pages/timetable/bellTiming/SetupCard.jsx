@@ -1,6 +1,5 @@
 import React, { useState } from "react"
 import {
-  Clock,
   CheckCircle2,
   Copy,
   Trash2,
@@ -63,7 +62,7 @@ export function SetupCard({
     setIsEditingName(false)
   }
 
-  const canDelete = assignedCount === 0 && !isOnlySetup
+  const canDelete = !isOnlySetup
 
   return (
     <div
@@ -159,30 +158,28 @@ export function SetupCard({
               <span>Duplicate</span>
             </Button>
 
-            {/* Delete Action (only enabled when 0 classes) */}
+            {/* Delete Action (enabled when more than one setup exists) */}
             <span
               title={
-                !canDelete
-                  ? isOnlySetup
-                    ? "Cannot delete the only bell setup. A timetable needs at least one setup."
-                    : `Cannot delete setup with ${assignedCount} assigned classes. Move classes to another setup first.`
+                isOnlySetup
+                  ? "Cannot delete the only bell setup. A timetable needs at least one setup."
                   : `Delete ${setup.name}`
               }
             >
               <Button
                 type="button"
-                variant="ghost"
                 size="xs"
-                disabled={!canDelete}
+                isDisabled={isOnlySetup}
+                disabled={isOnlySetup}
                 onClick={() => onDeleteSetup(setup.id)}
                 className={cn(
-                  "h-8 px-2.5 text-xs font-semibold gap-1.5 text-destructive hover:bg-destructive/10",
-                  !canDelete && "opacity-40 cursor-not-allowed"
+                  "h-8 px-2.5 text-xs font-semibold gap-1.5 shadow-2xs bg-destructive text-white hover:bg-destructive/90",
+                  isOnlySetup && "opacity-40 cursor-not-allowed pointer-events-none"
                 )}
                 aria-label={`Delete ${setup.name}`}
               >
-                <Trash2 className="size-3.5" />
-                <span className="hidden sm:inline">Delete</span>
+                <Trash2 className="size-3.5 text-white" />
+                <span className="hidden sm:inline text-white">Delete</span>
               </Button>
             </span>
           </div>
@@ -190,21 +187,7 @@ export function SetupCard({
       </div>
 
       {/* 2. BELL TIMINGS SECTION */}
-      <div className="p-4 sm:p-5 space-y-6 border-b border-border/60">
-        <div className="flex items-center gap-2">
-          <div className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold">
-            <Clock className="size-4" />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-foreground">
-              Bell Timings
-            </span>
-            <span className="text-xs text-muted-foreground font-medium">
-              ({schedules.length} {schedules.length === 1 ? "schedule" : "schedules"})
-            </span>
-          </div>
-        </div>
-
+      <div className="p-4 sm:p-5 border-b border-border/60">
         {/* All Schedules with their Folder Tabs & Timelines */}
         <div className="space-y-6">
           {schedules.map((schedule, sIdx) => {
@@ -243,8 +226,8 @@ export function SetupCard({
       <div className="p-4 sm:p-5 space-y-4 bg-muted/5">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <p className="text-xs font-semibold text-foreground">
-            The above bell timings are applicable to these classes:
+          <p className="text-sm font-semibold text-foreground">
+            The above bell timings are applicable to these classes
           </p>
         </div>
 
