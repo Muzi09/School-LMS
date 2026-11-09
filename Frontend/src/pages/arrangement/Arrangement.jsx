@@ -684,13 +684,6 @@ export function Arrangement() {
           />
         </div>
       )}
-          records={SAMPLE_ARCHIVED_RECORDS}
-          onOpenPrintSlipForDate={(dateStr) => {
-            setSelectedDate(dateStr)
-            setIsPrintSlipOpen(true)
-          }}
-        />
-      )}
 
       {/* Arrange Substitute Modal (Opens upon clicking + Arrange on any period cell) */}
       <ArrangeSubstituteModal
