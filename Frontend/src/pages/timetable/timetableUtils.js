@@ -64,6 +64,102 @@ export function formatTime12(timeStr) {
 }
 
 /**
+ * Ensures any time ranges or timings formatted as HH:MM or H:MM in a string
+ * are displayed in 12-hour format with AM/PM (e.g. "09:15 - 10:00" -> "09:15 AM - 10:00 AM").
+ */
+export function formatTimingsInText(text) {
+  if (!text || typeof text !== "string") return text
+  return text.replace(
+    /\b(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(AM|PM))?\b/gi,
+    (match, h, m, existingAmpm) => {
+      if (existingAmpm) {
+        const hour = parseInt(h, 10)
+        const hour12 = hour % 12 || 12
+        return `${String(hour12).padStart(2, "0")}:${m} ${existingAmpm.toUpperCase()}`
+      }
+      const hour = parseInt(h, 10)
+      const period = hour >= 12 ? "PM" : "AM"
+      const hour12 = hour % 12 || 12
+      return `${String(hour12).padStart(2, "0")}:${m} ${period}`
+    }
+  )
+}
+
+const DAY_SHORT = {
+  MONDAY: "Mon",
+  TUESDAY: "Tue",
+  WEDNESDAY: "Wed",
+  THURSDAY: "Thu",
+  FRIDAY: "Fri",
+  SATURDAY: "Sat",
+  SUNDAY: "Sun",
+}
+
+const DAY_ORDER = [
+  "MONDAY",
+  "TUESDAY",
+  "WEDNESDAY",
+  "THURSDAY",
+  "FRIDAY",
+  "SATURDAY",
+  "SUNDAY",
+]
+
+/**
+ * Returns formatted title & subtitle for the Apply Scope "Same period" card
+ * matching the split days schedule of the selected cell.
+ */
+export function formatScopeDaysLabel(days) {
+  if (!days || days.length === 0) {
+    return {
+      title: "Same period (Mon–Fri)",
+      subtitle: "All 5 weekdays",
+      daysRange: "Mon–Fri",
+    }
+  }
+
+  const sorted = [...days].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
+
+  if (sorted.length === 1) {
+    const name = DAY_SHORT[sorted[0]] || sorted[0]
+    return {
+      title: `Same period (${name})`,
+      subtitle: `1 day in split schedule`,
+      daysRange: name,
+    }
+  }
+
+  const indices = sorted.map((d) => DAY_ORDER.indexOf(d))
+  const isConsecutive = indices.every((idx, i) => i === 0 || idx === indices[i - 1] + 1)
+
+  const first = DAY_SHORT[sorted[0]] || sorted[0]
+  const last = DAY_SHORT[sorted[sorted.length - 1]] || sorted[sorted.length - 1]
+
+  if (isConsecutive) {
+    const daysRange = `${first}–${last}`
+    if (sorted.length === 5 && sorted[0] === "MONDAY" && sorted[4] === "FRIDAY") {
+      return {
+        title: "Same period (Mon–Fri)",
+        subtitle: "All 5 weekdays",
+        daysRange,
+      }
+    }
+    return {
+      title: `Same period (${daysRange})`,
+      subtitle: `${first} to ${last} (${sorted.length} days)`,
+      daysRange,
+    }
+  }
+
+  const daysRange = sorted.map((d) => DAY_SHORT[d] || d).join(", ")
+  return {
+    title: `Same period (${daysRange})`,
+    subtitle: `${sorted.length} days in split schedule`,
+    daysRange,
+  }
+}
+
+/**
  * Calculates readable duration between two time strings, e.g. "45m" or "1h 15m".
  */
 export function calculateDuration(startTime, endTime) {

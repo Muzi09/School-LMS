@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   ExternalLink,
   X,
+  ChevronsUpDown,
 } from "lucide-react"
 import {
   Dialog,
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { getSubjectTheme } from "../subjectTheme"
+import { formatTimingsInText, formatScopeDaysLabel } from "../timetableUtils"
 import { useCheckConflict } from "@/hooks/useTimetable"
 import { cn } from "@/lib/utils"
 
@@ -36,6 +38,18 @@ function formatTime12h(timeStr) {
   const hour12 = h % 12 === 0 ? 12 : h % 12
   const mins = String(m || 0).padStart(2, "0")
   return `${hour12}:${mins} ${ampm}`
+}
+
+function formatPeriodDisplayLabel(period) {
+  if (!period) return "Period"
+  if (period.label) {
+    return period.label.replace(/\bactivit(y|ies)\b/gi, "Extra-curricular")
+  }
+  const pType = (period.type || period.period_type || "").toUpperCase()
+  if (pType === "ACTIVITY" || pType === "EXTRA_CURRICULAR") {
+    return "Extra-curricular"
+  }
+  return period.period_number != null ? `Period ${period.period_number}` : "Period"
 }
 
 export function SlotAssignmentDialog({
@@ -60,8 +74,21 @@ export function SlotAssignmentDialog({
 
   const dropdownRef = useRef(null)
   const inputRef = useRef(null)
+  const selectedItemRef = useRef(null)
 
   const checkConflictMutation = useCheckConflict()
+
+  // Derive split schedule days for the second option
+  const targetDays = useMemo(() => {
+    if (cellData?.scheduleDays && Array.isArray(cellData.scheduleDays) && cellData.scheduleDays.length > 0) {
+      return cellData.scheduleDays
+    }
+    return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+  }, [cellData?.scheduleDays])
+
+  const scopeLabelInfo = useMemo(() => {
+    return formatScopeDaysLabel(targetDays)
+  }, [targetDays])
 
   // Initialize selected values from cellData
   useEffect(() => {
@@ -86,6 +113,14 @@ export function SlotAssignmentDialog({
     if (!selectedSubjectId) return null
     return availableSubjects.find((s) => s.id === selectedSubjectId) || null
   }, [availableSubjects, selectedSubjectId])
+
+  const selectedSubjectName = useMemo(() => {
+    if (matchedSubject?.name) return matchedSubject.name
+    if (cellData?.currentEntry?.subject?.id === selectedSubjectId) {
+      return cellData.currentEntry.subject.name || ""
+    }
+    return ""
+  }, [matchedSubject, cellData, selectedSubjectId])
 
   const assignedTeacher = useMemo(() => {
     if (matchedSubject?.teacher) return matchedSubject.teacher
@@ -119,7 +154,7 @@ export function SlotAssignmentDialog({
         })
         if (isMounted) {
           if (res.has_conflict) {
-            setConflictWarning(res.message)
+            setConflictWarning(formatTimingsInText(res.message))
           } else {
             setConflictWarning(null)
           }
@@ -154,18 +189,55 @@ export function SlotAssignmentDialog({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [isDropdownOpen])
 
+  // Scroll to selected item when dropdown opens
+  useEffect(() => {
+    if (isDropdownOpen && selectedSubjectId && dropdownRef.current && selectedItemRef.current) {
+      const container = dropdownRef.current
+      const item = selectedItemRef.current
+      const itemTop = item.offsetTop
+      const itemBottom = itemTop + item.offsetHeight
+      const containerTop = container.scrollTop
+      const containerBottom = containerTop + container.clientHeight
+
+      if (itemTop < containerTop) {
+        container.scrollTop = itemTop
+      } else if (itemBottom > containerBottom) {
+        container.scrollTop = itemBottom - container.clientHeight
+      }
+    }
+  }, [isDropdownOpen, selectedSubjectId])
+
   if (!isOpen || !cellData) return null
 
   const { section, day, period, currentEntry } = cellData
 
-  const filteredSubjects = availableSubjects.filter((s) => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (
-      s.name?.toLowerCase().includes(q) ||
-      s.code?.toLowerCase().includes(q)
+  const filteredSubjects = useMemo(() => {
+    // If a subject is currently selected and the input text matches its name,
+    // show the full list of available subjects so the user can easily select another
+    const isShowingSelectedSubjectName =
+      Boolean(selectedSubjectId) &&
+      Boolean(selectedSubjectName) &&
+      search.trim().toLowerCase() === selectedSubjectName.trim().toLowerCase()
+
+    if (!search.trim() || isShowingSelectedSubjectName) {
+      return availableSubjects
+    }
+
+    const q = search.toLowerCase().trim()
+    return availableSubjects.filter(
+      (s) =>
+        s.name?.toLowerCase().includes(q) ||
+        s.code?.toLowerCase().includes(q)
     )
-  })
+  }, [availableSubjects, search, selectedSubjectId, selectedSubjectName])
+
+  const handleOpenDropdown = () => {
+    setIsDropdownOpen(true)
+    if (selectedSubjectId) {
+      const idx = availableSubjects.findIndex((s) => s.id === selectedSubjectId)
+      if (idx >= 0) setHighlightedIndex(idx)
+    }
+  }
 
   const handleSelectSubject = (sub) => {
     setSelectedSubjectId(sub.id)
@@ -189,8 +261,7 @@ export function SlotAssignmentDialog({
     if (e.key === "ArrowDown") {
       e.preventDefault()
       if (!isDropdownOpen) {
-        setIsDropdownOpen(true)
-        setHighlightedIndex(0)
+        handleOpenDropdown()
         return
       }
       setHighlightedIndex((prev) =>
@@ -202,7 +273,7 @@ export function SlotAssignmentDialog({
     if (e.key === "ArrowUp") {
       e.preventDefault()
       if (!isDropdownOpen) {
-        setIsDropdownOpen(true)
+        handleOpenDropdown()
         return
       }
       setHighlightedIndex((prev) =>
@@ -270,6 +341,7 @@ export function SlotAssignmentDialog({
           subject_id: selectedSubjectId,
           teacher_user_id: null,
           scope: selectedScope || "SLOT",
+          apply_days: selectedScope === "WEEKDAYS" ? targetDays : [day],
           overwrite: true,
           silent: true,
         })
@@ -300,13 +372,14 @@ export function SlotAssignmentDialog({
       subject_id: selectedSubjectId,
       teacher_user_id: assignedTeacher?.id || null,
       scope: selectedScope,
+      apply_days: selectedScope === "WEEKDAYS" ? targetDays : [day],
       overwrite: true,
     })
     onClose()
   }
 
   const handleClear = () => {
-    if (currentEntry) {
+    if (currentEntry && selectedScope === "SLOT") {
       onUnassign(currentEntry.id)
     } else {
       onAssign({
@@ -316,6 +389,7 @@ export function SlotAssignmentDialog({
         period_id: period.id,
         subject_id: null,
         scope: selectedScope,
+        apply_days: selectedScope === "WEEKDAYS" ? targetDays : [day],
       })
     }
     onClose()
@@ -327,20 +401,20 @@ export function SlotAssignmentDialog({
       onOpenChange={(open) => !open && onClose()}
       className="sm:max-w-lg"
     >
-      <DialogHeader className="space-y-1">
+      <DialogHeader>
         {/* First Row: Bigger Class and Section Text */}
         <DialogTitle className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
           {section.className || section.class_name} - {section.name}
         </DialogTitle>
 
         {/* Second Row: Day, Period number and formatted time with AM/PM */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
           <span className="font-semibold text-foreground capitalize">
             {day?.toLowerCase()}
           </span>
           <span>•</span>
           <span className="font-semibold text-foreground">
-            {period.label || (period.period_number != null ? `Period ${period.period_number}` : "Period")}
+            {formatPeriodDisplayLabel(period)}
           </span>
           <span>•</span>
           <span className="inline-flex items-center gap-1 font-medium text-foreground">
@@ -407,32 +481,70 @@ export function SlotAssignmentDialog({
                 }
               }}
               onFocus={() => {
-                setIsDropdownOpen(true)
+                handleOpenDropdown()
+                if (selectedSubjectId) {
+                  setTimeout(() => {
+                    inputRef.current?.select()
+                  }, 0)
+                }
+              }}
+              onClick={() => {
+                if (!isDropdownOpen) {
+                  handleOpenDropdown()
+                  if (selectedSubjectId) {
+                    inputRef.current?.select()
+                  }
+                }
               }}
               onKeyDown={handleKeyDown}
               placeholder="Search subject"
               className={cn(
-                "pl-8.5 pr-8 h-9 text-xs rounded-xl bg-background",
-                isDropdownOpen && "ring-2 ring-primary/40 border-primary"
+                "w-full h-9 rounded-xl border border-transparent bg-input/50 pl-8.5 pr-14 text-xs text-foreground transition-[color,box-shadow] outline-none",
+                "focus:border-ring focus:ring-3 focus:ring-ring/30 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30",
+                isDropdownOpen && "border-ring ring-3 ring-ring/30"
               )}
             />
-            {selectedSubjectId ? (
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {selectedSubjectId ? (
+                <button
+                  type="button"
+                  onClick={handleClearSubject}
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
+                  title="Clear selected subject"
+                >
+                  <X className="size-3.5" />
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={handleClearSubject}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground size-5 rounded flex items-center justify-center cursor-pointer"
-                title="Clear selected subject"
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (isDropdownOpen) {
+                    setIsDropdownOpen(false)
+                  } else {
+                    handleOpenDropdown()
+                    if (selectedSubjectId) {
+                      setTimeout(() => {
+                        inputRef.current?.select()
+                      }, 0)
+                    }
+                  }
+                }}
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
+                title="Toggle subjects list"
               >
-                <X className="size-3.5" />
+                <ChevronsUpDown className="size-3.5 opacity-60 shrink-0" />
               </button>
-            ) : null}
+            </div>
           </div>
 
           {/* Autocomplete Dropdown List */}
           {isDropdownOpen && (
             <div
               ref={dropdownRef}
-              className="absolute z-50 left-0 right-0 top-full mt-1.5 max-h-52 overflow-y-auto rounded-xl border border-border bg-popover text-popover-foreground shadow-xl p-1 animate-in fade-in-0 zoom-in-95 duration-100"
+              className="absolute z-50 left-0 right-0 top-full mt-1.5 max-h-52 overflow-y-auto rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl p-1 animate-in fade-in-0 zoom-in-95 duration-100"
             >
               {filteredSubjects.length === 0 ? (
                 <div className="py-5 text-center text-xs text-muted-foreground">
@@ -448,6 +560,7 @@ export function SlotAssignmentDialog({
                   return (
                     <div
                       key={sub.id}
+                      ref={isSelected ? selectedItemRef : null}
                       role="option"
                       aria-selected={isSelected}
                       onClick={() => handleSelectSubject(sub)}
@@ -455,10 +568,10 @@ export function SlotAssignmentDialog({
                       className={cn(
                         "w-full px-3 py-2 rounded-lg flex items-center justify-between text-xs transition-colors cursor-pointer",
                         isSelected
-                          ? "bg-primary/15 text-primary font-bold shadow-2xs"
+                          ? "bg-primary/10 text-primary font-semibold shadow-2xs"
                           : isHighlighted
-                          ? "bg-muted/80 text-foreground"
-                          : "hover:bg-muted/50 text-foreground"
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent hover:text-accent-foreground text-foreground"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -567,7 +680,7 @@ export function SlotAssignmentDialog({
               <span>Teacher Conflict Detected</span>
             </div>
             <p className="text-[11px] leading-relaxed opacity-90 pl-6">
-              {conflictWarning}
+              {formatTimingsInText(conflictWarning)}
             </p>
           </div>
         )}
@@ -604,9 +717,9 @@ export function SlotAssignmentDialog({
                   : "border-border/80 hover:bg-muted/40 text-foreground"
               )}
             >
-              <span>Same period (Mon–Fri)</span>
+              <span>{scopeLabelInfo.title}</span>
               <span className="text-[10px] text-muted-foreground block font-normal mt-0.5">
-                All 5 weekdays
+                {scopeLabelInfo.subtitle}
               </span>
             </button>
           </div>

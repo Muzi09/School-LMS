@@ -23,7 +23,7 @@ export function AppLayout() {
             </div>
           ) : (
             <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-muted/20 [scrollbar-gutter:stable]">
-              <div className="mx-auto max-w-7xl">
+              <div className="w-full">
                 <Outlet />
               </div>
             </main>

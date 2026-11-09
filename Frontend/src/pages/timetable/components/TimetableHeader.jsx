@@ -150,12 +150,14 @@ export function TimetableHeader({
               isActive={isAssignMode}
               unassignedCount={assignBarProps?.unassignedCount || 0}
               conflictsCount={assignBarProps?.conflictsCount || 0}
+              completionPct={assignBarProps?.completionPct ?? 0}
               canUndo={assignBarProps?.canUndo || false}
               canRedo={assignBarProps?.canRedo || false}
               onUndo={assignBarProps?.onUndo}
               onRedo={assignBarProps?.onRedo}
               onExitMode={onToggleAssignMode}
               issuesList={assignBarProps?.issuesList || []}
+              onResolveConflict={assignBarProps?.onResolveConflict}
             />
           </div>
         </div>

@@ -170,7 +170,7 @@ export function SubjectsPanel({
                         : "text-emerald-600 dark:text-emerald-400"
                     }`}
                   >
-                    {isActivity ? "Activity" : "Academic"}
+                    {isActivity ? "Extra-curricular" : "Academic"}
                   </span>
                   <span className="text-muted-foreground font-mono">
                     {assignedCount} / {classes.length} classes

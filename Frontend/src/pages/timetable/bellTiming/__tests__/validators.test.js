@@ -5,6 +5,8 @@ import {
   validateSetupDayInvariants,
   validateAssignments,
   formatPeriodShortLabel,
+  getTimetablePeriodLabel,
+  isNonTeachingPeriod,
   MIN_PERIOD_DURATION_MINUTES,
   MAX_PERIOD_DURATION_MINUTES,
   PERIOD_TYPES,
@@ -213,6 +215,56 @@ describe("validators", () => {
 
     it("preserves explicit custom labels when hasCustomLabel is true", () => {
       expect(formatPeriodShortLabel({ label: "Homeroom", hasCustomLabel: true, type: PERIOD_TYPES.CLASS })).toBe("Homeroom")
+    })
+  })
+
+  describe("getTimetablePeriodLabel", () => {
+    it("displays full text for Recess, Activity / Extra-curricular, and Assembly instead of R1, E1, A1", () => {
+      expect(getTimetablePeriodLabel({ type: PERIOD_TYPES.RECESS, label: "R1" })).toBe("Recess")
+      expect(getTimetablePeriodLabel({ type: PERIOD_TYPES.ACTIVITY, label: "E1" })).toBe("Extra-curricular")
+      expect(getTimetablePeriodLabel({ type: PERIOD_TYPES.ASSEMBLY, label: "A1" })).toBe("Assembly")
+      expect(getTimetablePeriodLabel({ is_break: true, label: "Recess" })).toBe("Recess")
+    })
+
+    it("displays numbered full text when multiple non-class periods exist", () => {
+      const pR1 = { id: "1", type: PERIOD_TYPES.RECESS, label: "R1" }
+      const pR2 = { id: "2", type: PERIOD_TYPES.RECESS, label: "R2" }
+      const pE1 = { id: "3", type: PERIOD_TYPES.ACTIVITY, label: "E1" }
+      const pE2 = { id: "4", type: PERIOD_TYPES.ACTIVITY, label: "E2" }
+      const all = [pR1, pR2, pE1, pE2]
+
+      expect(getTimetablePeriodLabel(pR1, all)).toBe("Recess 1")
+      expect(getTimetablePeriodLabel(pR2, all)).toBe("Recess 2")
+      expect(getTimetablePeriodLabel(pE1, all)).toBe("Extra-curricular 1")
+      expect(getTimetablePeriodLabel(pE2, all)).toBe("Extra-curricular 2")
+    })
+
+    it("formats class periods with standard P1, P2", () => {
+      expect(getTimetablePeriodLabel({ type: PERIOD_TYPES.CLASS, period_number: 1, label: "P1" })).toBe("P1")
+      expect(getTimetablePeriodLabel({ type: PERIOD_TYPES.CLASS, period_number: 2, label: "P2" })).toBe("P2")
+    })
+  })
+
+  describe("isNonTeachingPeriod", () => {
+    it("identifies Recess, Break, Assembly, and Extra-curricular as non-teaching slots", () => {
+      expect(isNonTeachingPeriod({ is_break: true })).toBe(true)
+      expect(isNonTeachingPeriod({ type: "RECESS" })).toBe(true)
+      expect(isNonTeachingPeriod({ period_type: "RECESS" })).toBe(true)
+      expect(isNonTeachingPeriod({ type: "ASSEMBLY" })).toBe(true)
+      expect(isNonTeachingPeriod({ period_type: "ASSEMBLY" })).toBe(true)
+      expect(isNonTeachingPeriod({ label: "Assembly" })).toBe(true)
+      expect(isNonTeachingPeriod({ label: "A1" })).toBe(true)
+      expect(isNonTeachingPeriod({ type: "ACTIVITY" })).toBe(true)
+      expect(isNonTeachingPeriod({ type: "EXTRA_CURRICULAR" })).toBe(true)
+      expect(isNonTeachingPeriod({ label: "Extra-curricular" })).toBe(true)
+      expect(isNonTeachingPeriod({ label: "E1" })).toBe(true)
+    })
+
+    it("identifies Class periods as teaching slots", () => {
+      expect(isNonTeachingPeriod({ type: "CLASS", period_number: 1, is_break: false })).toBe(false)
+      expect(isNonTeachingPeriod({ type: "CLASS", label: "Period 1", is_break: false })).toBe(false)
+      expect(isNonTeachingPeriod({ period_type: "CLASS", label: "P1", is_break: false })).toBe(false)
+      expect(isNonTeachingPeriod(null)).toBe(false)
     })
   })
 })

@@ -201,7 +201,7 @@ describe("BellScheduleSetupModal Orchestrator Integration", () => {
     fireEvent.click(chipA)
 
     expect(screen.getByText("Move Schedule")).toBeDefined()
-    expect(screen.getByText(/Send Class 1 - A.*\(1 class\) to:/i)).toBeDefined()
+    expect(screen.getByText(/Send Class 1 - A.*\(1 class\) to/i)).toBeDefined()
   })
 
   it("read-only mode hides edit controls, '+ Create Setup' and 'Add Setup' buttons", () => {

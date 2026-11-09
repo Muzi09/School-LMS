@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useCallback } from "react"
 import {
   CalendarDays,
   Layers,
-  Sparkles,
   Search,
   AlertTriangle,
   Clock,
@@ -20,13 +19,15 @@ import { ClassWiseCard } from "./ClassWiseCard"
 import { JumpToRail } from "./JumpToRail"
 import { AssignModeBar } from "./AssignModeBar"
 import { SlotAssignmentDialog } from "./SlotAssignmentDialog"
+import { TimetableTooltip } from "./TimetableTooltip"
 import {
   useBulkAssignSlot,
   useCreateTimetableEntry,
   useDeleteTimetableEntry,
 } from "@/hooks/useTimetable"
 import { parseTimetableQuery, sectionMatchesQuery } from "../searchUtils"
-import { getIsMac } from "../timetableUtils"
+import { isNonTeachingPeriod } from "../bellTiming/validators"
+import { getIsMac, formatTime12 } from "../timetableUtils"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -86,7 +87,10 @@ export function ClassWiseGridView({
   const setupMap = useMemo(() => {
     const map = new Map()
     for (const s of setups) {
-      map.set(s.id, s)
+      if (s.id) {
+        map.set(s.id, s)
+        map.set(String(s.id), s)
+      }
     }
     return map
   }, [setups])
@@ -96,11 +100,58 @@ export function ClassWiseGridView({
     const map = new Map()
     for (const s of setups) {
       for (const p of s.periods || []) {
-        map.set(p.id, p)
+        if (p.id) {
+          map.set(p.id, p)
+          map.set(String(p.id), p)
+        }
       }
     }
     return map
   }, [setups])
+
+  // Helper to determine the split days group for a specific section and day
+  const getSplitDaysForSectionAndDay = useCallback(
+    (sec, day) => {
+      if (!sec) return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+      const secSetupId = sec.setup_id || sec.setupId
+      let setup = secSetupId ? setupMap.get(secSetupId) || setupMap.get(String(secSetupId)) : null
+      if (!setup) {
+        setup = setups.find((s) =>
+          (s.assigned_section_ids || []).some(
+            (id) => String(id) === String(sec.id)
+          )
+        )
+      }
+      if (!setup) {
+        setup = setups?.[0]
+      }
+      if (!setup) return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+
+      const appDays = (setup.applicable_days || [
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+      ]).map((d) => String(d).toUpperCase())
+      const dayUpper = day ? String(day).toUpperCase() : ""
+
+      if (setup.schedules && setup.schedules.length > 0) {
+        const matchingSched = setup.schedules.find((s) =>
+          (s.days || []).map((d) => String(d).toUpperCase()).includes(dayUpper)
+        )
+        if (matchingSched && matchingSched.days && matchingSched.days.length > 0) {
+          const matched = matchingSched.days.map((d) => String(d).toUpperCase())
+          const filtered = matched.filter((d) => appDays.includes(d))
+          return filtered.length > 0 ? filtered : matched
+        }
+      }
+
+      if (dayUpper === "SATURDAY") return ["SATURDAY"]
+      return appDays.filter((d) => d !== "SATURDAY")
+    },
+    [setupMap, setups]
+  )
 
   // Filter wings according to selectedWingId (when actively searching, search across all wings)
   const activeWings = useMemo(() => {
@@ -114,57 +165,6 @@ export function ClassWiseGridView({
     const single = wings.filter((w) => w.id === selectedWingId)
     return single.length > 0 ? single : wings
   }, [wings, selectedWingId, searchQuery])
-
-  // Real-time teacher conflict detection
-  const conflictMap = useMemo(() => {
-    const conflicts = {}
-    const teacherDayMap = new Map() // key: `${teacher_user_id}_${day_of_week}` -> array of entries
-
-    for (const e of entries) {
-      if (!e.teacher?.id) continue
-      const key = `${e.teacher.id}_${e.day_of_week}`
-      if (!teacherDayMap.has(key)) {
-        teacherDayMap.set(key, [])
-      }
-      teacherDayMap.get(key).push(e)
-    }
-
-    for (const [key, tEntries] of teacherDayMap.entries()) {
-      if (tEntries.length < 2) continue
-
-      for (let i = 0; i < tEntries.length; i++) {
-        for (let j = i + 1; j < tEntries.length; j++) {
-          const e1 = tEntries[i]
-          const e2 = tEntries[j]
-          const p1 = periodMap.get(e1.period_id)
-          const p2 = periodMap.get(e2.period_id)
-
-          if (p1 && p2 && p1.start_time && p1.end_time && p2.start_time && p2.end_time) {
-            // Overlapping time interval condition: max(start1, start2) < min(end1, end2)
-            if (p1.start_time < p2.end_time && p2.start_time < p1.end_time) {
-              const msg = `Conflict: Double-booked with Section ${e2.section_id?.slice?.(0, 4) || ""} (${p2.start_time} - ${p2.end_time})`
-              conflicts[e1.id] = msg
-              conflicts[e2.id] = `Conflict: Double-booked with Section ${e1.section_id?.slice?.(0, 4) || ""} (${p1.start_time} - ${p1.end_time})`
-            }
-          }
-        }
-      }
-    }
-
-    return conflicts
-  }, [entries, periodMap])
-
-  // Group entries by section
-  const entriesBySection = useMemo(() => {
-    const map = new Map()
-    for (const e of entries) {
-      if (!map.has(e.section_id)) {
-        map.set(e.section_id, [])
-      }
-      map.get(e.section_id).push(e)
-    }
-    return map
-  }, [entries])
 
   // Flattened sections for search, jumping, and keyboard navigation
   const allFlattenedSections = useMemo(() => {
@@ -184,6 +184,66 @@ export function ClassWiseGridView({
     }
     return list
   }, [activeWings])
+
+  // Group entries by section
+  const entriesBySection = useMemo(() => {
+    const map = new Map()
+    for (const e of entries) {
+      if (!map.has(e.section_id)) {
+        map.set(e.section_id, [])
+      }
+      map.get(e.section_id).push(e)
+    }
+    return map
+  }, [entries])
+
+  // Real-time teacher conflict detection
+  const conflictMap = useMemo(() => {
+    const conflicts = {}
+    const teacherDayMap = new Map() // key: `${teacher_user_id}_${day_of_week}` -> array of entries
+
+    for (const e of entries) {
+      if (!e.teacher?.id) continue
+      const key = `${e.teacher.id}_${e.day_of_week}`
+      if (!teacherDayMap.has(key)) {
+        teacherDayMap.set(key, [])
+      }
+      teacherDayMap.get(key).push(e)
+    }
+
+    const secLookup = new Map()
+    for (const s of allFlattenedSections) {
+      secLookup.set(s.id, `${s.class_name || ""} ${s.name || ""}`.trim())
+    }
+
+    for (const [key, tEntries] of teacherDayMap.entries()) {
+      if (tEntries.length < 2) continue
+
+      for (let i = 0; i < tEntries.length; i++) {
+        for (let j = i + 1; j < tEntries.length; j++) {
+          const e1 = tEntries[i]
+          const e2 = tEntries[j]
+          const p1 = periodMap.get(e1.period_id)
+          const p2 = periodMap.get(e2.period_id)
+
+          if (p1 && p2 && p1.start_time && p1.end_time && p2.start_time && p2.end_time) {
+            // Overlapping time interval condition: max(start1, start2) < min(end1, end2)
+            if (p1.start_time < p2.end_time && p2.start_time < p1.end_time) {
+              const sec1Name = secLookup.get(e1.section_id) || `Section ${e1.section_id?.slice?.(0, 4) || ""}`
+              const sec2Name = secLookup.get(e2.section_id) || `Section ${e2.section_id?.slice?.(0, 4) || ""}`
+              const t1Fmt = `${formatTime12(p1.start_time)} - ${formatTime12(p1.end_time)}`
+              const t2Fmt = `${formatTime12(p2.start_time)} - ${formatTime12(p2.end_time)}`
+
+              conflicts[e1.id] = `Conflict: Double-booked with ${sec2Name} (${t2Fmt})`
+              conflicts[e2.id] = `Conflict: Double-booked with ${sec1Name} (${t1Fmt})`
+            }
+          }
+        }
+      }
+    }
+
+    return conflicts
+  }, [entries, periodMap, allFlattenedSections])
 
   // Filter classes & sections based on search query
   const filteredWings = useMemo(() => {
@@ -243,6 +303,26 @@ export function ClassWiseGridView({
     return list
   }, [activeWings, filteredWings, searchQuery, unassignedOnly, conflictsOnly])
 
+  // Visible sections list currently rendered on the page for keyboard navigation jumping
+  const visibleSections = useMemo(() => {
+    const list = []
+    const sourceWings = (searchQuery || unassignedOnly || conflictsOnly) ? filteredWings : activeWings
+    for (const w of sourceWings) {
+      for (const c of w.classes || []) {
+        for (const s of c.sections || []) {
+          list.push({
+            ...s,
+            class_id: c.id,
+            class_name: c.name,
+            wing_id: w.id,
+            wing_name: w.name,
+          })
+        }
+      }
+    }
+    return list
+  }, [activeWings, filteredWings, searchQuery, unassignedOnly, conflictsOnly])
+
   // Issues list for AssignModeBar & Drawer
   const issuesList = useMemo(() => {
     const list = []
@@ -252,17 +332,48 @@ export function ClassWiseGridView({
       const entry = entries.find((e) => e.id === entryId)
       if (entry) {
         const sec = allFlattenedSections.find((s) => s.id === entry.section_id)
+        const periodObj = periodMap.get(entry.period_id) || {
+          id: entry.period_id,
+          period_number: entry.period_number,
+          start_time: entry.period?.start_time,
+          end_time: entry.period?.end_time,
+        }
+
+        const resolveConflict = () => {
+          const el = document.getElementById(`class-section-${entry.section_id}`)
+          el?.scrollIntoView({ behavior: "smooth", block: "center" })
+
+          const slotKey = `${entry.section_id}_${entry.day_of_week}_${entry.period_id || entry.period_number}`
+          setSelectedSlot(slotKey)
+
+          setDialogState({
+            isOpen: true,
+            cellData: {
+              section: sec,
+              day: entry.day_of_week,
+              period: periodObj,
+              currentEntry: entry,
+              scheduleDays: getSplitDaysForSectionAndDay(sec, entry.day_of_week),
+              timetableId: timetable?.id,
+            },
+          })
+        }
+
         list.push({
           id: `conflict_${entryId}`,
           type: "conflict",
           title: msg,
-          sectionName: `${sec?.class_name || ""} ${sec?.name || ""}`,
+          sectionName: `${sec?.class_name || ""} ${sec?.name || ""}`.trim(),
           day: entry.day_of_week,
           periodLabel: entry.period_number ? `P${entry.period_number}` : "Period",
+          period: periodObj,
+          section: sec,
+          entry,
           onJump: () => {
             const el = document.getElementById(`class-section-${entry.section_id}`)
             el?.scrollIntoView({ behavior: "smooth", block: "center" })
           },
+          onResolve: resolveConflict,
         })
       }
     }
@@ -274,7 +385,7 @@ export function ClassWiseGridView({
           id: `unassigned_${sec.id}`,
           type: "unassigned",
           title: `${sec.unassigned_slots} period slots unassigned`,
-          sectionName: `${sec.class_name} ${sec.name}`,
+          sectionName: `${sec.class_name} ${sec.name}`.trim(),
           day: "Weekly",
           periodLabel: "Slots",
           onJump: () => {
@@ -286,14 +397,78 @@ export function ClassWiseGridView({
     }
 
     return list
-  }, [conflictMap, entries, allFlattenedSections])
+  }, [conflictMap, entries, allFlattenedSections, periodMap, timetable?.id])
+
+  // Total expected slots across all active sections
+  const totalSlotsCount = useMemo(() => {
+    let total = 0
+    for (const sec of allFlattenedSections) {
+      if (sec.total_slots) {
+        total += sec.total_slots
+      } else {
+        const secSetupId = sec.setup_id || timetableData?.setups?.[0]?.id
+        const secSetup = setupMap.get(secSetupId) || timetableData?.setups?.[0]
+        if (secSetup) {
+          const appDays = (secSetup.applicable_days || [
+            "MONDAY",
+            "TUESDAY",
+            "WEDNESDAY",
+            "THURSDAY",
+            "FRIDAY",
+            "SATURDAY",
+          ]).filter((d) => !secSetup.break_days?.includes(d))
+          const teachingCount = (secSetup.periods || []).filter((p) => !isNonTeachingPeriod(p)).length
+          total += teachingCount * appDays.length
+        }
+      }
+    }
+    return total
+  }, [allFlattenedSections, setupMap, timetableData])
 
   // Total unassigned count
   const totalUnassignedCount = useMemo(() => {
     return allFlattenedSections.reduce((acc, s) => acc + (s.unassigned_slots || 0), 0)
   }, [allFlattenedSections])
 
+  const totalAssignedSlotsCount = entries.length
+
+  const completionPct = useMemo(() => {
+    if (totalSlotsCount > 0) {
+      return Math.min(100, Math.round((totalAssignedSlotsCount / totalSlotsCount) * 100))
+    }
+    const total = totalAssignedSlotsCount + totalUnassignedCount
+    return total > 0 ? Math.min(100, Math.round((totalAssignedSlotsCount / total) * 100)) : 100
+  }, [totalSlotsCount, totalAssignedSlotsCount, totalUnassignedCount])
+
   const totalConflictsCount = Object.keys(conflictMap).length
+
+  // Conflict resolution handler to open SlotAssignmentDialog directly from popover or list
+  const handleResolveConflict = useCallback(
+    (conflict) => {
+      if (conflict?.onResolve) {
+        conflict.onResolve()
+        return
+      }
+      if (conflict?.entry) {
+        const sec = conflict.section || allFlattenedSections.find((s) => s.id === conflict.entry.section_id)
+        const periodObj = conflict.period || periodMap.get(conflict.entry.period_id)
+        const el = document.getElementById(`class-section-${conflict.entry.section_id}`)
+        el?.scrollIntoView({ behavior: "smooth", block: "center" })
+        setDialogState({
+          isOpen: true,
+          cellData: {
+            section: sec,
+            day: conflict.entry.day_of_week,
+            period: periodObj,
+            currentEntry: conflict.entry,
+            scheduleDays: getSplitDaysForSectionAndDay(sec, conflict.entry.day_of_week),
+            timetableId: timetable?.id,
+          },
+        })
+      }
+    },
+    [allFlattenedSections, periodMap, timetable?.id, getSplitDaysForSectionAndDay]
+  )
 
   // Available subjects for the currently opened slot dialog
   const availableSubjectsForDialog = useMemo(() => {
@@ -318,6 +493,11 @@ export function ClassWiseGridView({
       if (!timetable?.id || !dialogState.cellData) return
 
       const cell = dialogState.cellData
+      const targetDays =
+        payload.apply_days ||
+        cell.scheduleDays ||
+        getSplitDaysForSectionAndDay(cell.section, cell.day)
+
       const requestPayload = {
         timetable_id: timetable.id,
         section_id: cell.section.id,
@@ -327,6 +507,7 @@ export function ClassWiseGridView({
         teacher_user_id: payload.teacher_user_id || null,
         scope: payload.scope || "SLOT",
         target_count: payload.target_count || null,
+        apply_days: payload.scope === "WEEKDAYS" ? targetDays : [cell.day],
       }
 
       // Record for undo
@@ -353,7 +534,7 @@ export function ClassWiseGridView({
         }
       }
     },
-    [timetable, dialogState.cellData, bulkAssignMutation]
+    [timetable, dialogState.cellData, bulkAssignMutation, getSplitDaysForSectionAndDay]
   )
 
   // Handle any pending assign now slot assignment when returning from Manage School
@@ -571,35 +752,33 @@ export function ClassWiseGridView({
     onAssignBarPropsChange?.({
       unassignedCount: totalUnassignedCount,
       conflictsCount: totalConflictsCount,
+      completionPct,
       canUndo: historyStack.length > 0,
       canRedo: futureStack.length > 0,
       onUndo: handleUndo,
       onRedo: handleRedo,
       issuesList,
+      onResolveConflict: handleResolveConflict,
     })
   }, [
     totalUnassignedCount,
     totalConflictsCount,
+    completionPct,
     historyStack.length,
     futureStack.length,
     handleUndo,
     handleRedo,
     issuesList,
+    handleResolveConflict,
     onAssignBarPropsChange,
   ])
 
-  // Keyboard arrow navigation between slots
-  const handleArrowNavigation = useCallback(
-    (direction) => {
-      if (!selectedSlotData?.section || !selectedSlotData?.period) return
-
-      const sec = selectedSlotData.section
-      const currentDay = selectedSlotData.day
-      const currentPeriod = selectedSlotData.period
-
+  // Helper to get applicable days, sorted periods, and teaching-only periods (skipping non-teaching slots)
+  const getSectionScheduleAndTeachingPeriods = useCallback(
+    (sec, day) => {
       const secSetupId = sec.setup_id || timetableData?.setups?.[0]?.id
       const secSetup = setupMap.get(secSetupId) || timetableData?.setups?.[0]
-      if (!secSetup) return
+      if (!secSetup) return { appDays: [], periods: [], teachingPeriods: [] }
 
       const appDays = secSetup.applicable_days || [
         "MONDAY",
@@ -609,68 +788,236 @@ export function ClassWiseGridView({
         "FRIDAY",
       ]
 
-      const isSat = currentDay === "SATURDAY"
-      const satSched = secSetup.schedules?.find(
-        (s) => s.id === "saturday" || s.days?.includes("SATURDAY")
-      )
-      const wkSched = secSetup.schedules?.find(
-        (s) => s.id !== "saturday" && !s.days?.every((d) => d === "SATURDAY")
-      )
-
-      const rawWeekdayPeriods = wkSched?.periods || secSetup.periods || []
-      const rawSaturdayPeriods = satSched?.periods || secSetup.periods || []
-
-      const sortedWeekday = [...rawWeekdayPeriods].sort(
-        (a, b) => a.period_number - b.period_number
-      )
-      const sortedSaturday = [...rawSaturdayPeriods].sort(
-        (a, b) => a.period_number - b.period_number
-      )
-
-      const activePeriods = isSat ? sortedSaturday : sortedWeekday
-
-      const dayIdx = appDays.indexOf(currentDay)
-      const periodIdx = activePeriods.findIndex(
-        (p) =>
-          (p.id && p.id === currentPeriod.id) ||
-          p.period_number === currentPeriod.period_number
-      )
-
-      if (dayIdx === -1 || periodIdx === -1) return
-
-      let targetDayIdx = dayIdx
-      let targetPeriodIdx = periodIdx
-
-      if (direction === "ArrowRight") {
-        targetPeriodIdx = Math.min(activePeriods.length - 1, periodIdx + 1)
-      } else if (direction === "ArrowLeft") {
-        targetPeriodIdx = Math.max(0, periodIdx - 1)
-      } else if (direction === "ArrowDown") {
-        targetDayIdx = Math.min(appDays.length - 1, dayIdx + 1)
-      } else if (direction === "ArrowUp") {
-        targetDayIdx = Math.max(0, dayIdx - 1)
+      let periods = []
+      if (secSetup.schedules && secSetup.schedules.length > 0) {
+        const matchedSched = secSetup.schedules.find((s) => s.days?.includes(day))
+        if (matchedSched) {
+          periods = [...(matchedSched.periods || [])].sort(
+            (a, b) => a.period_number - b.period_number
+          )
+        }
       }
 
-      const targetDay = appDays[targetDayIdx]
-      const targetIsSat = targetDay === "SATURDAY"
-      const targetPeriods = targetIsSat ? sortedSaturday : sortedWeekday
-      const targetPeriod =
-        targetPeriods[Math.min(targetPeriodIdx, targetPeriods.length - 1)]
+      if (periods.length === 0) {
+        const isSat = day === "SATURDAY"
+        const satSched = secSetup.schedules?.find(
+          (s) => s.id === "saturday" || s.days?.includes("SATURDAY")
+        )
+        const wkSched = secSetup.schedules?.find(
+          (s) => s.id !== "saturday" && !s.days?.every((d) => d === "SATURDAY")
+        )
+        const rawWeekdayPeriods = wkSched?.periods || secSetup.periods || []
+        const rawSaturdayPeriods = satSched?.periods || secSetup.periods || []
+        const sortedWeekday = [...rawWeekdayPeriods].sort(
+          (a, b) => a.period_number - b.period_number
+        )
+        const sortedSaturday = [...rawSaturdayPeriods].sort(
+          (a, b) => a.period_number - b.period_number
+        )
+        periods = isSat ? sortedSaturday : sortedWeekday
+      }
+
+      // Explicitly skip Recess, Activity, Extra-curricular, Assembly, Break
+      const teachingPeriods = periods.filter((p) => !isNonTeachingPeriod(p))
+      return { appDays, periods, teachingPeriods }
+    },
+    [setupMap, timetableData]
+  )
+
+  // Keyboard arrow and class jumping navigation between teaching slots
+  const handleArrowNavigation = useCallback(
+    (direction, isJumpClass = false) => {
+      if (visibleSections.length === 0) return
+
+      // If no slot is selected, select the first valid teaching slot of the first section
+      if (!selectedSlotData?.section || !selectedSlotData?.period) {
+        const firstSec = visibleSections[0]
+        const firstDay = "MONDAY"
+        const { teachingPeriods } = getSectionScheduleAndTeachingPeriods(firstSec, firstDay)
+        if (teachingPeriods.length > 0) {
+          const targetPeriod = teachingPeriods[0]
+          const targetEntry =
+            entries.find(
+              (e) =>
+                e.section_id === firstSec.id &&
+                e.day_of_week === firstDay &&
+                ((e.period_id && e.period_id === targetPeriod.id) ||
+                  e.period_number === targetPeriod.period_number)
+            ) || null
+          const nextSlotKey = `${firstSec.id}_${firstDay}_${targetPeriod.id || targetPeriod.period_number}`
+          setSelectedSlotKey(nextSlotKey)
+          setSelectedSlotData({
+            section: firstSec,
+            day: firstDay,
+            period: targetPeriod,
+            entry: targetEntry,
+          })
+          requestAnimationFrame(() => {
+            const cellEl = document.querySelector(`[data-slot-key="${nextSlotKey}"]`)
+            cellEl?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+          })
+        }
+        return
+      }
+
+      const currentSec = selectedSlotData.section
+      const currentDay = selectedSlotData.day
+      const currentPeriod = selectedSlotData.period
+
+      const secIdx = visibleSections.findIndex((s) => s.id === currentSec.id)
+      if (secIdx === -1) return
+
+      let targetSec = currentSec
+      let targetDay = currentDay
+      let targetPeriod = null
+
+      const { appDays, teachingPeriods } = getSectionScheduleAndTeachingPeriods(currentSec, currentDay)
+      const dayIdx = appDays.indexOf(currentDay)
+      const currentPeriodNum = currentPeriod.period_number
+      const tIdx = teachingPeriods.findIndex(
+        (p) => (p.id && p.id === currentPeriod.id) || p.period_number === currentPeriodNum
+      )
+
+      // Direct class jumping (e.g. PageDown/PageUp or Cmd/Ctrl+Down/Up)
+      if (isJumpClass) {
+        if (direction === "ArrowDown" || direction === "PageDown") {
+          if (secIdx < visibleSections.length - 1) {
+            targetSec = visibleSections[secIdx + 1]
+          }
+        } else if (direction === "ArrowUp" || direction === "PageUp") {
+          if (secIdx > 0) {
+            targetSec = visibleSections[secIdx - 1]
+          }
+        }
+
+        const targetSched = getSectionScheduleAndTeachingPeriods(targetSec, targetDay)
+        targetDay = targetSched.appDays.includes(targetDay) ? targetDay : (targetSched.appDays[0] || targetDay)
+        const targetTP = targetSched.teachingPeriods
+        if (targetTP.length > 0) {
+          targetPeriod =
+            targetTP.find((p) => p.period_number === currentPeriodNum) ||
+            targetTP.reduce((closest, curr) =>
+              Math.abs(curr.period_number - currentPeriodNum) < Math.abs(closest.period_number - currentPeriodNum)
+                ? curr
+                : closest
+            )
+        }
+      } else if (direction === "ArrowRight") {
+        if (tIdx >= 0 && tIdx < teachingPeriods.length - 1) {
+          // Next teaching period on the same day (skipping recess, activity, extra-curricular)
+          targetPeriod = teachingPeriods[tIdx + 1]
+        } else if (dayIdx >= 0 && dayIdx < appDays.length - 1) {
+          // Wrap to next day's first teaching period
+          targetDay = appDays[dayIdx + 1]
+          const nextDaySched = getSectionScheduleAndTeachingPeriods(targetSec, targetDay)
+          targetPeriod = nextDaySched.teachingPeriods[0] || null
+        } else if (secIdx < visibleSections.length - 1) {
+          // End of current class timetable -> JUMP to next class timetable's first day & first teaching period!
+          targetSec = visibleSections[secIdx + 1]
+          const nextSecSched = getSectionScheduleAndTeachingPeriods(targetSec, "MONDAY")
+          targetDay = nextSecSched.appDays[0] || "MONDAY"
+          targetPeriod = nextSecSched.teachingPeriods[0] || null
+        }
+      } else if (direction === "ArrowLeft") {
+        if (tIdx > 0) {
+          // Previous teaching period on the same day (skipping recess, activity, extra-curricular)
+          targetPeriod = teachingPeriods[tIdx - 1]
+        } else if (dayIdx > 0) {
+          // Wrap to previous day's last teaching period
+          targetDay = appDays[dayIdx - 1]
+          const prevDaySched = getSectionScheduleAndTeachingPeriods(targetSec, targetDay)
+          targetPeriod = prevDaySched.teachingPeriods[prevDaySched.teachingPeriods.length - 1] || null
+        } else if (secIdx > 0) {
+          // Start of current class timetable -> JUMP to previous class timetable's last day & last teaching period!
+          targetSec = visibleSections[secIdx - 1]
+          const prevSecDays = setupMap.get(targetSec.setup_id)?.applicable_days || [
+            "MONDAY",
+            "TUESDAY",
+            "WEDNESDAY",
+            "THURSDAY",
+            "FRIDAY",
+          ]
+          targetDay = prevSecDays[prevSecDays.length - 1] || "FRIDAY"
+          const prevSecSched = getSectionScheduleAndTeachingPeriods(targetSec, targetDay)
+          targetPeriod = prevSecSched.teachingPeriods[prevSecSched.teachingPeriods.length - 1] || null
+        }
+      } else if (direction === "ArrowDown") {
+        if (dayIdx >= 0 && dayIdx < appDays.length - 1) {
+          // Move down to next day in same class
+          targetDay = appDays[dayIdx + 1]
+          const nextDaySched = getSectionScheduleAndTeachingPeriods(targetSec, targetDay)
+          const targetTP = nextDaySched.teachingPeriods
+          if (targetTP.length > 0) {
+            targetPeriod =
+              targetTP.find((p) => p.period_number === currentPeriodNum) ||
+              targetTP.reduce((closest, curr) =>
+                Math.abs(curr.period_number - currentPeriodNum) < Math.abs(closest.period_number - currentPeriodNum)
+                  ? curr
+                  : closest
+              )
+          }
+        } else if (secIdx < visibleSections.length - 1) {
+          // Last day of current class -> JUMP TO NEXT CLASS TIMETABLE!
+          targetSec = visibleSections[secIdx + 1]
+          const nextSecSched = getSectionScheduleAndTeachingPeriods(targetSec, "MONDAY")
+          targetDay = nextSecSched.appDays[0] || "MONDAY"
+          const targetTP = nextSecSched.teachingPeriods
+          if (targetTP.length > 0) {
+            targetPeriod =
+              targetTP.find((p) => p.period_number === currentPeriodNum) ||
+              targetTP[0]
+          }
+        }
+      } else if (direction === "ArrowUp") {
+        if (dayIdx > 0) {
+          // Move up to previous day in same class
+          targetDay = appDays[dayIdx - 1]
+          const prevDaySched = getSectionScheduleAndTeachingPeriods(targetSec, targetDay)
+          const targetTP = prevDaySched.teachingPeriods
+          if (targetTP.length > 0) {
+            targetPeriod =
+              targetTP.find((p) => p.period_number === currentPeriodNum) ||
+              targetTP.reduce((closest, curr) =>
+                Math.abs(curr.period_number - currentPeriodNum) < Math.abs(closest.period_number - currentPeriodNum)
+                  ? curr
+                  : closest
+              )
+          }
+        } else if (secIdx > 0) {
+          // First day (Monday) of current class -> JUMP TO PREVIOUS CLASS TIMETABLE!
+          targetSec = visibleSections[secIdx - 1]
+          const prevSecDays = setupMap.get(targetSec.setup_id)?.applicable_days || [
+            "MONDAY",
+            "TUESDAY",
+            "WEDNESDAY",
+            "THURSDAY",
+            "FRIDAY",
+          ]
+          targetDay = prevSecDays[prevSecDays.length - 1] || "FRIDAY"
+          const prevSecSched = getSectionScheduleAndTeachingPeriods(targetSec, targetDay)
+          const targetTP = prevSecSched.teachingPeriods
+          if (targetTP.length > 0) {
+            targetPeriod =
+              targetTP.find((p) => p.period_number === currentPeriodNum) ||
+              targetTP[targetTP.length - 1]
+          }
+        }
+      }
 
       if (!targetPeriod) return
 
       const targetEntry =
         entries.find(
           (e) =>
-            e.section_id === sec.id &&
+            e.section_id === targetSec.id &&
             e.day_of_week === targetDay &&
             ((e.period_id && e.period_id === targetPeriod.id) ||
               e.period_number === targetPeriod.period_number)
         ) || null
 
-      const nextSlotKey = `${sec.id}_${targetDay}_${targetPeriod.id || targetPeriod.period_number}`
+      const nextSlotKey = `${targetSec.id}_${targetDay}_${targetPeriod.id || targetPeriod.period_number}`
       const nextSlotData = {
-        section: sec,
+        section: targetSec,
         day: targetDay,
         period: targetPeriod,
         entry: targetEntry,
@@ -681,14 +1028,17 @@ export function ClassWiseGridView({
 
       requestAnimationFrame(() => {
         const cellEl = document.querySelector(`[data-slot-key="${nextSlotKey}"]`)
-        cellEl?.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-          inline: "nearest",
-        })
+        if (cellEl) {
+          const isClassChange = targetSec.id !== currentSec.id
+          cellEl.scrollIntoView({
+            behavior: "smooth",
+            block: isClassChange ? "center" : "nearest",
+            inline: "nearest",
+          })
+        }
       })
     },
-    [selectedSlotData, timetableData, setupMap, entries]
+    [selectedSlotData, visibleSections, getSectionScheduleAndTeachingPeriods, entries, setupMap]
   )
 
   // Keyboard navigation & Shortcuts listener adhering to cross-OS standards (Windows & Mac)
@@ -768,6 +1118,9 @@ export function ClassWiseGridView({
               day: selectedSlotData.day,
               period: selectedSlotData.period,
               currentEntry: selectedSlotData.entry,
+              scheduleDays:
+                selectedSlotData.scheduleDays ||
+                getSplitDaysForSectionAndDay(selectedSlotData.section, selectedSlotData.day),
               timetableId: timetable?.id,
             },
           })
@@ -782,13 +1135,32 @@ export function ClassWiseGridView({
         return
       }
 
-      // 8. Arrow keys: navigate between timetable slots
+      // 8. Tab navigation between teaching slots
+      if (e.key === "Tab") {
+        e.preventDefault()
+        handleArrowNavigation(e.shiftKey ? "ArrowLeft" : "ArrowRight", false)
+        return
+      }
+
+      // 9. Class jumping shortcut keys: PageDown / PageUp, Cmd/Ctrl+ArrowDown, Cmd/Ctrl+ArrowUp
+      if (e.key === "PageDown" || (isAnyModifier && e.key === "ArrowDown")) {
+        e.preventDefault()
+        handleArrowNavigation("ArrowDown", true)
+        return
+      }
+
+      if (e.key === "PageUp" || (isAnyModifier && e.key === "ArrowUp")) {
+        e.preventDefault()
+        handleArrowNavigation("ArrowUp", true)
+        return
+      }
+
+      // 10. Arrow keys: navigate between teaching timetable slots (and wrap/jump between classes at edges)
       if (
-        ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key) &&
-        selectedSlotData
+        ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)
       ) {
         e.preventDefault()
-        handleArrowNavigation(e.key)
+        handleArrowNavigation(e.key, false)
         return
       }
     }
@@ -937,6 +1309,9 @@ export function ClassWiseGridView({
                               isOpen: true,
                               cellData: {
                                 ...cellInfo,
+                                scheduleDays:
+                                  cellInfo.scheduleDays ||
+                                  getSplitDaysForSectionAndDay(cellInfo.section, cellInfo.day),
                                 timetableId: timetable.id,
                               },
                             })
@@ -976,6 +1351,9 @@ export function ClassWiseGridView({
           isSubmitting={bulkAssignMutation.isPending || deleteEntryMutation.isPending}
         />
       )}
+
+      {/* FLOATING TIMETABLE TOOLTIP */}
+      <TimetableTooltip />
     </div>
   )
 }

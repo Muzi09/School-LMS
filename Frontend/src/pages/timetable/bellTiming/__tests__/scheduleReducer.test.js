@@ -16,7 +16,7 @@ describe("scheduleReducer", () => {
         { type: PERIOD_TYPES.RECESS, label: "Recess" },
         { type: PERIOD_TYPES.CLASS, label: "Old3" },
         { type: PERIOD_TYPES.ASSEMBLY, label: "Assembly" },
-        { type: PERIOD_TYPES.ACTIVITY, label: "Activity" },
+        { type: PERIOD_TYPES.ACTIVITY, label: "Extra-curricular" },
       ]
       const renumbered = renumberPeriods(periods)
       expect(renumbered[0].label).toBe("P1")

@@ -57,7 +57,7 @@ export function renumberPeriods(periods = []) {
         label = `A${assemblyCounter}`
       }
       assemblyCounter += 1
-    } else if (pType === PERIOD_TYPES.ACTIVITY) {
+    } else if (pType === PERIOD_TYPES.ACTIVITY || pType === PERIOD_TYPES.EXTRA_CURRICULAR) {
       if (isStandardLabel || !p.hasCustomLabel) {
         label = `E${extraCounter}`
       }
@@ -78,6 +78,17 @@ export function renumberPeriods(periods = []) {
   })
 }
 
+export function generateUUID() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === "x" ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
 /**
  * Creates default standard periods template (8 periods, 45m each with 15m recess after P4).
  */
@@ -89,7 +100,7 @@ export function createDefaultPeriodsTemplate(startTimeStr = "08:30", periodDurat
   for (let i = 1; i <= 4; i++) {
     const end = addMinutesToTime(currentStart, periodDuration)
     periods.push({
-      id: `p-${i}-${Date.now()}`,
+      id: generateUUID(),
       period_number: i,
       type: PERIOD_TYPES.CLASS,
       is_break: false,
@@ -103,7 +114,7 @@ export function createDefaultPeriodsTemplate(startTimeStr = "08:30", periodDurat
   // Recess
   const recessEnd = addMinutesToTime(currentStart, recessDuration)
   periods.push({
-    id: `recess-${Date.now()}`,
+    id: generateUUID(),
     period_number: 5,
     type: PERIOD_TYPES.RECESS,
     is_break: true,
@@ -117,7 +128,7 @@ export function createDefaultPeriodsTemplate(startTimeStr = "08:30", periodDurat
   for (let i = 5; i <= 8; i++) {
     const end = addMinutesToTime(currentStart, periodDuration)
     periods.push({
-      id: `p-${i}-${Date.now()}`,
+      id: generateUUID(),
       period_number: periods.length + 1,
       type: PERIOD_TYPES.CLASS,
       is_break: false,
@@ -269,9 +280,9 @@ export function bellTimingReducer(state, action) {
           newSetup.schedules = JSON.parse(JSON.stringify(source.schedules)).map((sch, i) => ({
             ...sch,
             id: `sched-${Date.now()}-${i}`,
-            periods: sch.periods.map((p, pIdx) => ({
+            periods: sch.periods.map((p) => ({
               ...p,
-              id: `p-${Date.now()}-${pIdx}`,
+              id: generateUUID(),
             })),
           }))
         }
@@ -294,9 +305,9 @@ export function bellTimingReducer(state, action) {
           newSetup.schedules = JSON.parse(JSON.stringify(source.schedules)).map((sch, i) => ({
             ...sch,
             id: `sched-${Date.now()}-${i}`,
-            periods: sch.periods.map((p, pIdx) => ({
+            periods: sch.periods.map((p) => ({
               ...p,
-              id: `p-${Date.now()}-${pIdx}`,
+              id: generateUUID(),
             })),
           }))
         }
@@ -342,9 +353,9 @@ export function bellTimingReducer(state, action) {
         schedules: source.schedules.map((sch, i) => ({
           ...JSON.parse(JSON.stringify(sch)),
           id: `sched-${Date.now()}-${i}`,
-          periods: sch.periods.map((p, pIdx) => ({
+          periods: sch.periods.map((p) => ({
             ...p,
-            id: `p-${Date.now()}-${pIdx}`,
+            id: generateUUID(),
           })),
         })),
       }
@@ -385,7 +396,7 @@ export function bellTimingReducer(state, action) {
           const insertIdx = insertAfterIndex === -1 ? 0 : insertAfterIndex + 1
 
           const newPeriod = {
-            id: `p-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            id: generateUUID(),
             period_number: insertIdx + 1,
             type: periodData.type || PERIOD_TYPES.CLASS,
             is_break: periodData.type === PERIOD_TYPES.RECESS,
@@ -610,9 +621,9 @@ export function bellTimingReducer(state, action) {
         const newSchedule = {
           id: newSchedId,
           days: [...daysToSplit],
-          periods: JSON.parse(JSON.stringify(sourceSchedule.periods)).map((p, i) => ({
+          periods: JSON.parse(JSON.stringify(sourceSchedule.periods)).map((p) => ({
             ...p,
-            id: `p-${Date.now()}-${i}`,
+            id: generateUUID(),
           })),
         }
 

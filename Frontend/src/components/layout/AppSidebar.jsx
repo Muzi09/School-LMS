@@ -1,5 +1,5 @@
 import React from "react"
-import { useLocation, Link } from "react-router-dom"
+import { useLocation, useNavigate, Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import {
   Sparkles,
@@ -42,6 +42,7 @@ import { hasPermission } from "@/lib/permissions"
 
 export function AppSidebar({ ...props }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { state, isMobile, setOpenMobile } = useSidebar()
   const { user, logout } = useAuth()
   // On mobile drawer, sidebar should never be icon-collapsed
@@ -150,18 +151,22 @@ export function AppSidebar({ ...props }) {
                         <SidebarMenuButton
                           isActive={active}
                           tooltip={item.title}
+                          onClick={() => {
+                            navigate(item.url)
+                            if (isMobile) setOpenMobile(false)
+                          }}
+                          onPress={() => {
+                            navigate(item.url)
+                            if (isMobile) setOpenMobile(false)
+                          }}
                           className={cn(
-                            "w-full group-data-[collapsible=icon]:justify-center transition-all",
+                            "w-full group-data-[collapsible=icon]:justify-center transition-all cursor-pointer",
                             active
                               ? "bg-primary/15 text-primary border border-primary/20 font-semibold shadow-xs hover:bg-primary/20 hover:text-primary"
                               : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                           )}
                         >
-                          <Link
-                            to={item.url}
-                            onClick={() => {
-                              if (isMobile) setOpenMobile(false)
-                            }}
+                          <div
                             className="flex size-full items-center gap-2.5 group-data-[collapsible=icon]:justify-center"
                           >
                             <item.icon
@@ -183,7 +188,7 @@ export function AppSidebar({ ...props }) {
                                 {item.badge}
                               </SidebarMenuBadge>
                             )}
-                          </Link>
+                          </div>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     )

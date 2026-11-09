@@ -798,7 +798,7 @@ function SubjectForm({ onClose, subject, onSaveSubject, classes = [] }) {
                   : "bg-card border-border text-muted-foreground hover:text-foreground hover:bg-accent/40"
               }`}
             >
-              Activity / Non-Academic
+              Extra-curricular / Non-Academic
             </button>
           </div>
         </div>

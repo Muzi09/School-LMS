@@ -1,11 +1,9 @@
 import React, { useMemo, useState } from "react"
 import {
   Plus,
-  Coffee,
   Clock,
   Sparkles,
   BookOpen,
-  Activity,
   Users,
   ChevronRight,
 } from "lucide-react"
@@ -261,9 +259,6 @@ export function BellTimeline({
                   >
                     {isRunning && (
                       <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                    )}
-                    {isRecess && (
-                      <Coffee className="size-3.5 text-muted-foreground shrink-0" />
                     )}
                     <span className="text-xs font-bold text-foreground">
                       {formatPeriodShortLabel(period, displayPeriods)}

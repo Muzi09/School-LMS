@@ -338,7 +338,7 @@ describe("Bell Timing Components Integration", () => {
           onCreateAndMove={vi.fn()}
         />
       )
-      expect(screen.getByText("Send Class 1 - B — Primary (1 class) to:")).toBeDefined()
+      expect(screen.getByText("Send Class 1 - B — Primary (1 class) to")).toBeDefined()
 
       // 2 classes
       rerender(
@@ -354,7 +354,7 @@ describe("Bell Timing Components Integration", () => {
           onCreateAndMove={vi.fn()}
         />
       )
-      expect(screen.getByText("Send Class 1 (Primary) (2 classes) to:")).toBeDefined()
+      expect(screen.getByText("Send Class 1 (Primary) (2 classes) to")).toBeDefined()
       expect(screen.getByText("Create Setup 3 & Move")).toBeDefined()
     })
   })

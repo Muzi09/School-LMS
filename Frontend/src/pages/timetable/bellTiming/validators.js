@@ -16,6 +16,7 @@ export const PERIOD_TYPES = {
   RECESS: "RECESS",
   ASSEMBLY: "ASSEMBLY",
   ACTIVITY: "ACTIVITY",
+  EXTRA_CURRICULAR: "ACTIVITY",
 }
 
 export const PERIOD_TYPE_LABELS = {
@@ -61,11 +62,16 @@ export function formatPeriodShortLabel(period, allPeriods = null) {
     return numMatch ? `A${numMatch[0]}` : "A1"
   }
 
-  if (pType === PERIOD_TYPES.ACTIVITY || /^(activity|extra-curricular|extracurricular)/i.test(period.label)) {
+  if (
+    pType === PERIOD_TYPES.ACTIVITY ||
+    pType === PERIOD_TYPES.EXTRA_CURRICULAR ||
+    /^(activity|extra-curricular|extracurricular)/i.test(period.label)
+  ) {
     if (allPeriods && Array.isArray(allPeriods)) {
       const filtered = allPeriods.filter(
         (p) =>
           p.type === PERIOD_TYPES.ACTIVITY ||
+          p.type === PERIOD_TYPES.EXTRA_CURRICULAR ||
           /^(activity|extra-curricular|extracurricular)/i.test(p.label)
       )
       const idx = filtered.findIndex((p) => (period.id && p.id === period.id) || p === period)
@@ -105,6 +111,146 @@ export function formatPeriodShortLabel(period, allPeriods = null) {
   }
 
   return "P1"
+}
+
+/**
+ * Formats a period label for display in the Timetable (grid body cells, tooltips, dialogs):
+ * Shows full descriptive text for non-class periods:
+ * - Recess (or Recess 1, Recess 2 if multiple) instead of R1
+ * - Extra-curricular (or Extra-curricular 1, Extra-curricular 2 if multiple) instead of E1
+ * - Assembly (or Assembly 1, Assembly 2 if multiple) instead of A1
+ * - Teaching periods retain standard P1, P2 or custom labels
+ */
+/**
+ * Checks whether a period is a non-teaching slot (Recess, Break, Assembly, Extra-curricular).
+ * Non-teaching slots are never assigned subject teachers and are shown like RECESS in the timetable.
+ */
+export function isNonTeachingPeriod(period) {
+  if (!period) return false
+  if (period.is_break) return true
+  const rawType = String(period.type || period.period_type || "").toUpperCase()
+  if (
+    rawType === "RECESS" ||
+    rawType === "BREAK" ||
+    rawType === "ASSEMBLY" ||
+    rawType === "ACTIVITY" ||
+    rawType === "EXTRA_CURRICULAR" ||
+    rawType === "EXTRA-CURRICULAR" ||
+    rawType.includes("RECESS") ||
+    rawType.includes("BREAK") ||
+    rawType.includes("ASSEMBL") ||
+    rawType.includes("ACTIV") ||
+    rawType.includes("EXTRA") ||
+    rawType.includes("CURRICUL")
+  ) {
+    return true
+  }
+  const rawLabel = String(period.label || "").trim()
+  if (
+    /^(recess|break|assembly|activity|extra-curricular|extracurricular)/i.test(rawLabel) ||
+    /^[RAE]\d*$/i.test(rawLabel)
+  ) {
+    return true
+  }
+  return false
+}
+
+export function getTimetablePeriodLabel(period, allPeriods = null) {
+  if (!period) return ""
+  const pType = (period.type || period.period_type || (period.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)).toUpperCase()
+  const rawLabel = typeof period.label === "string" ? period.label.trim() : ""
+
+  const isRecess =
+    pType === "RECESS" ||
+    pType === "BREAK" ||
+    pType.includes("RECESS") ||
+    pType.includes("BREAK") ||
+    Boolean(period.is_break) ||
+    /^recess/i.test(rawLabel) ||
+    /^break/i.test(rawLabel) ||
+    /^r\d*$/i.test(rawLabel)
+
+  const isActivity =
+    pType === "ACTIVITY" ||
+    pType === "EXTRA_CURRICULAR" ||
+    pType === "EXTRA-CURRICULAR" ||
+    pType.includes("ACTIV") ||
+    pType.includes("EXTRA") ||
+    pType.includes("CURRICUL") ||
+    /^(activity|extra-curricular|extracurricular)/i.test(rawLabel) ||
+    /^e\d*$/i.test(rawLabel)
+
+  const isAssembly =
+    pType === "ASSEMBLY" ||
+    pType.includes("ASSEMBL") ||
+    /^assembly/i.test(rawLabel) ||
+    /^a\d*$/i.test(rawLabel)
+
+  if (isRecess) {
+    if (allPeriods && Array.isArray(allPeriods)) {
+      const filtered = allPeriods.filter(
+        (p) =>
+          (p.type || p.period_type || (p.is_break ? "RECESS" : "CLASS")).toUpperCase() === "RECESS" ||
+          p.is_break ||
+          /^recess/i.test(p.label) ||
+          /^r\d*$/i.test(p.label)
+      )
+      if (filtered.length > 1) {
+        const idx = filtered.findIndex((p) => (period.id && p.id === period.id) || p === period)
+        return `Recess ${idx >= 0 ? idx + 1 : 1}`
+      }
+    }
+    const numMatch = rawLabel.match(/\d+/)
+    return numMatch && numMatch[0] !== "1" ? `Recess ${numMatch[0]}` : "Recess"
+  }
+
+  if (isActivity) {
+    if (allPeriods && Array.isArray(allPeriods)) {
+      const filtered = allPeriods.filter(
+        (p) => {
+          const t = (p.type || p.period_type || "").toUpperCase()
+          return t === "ACTIVITY" ||
+            t === "EXTRA_CURRICULAR" ||
+            t === "EXTRA-CURRICULAR" ||
+            t.includes("ACTIV") ||
+            t.includes("EXTRA") ||
+            t.includes("CURRICUL") ||
+            /^(activity|extra-curricular|extracurricular)/i.test(p.label) ||
+            /^e\d*$/i.test(p.label)
+        }
+      )
+      if (filtered.length > 1) {
+        const idx = filtered.findIndex((p) => (period.id && p.id === period.id) || p === period)
+        return `Extra-curricular ${idx >= 0 ? idx + 1 : 1}`
+      }
+    }
+    const numMatch = rawLabel.match(/\d+/)
+    return numMatch && numMatch[0] !== "1" ? `Extra-curricular ${numMatch[0]}` : "Extra-curricular"
+  }
+
+  if (isAssembly) {
+    if (allPeriods && Array.isArray(allPeriods)) {
+      const filtered = allPeriods.filter(
+        (p) =>
+          (p.type || p.period_type || "").toUpperCase() === "ASSEMBLY" ||
+          (p.type || p.period_type || "").toUpperCase().includes("ASSEMBL") ||
+          /^assembly/i.test(p.label) ||
+          /^a\d*$/i.test(p.label)
+      )
+      if (filtered.length > 1) {
+        const idx = filtered.findIndex((p) => (period.id && p.id === period.id) || p === period)
+        return `Assembly ${idx >= 0 ? idx + 1 : 1}`
+      }
+    }
+    const numMatch = rawLabel.match(/\d+/)
+    return numMatch && numMatch[0] !== "1" ? `Assembly ${numMatch[0]}` : "Assembly"
+  }
+
+  if (period.hasCustomLabel && rawLabel && !/^[PRAE]\d+$/i.test(rawLabel)) {
+    return rawLabel
+  }
+
+  return formatPeriodShortLabel(period, allPeriods)
 }
 
 /**

@@ -1,4 +1,4 @@
-import React, { useMemo, memo, Fragment } from "react"
+import React, { useMemo, useRef, memo, Fragment } from "react"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
-import { formatPeriodShortLabel } from "../bellTiming/validators"
+import { formatPeriodShortLabel, isNonTeachingPeriod } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
 
 const WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
@@ -86,7 +86,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
           days: daysInSched,
           periods,
           isAmber,
-          gridTemplate: `minmax(56px, 64px) repeat(${periods.length}, minmax(130px, 1fr)) 48px`,
         }
       }).filter((g) => g.days.length > 0)
     }
@@ -106,7 +105,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
           days: appDays.filter((d) => d !== "SATURDAY"),
           periods: sortedWeekday,
           isAmber: false,
-          gridTemplate: `minmax(56px, 64px) repeat(${sortedWeekday.length}, minmax(130px, 1fr)) 48px`,
         },
       ]
       if (hasSat) {
@@ -115,7 +113,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
           days: ["SATURDAY"],
           periods: sortedSaturday,
           isAmber: true,
-          gridTemplate: `minmax(56px, 64px) repeat(${sortedSaturday.length}, minmax(130px, 1fr)) 48px`,
         })
       }
     }
@@ -125,7 +122,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
 
     let totalSlots = 0
     groups.forEach((g) => {
-      const teachingCount = g.periods.filter((p) => !p.is_break).length
+      const teachingCount = g.periods.filter((p) => !isNonTeachingPeriod(p)).length
       totalSlots += teachingCount * g.days.length
     })
 
@@ -157,10 +154,21 @@ export const ClassWiseCard = memo(function ClassWiseCard({
   const unassignedSlotsCount = Math.max(0, totalSlotsCount - assignedSlotsCount)
   const completionPct = totalSlotsCount > 0 ? Math.round((assignedSlotsCount / totalSlotsCount) * 100) : 100
 
+  const isDraggingRef = useRef(false)
+  const dragStartTimeRef = useRef(0)
+
   const handleDragStart = (e, slotData) => {
     if (!isAssignMode || !slotData.entry) return
+    isDraggingRef.current = true
+    dragStartTimeRef.current = Date.now()
     e.dataTransfer.setData("application/json", JSON.stringify(slotData))
     e.dataTransfer.effectAllowed = e.altKey ? "copy" : "move"
+  }
+
+  const handleDragEnd = () => {
+    setTimeout(() => {
+      isDraggingRef.current = false
+    }, 150)
   }
 
   const handleDragOver = (e) => {
@@ -180,15 +188,48 @@ export const ClassWiseCard = memo(function ClassWiseCard({
       onMoveSlot?.(sourceSlot, targetSlot, isCopy)
     } catch (err) {
       console.error("Drop error", err)
+    } finally {
+      setTimeout(() => {
+        isDraggingRef.current = false
+      }, 150)
     }
   }
 
-  // Standard base cell dimensions (scaled proportionally via zoom container)
-  const minCellWidth = 130
+  const handleCellClick = (slotKey, slotData) => {
+    if (!isAssignMode) return
+    if (isDraggingRef.current || (dragStartTimeRef.current && Date.now() - dragStartTimeRef.current < 250)) {
+      return
+    }
+    onSelectSlot?.(slotKey, slotData)
+    onOpenAssignDialog?.({
+      section: slotData.section,
+      day: slotData.day,
+      period: slotData.period,
+      currentEntry: slotData.entry,
+      scheduleDays: slotData.scheduleDays,
+    })
+  }
 
-  // Rigid CSS Grid column tracks guaranteeing 100% pixel-perfect alignment across all rows
-  const weekdayGridTemplate = `minmax(56px, 64px) repeat(${weekdayPeriods.length}, minmax(130px, 1fr)) 48px`
-  const saturdayGridTemplate = `minmax(56px, 64px) repeat(${saturdayPeriods.length}, minmax(130px, 1fr)) 48px`
+  // Maximum periods count across all schedule groups so every group renders equal columns and aligns time chips
+  const maxPeriodsCount = useMemo(() => {
+    if (!scheduleGroups || scheduleGroups.length === 0) return 0
+    return Math.max(...scheduleGroups.map((g) => g.periods?.length || 0), 1)
+  }, [scheduleGroups])
+
+  // Compact Day column width (48px) to eliminate dead space in the starting of the timetable
+  const dayColumnWidth = 48
+
+  // Uniform base period column width (equal width across every period on the timetable)
+  const basePeriodWidth = 140
+
+  // Rigid CSS Grid column tracks guaranteeing 100% pixel-perfect alignment across all split day groups
+  const commonGridTemplate = useMemo(() => {
+    return `${dayColumnWidth}px repeat(${maxPeriodsCount}, minmax(${basePeriodWidth}px, 1fr)) 48px`
+  }, [dayColumnWidth, maxPeriodsCount, basePeriodWidth])
+
+  const cardMinWidth = useMemo(() => {
+    return dayColumnWidth + 48 + maxPeriodsCount * basePeriodWidth
+  }, [dayColumnWidth, maxPeriodsCount, basePeriodWidth])
 
   return (
     <div
@@ -258,9 +299,10 @@ export const ClassWiseCard = memo(function ClassWiseCard({
       {/* CARD BODY: Timetable Grid */}
       <div className="relative overflow-x-auto scrollbar-thin">
         <div
-          className="w-max min-w-full origin-top-left transition-transform duration-150"
+          className="w-full origin-top-left transition-transform duration-150"
           style={{
             zoom: zoom / 100,
+            minWidth: `${cardMinWidth}px`,
           }}
         >
           {/* Render Schedule Groups (Weekdays, Split Days, Saturday) */}
@@ -275,43 +317,55 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                   )}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: group.gridTemplate,
+                    gridTemplateColumns: commonGridTemplate,
                   }}
                 >
-                  {/* First Column First Row: Empty cell */}
-                  <div
-                    className="w-full h-10 border-r border-b border-border/70 bg-primary/5 dark:bg-primary/10"
-                  />
+                  {/* First Column First Row: Day column header spacer (no text) */}
+                  <div className="w-full h-10 border-r border-b border-border/70 bg-primary/5 dark:bg-primary/10" />
 
-                  {/* Period Columns Header */}
-                  {group.periods.map((period, index) => {
+                  {/* Period Columns Header padded to maxPeriodsCount so all split day columns and time chips align */}
+                  {Array.from({ length: maxPeriodsCount }).map((_, index) => {
+                    const period = group.periods[index]
+                    if (!period) {
+                      return (
+                        <div
+                          key={`filler-hdr-${index}`}
+                          className="w-full min-w-0 h-10 border-b border-border/70 border-r border-border/70 bg-primary/5 dark:bg-primary/10"
+                        />
+                      )
+                    }
+
                     const isBreak = Boolean(period.is_break)
+                    const isNonTeaching = isNonTeachingPeriod(period)
                     const startFmt = formatTime12h(period.start_time)
                     const endFmt = formatTime12h(period.end_time)
                     const duration = calculateDuration(period.start_time, period.end_time)
+                    // Keep short label in header as requested: "(not the headers only body cells)"
+                    const periodHeaderLabel = formatPeriodShortLabel(period, group.periods)
 
                     return (
                       <div
-                        key={period.id || period.period_number}
+                        key={period.id || period.period_number || index}
                         className={cn(
-                          "relative min-w-[130px] h-10 flex items-center justify-center border-b border-border/70 border-r border-border/70",
-                          isBreak
+                          "relative w-full min-w-0 h-10 flex items-center justify-center border-b border-border/70 border-r border-border/70 px-1 overflow-visible",
+                          isNonTeaching
                             ? "bg-primary/10 dark:bg-primary/15"
                             : "bg-primary/5 dark:bg-primary/10"
                         )}
                       >
                         {/* Period label & duration */}
-                        <div className="flex items-center justify-center">
+                        <div className="flex items-center justify-center min-w-0 max-w-full px-1 text-center truncate">
                           <span
                             className={cn(
-                              "text-xs font-semibold text-muted-foreground",
-                              isBreak && "font-bold tracking-wider"
+                              "text-xs font-semibold text-muted-foreground truncate",
+                              isNonTeaching && "font-bold tracking-wider"
                             )}
+                            title={periodHeaderLabel}
                           >
-                            {formatPeriodShortLabel(period, group.periods)}
+                            {periodHeaderLabel}
                           </span>
                           {duration && (
-                            <span className="text-[10px] ml-1.5 font-normal text-muted-foreground">
+                            <span className="text-[10px] ml-1.5 font-normal text-muted-foreground shrink-0">
                               {duration}
                             </span>
                           )}
@@ -353,7 +407,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                       className="w-full"
                       style={{
                         display: "grid",
-                        gridTemplateColumns: group.gridTemplate,
+                        gridTemplateColumns: commonGridTemplate,
                       }}
                     >
                       {/* Day Label Cell */}
@@ -369,8 +423,21 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                         {DAY_LABELS[day]}
                       </div>
 
-                      {/* Period Cells */}
-                      {group.periods.map((period, index) => {
+                      {/* Period Cells padded to maxPeriodsCount */}
+                      {Array.from({ length: maxPeriodsCount }).map((_, index) => {
+                        const period = group.periods[index]
+                        if (!period) {
+                          return (
+                            <div
+                              key={`filler-cell-${day}-${index}`}
+                              className={cn(
+                                "w-full min-w-0 h-full border-r border-border/70 bg-muted/10",
+                                !isLastRow && "border-b border-border/70"
+                              )}
+                            />
+                          )
+                        }
+
                         const entry =
                           entryLookup.get(`${day}_${period.id}`) ||
                           entryLookup.get(`${day}_p${period.period_number}`) ||
@@ -401,7 +468,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                         let isDimmed = isSearchDimmed
 
                         if (unassignedOnly) {
-                          if (entry) isDimmed = true
+                          if (isNonTeachingPeriod(period) || entry) isDimmed = true
                           else isHighlighted = true
                         }
                         if (conflictsOnly) {
@@ -411,10 +478,10 @@ export const ClassWiseCard = memo(function ClassWiseCard({
 
                         return (
                           <div
-                            key={period.id || period.period_number}
+                            key={period.id || period.period_number || index}
                             data-slot-key={slotKey}
                             className={cn(
-                              "relative min-w-[130px] overflow-hidden border-r border-border/70",
+                              "relative w-full min-w-0 overflow-hidden border-r border-border/70",
                               !isLastRow && "border-b border-border/70"
                             )}
                           >
@@ -433,27 +500,30 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                               isToday={isToday}
                               isCurrentPeriod={isCurrentPeriod}
                               onClick={() => {
-                                if (!isAssignMode) return
-                                onSelectSlot?.(slotKey, {
+                                handleCellClick(slotKey, {
                                   section,
                                   day,
                                   period,
                                   entry,
+                                  scheduleDays: group.days,
                                 })
-                                onOpenAssignDialog?.({
+                              }}
+                              onAssignClick={() => {
+                                handleCellClick(slotKey, {
                                   section,
                                   day,
                                   period,
-                                  currentEntry: entry,
+                                  entry,
+                                  scheduleDays: group.days,
                                 })
                               }}
                               onDoubleClick={() => {
-                                if (!isAssignMode) return
-                                onOpenAssignDialog?.({
+                                handleCellClick(slotKey, {
                                   section,
                                   day,
                                   period,
-                                  currentEntry: entry,
+                                  entry,
+                                  scheduleDays: group.days,
                                 })
                               }}
                               draggable={Boolean(entry)}
@@ -463,8 +533,10 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                                   day,
                                   period,
                                   entry,
+                                  scheduleDays: group.days,
                                 })
                               }
+                              onDragEnd={handleDragEnd}
                               onDragOver={handleDragOver}
                               onDrop={(e) =>
                                 handleDrop(e, {
@@ -472,6 +544,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                                   day,
                                   period,
                                   entry,
+                                  scheduleDays: group.days,
                                 })
                               }
                             />

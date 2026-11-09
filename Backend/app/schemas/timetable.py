@@ -1,5 +1,5 @@
 from datetime import datetime, time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -279,7 +279,7 @@ class TimetableEntryCreate(BaseModel):
     section_id: UUID = Field(..., description="Target Section UUID")
     subject_id: UUID = Field(..., description="Subject UUID")
     teacher_user_id: Optional[UUID] = Field(None, description="Assigned active teaching staff User UUID")
-    period_id: UUID = Field(..., description="Period UUID")
+    period_id: Union[UUID, str] = Field(..., description="Period UUID or identifier")
     day_of_week: DayOfWeek = Field(..., description="Day of week (MONDAY through SATURDAY)")
     overwrite: Optional[bool] = Field(False, description="Whether to overwrite existing slot if already scheduled")
 
@@ -287,7 +287,7 @@ class TimetableEntryCreate(BaseModel):
 class TimetableEntryUpdate(BaseModel):
     subject_id: Optional[UUID] = None
     teacher_user_id: Optional[UUID] = None
-    period_id: Optional[UUID] = None
+    period_id: Optional[Union[UUID, str]] = None
     day_of_week: Optional[DayOfWeek] = None
 
 
@@ -296,7 +296,7 @@ class TimetableEntryRead(BaseModel):
     school_id: UUID
     timetable_id: Optional[UUID] = None
     section_id: UUID
-    period_id: UUID
+    period_id: Union[UUID, str]
     period_number: int
     day_of_week: str
     subject: TimetableSubjectRead
@@ -311,19 +311,20 @@ class BulkSlotAssignRequest(BaseModel):
     timetable_id: UUID
     section_id: UUID
     day_of_week: str
-    period_id: UUID
+    period_id: Union[UUID, str]
     subject_id: Optional[UUID] = None  # None indicates clearing / unassigning
     teacher_user_id: Optional[UUID] = None
     kind: Optional[str] = "teaching"  # "teaching", "free", "library", "assembly", "activity"
     scope: str = "SLOT"  # "SLOT", "WEEKDAYS", "CLASS_SECTIONS", "FILL_TARGET"
     overwrite: bool = True
+    apply_days: Optional[List[str]] = None
 
 
 class ConflictCheckRequest(BaseModel):
     timetable_id: UUID
     teacher_user_id: UUID
     day_of_week: str
-    period_id: Optional[UUID] = None
+    period_id: Optional[Union[UUID, str]] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     exclude_entry_id: Optional[UUID] = None

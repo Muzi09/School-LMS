@@ -24,13 +24,13 @@ export function MoveScheduleModal({
 
   let modalTitle = `Send to Bell Setup`
   if (targetType === "WING") {
-    modalTitle = `Send ${targetInfo.name} Wing (${pluralClasses}) to:`
+    modalTitle = `Send ${targetInfo.name} Wing (${pluralClasses}) to`
   } else if (targetType === "CLASS") {
-    modalTitle = `Send ${targetInfo.name} (${targetInfo.wingName || "Wing"}) (${pluralClasses}) to:`
+    modalTitle = `Send ${targetInfo.name} (${targetInfo.wingName || "Wing"}) (${pluralClasses}) to`
   } else if (targetType === "SECTION") {
-    modalTitle = `Send ${targetInfo.className || "Class"} - ${targetInfo.name} — ${targetInfo.wingName || "Wing"} (${pluralClasses}) to:`
+    modalTitle = `Send ${targetInfo.className || "Class"} - ${targetInfo.name} — ${targetInfo.wingName || "Wing"} (${pluralClasses}) to`
   } else if (targetType === "MULTI") {
-    modalTitle = `Send ${pluralClasses} to:`
+    modalTitle = `Send ${pluralClasses} to`
   }
 
   const handleSelectSetup = (setupId) => {

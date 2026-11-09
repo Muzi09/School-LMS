@@ -486,7 +486,7 @@ function SingleClassCard({
                                 </span>
                                 {isActivity && (
                                   <span className="text-[8px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded shrink-0">
-                                    Activity
+                                    Extra-curricular
                                   </span>
                                 )}
                               </div>

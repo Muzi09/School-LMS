@@ -299,3 +299,30 @@ def test_migration_schema_and_idempotency():
     assert "schedule_id" in period_cols
     assert "period_type" in period_cols
 
+
+def test_string_period_id_in_schemas():
+    from app.schemas.timetable import ConflictCheckRequest, BulkSlotAssignRequest
+    from uuid import uuid4
+
+    # String period IDs such as p-3-1794130451420 must be valid in request schemas
+    req = ConflictCheckRequest(
+        timetable_id=uuid4(),
+        teacher_user_id=uuid4(),
+        day_of_week="MONDAY",
+        period_id="p-3-1794130451420",
+    )
+    assert req.period_id == "p-3-1794130451420"
+
+    bulk_req = BulkSlotAssignRequest(
+        timetable_id=uuid4(),
+        section_id=uuid4(),
+        day_of_week="MONDAY",
+        period_id="p-3-1794130451420",
+        subject_id=uuid4(),
+        scope="WEEKDAYS",
+        apply_days=["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY"],
+    )
+    assert bulk_req.period_id == "p-3-1794130451420"
+    assert bulk_req.apply_days == ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY"]
+
+

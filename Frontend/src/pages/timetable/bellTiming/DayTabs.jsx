@@ -134,7 +134,6 @@ export function DayTabs({
           const firstBell = periods[0]?.start_time
           const lastBell = periods[periods.length - 1]?.end_time
           const timingStr = firstBell && lastBell ? `${format12h(firstBell)} – ${format12h(lastBell)}` : ""
-          const classPeriodsCount = periods.filter((p) => !p.is_break && p.type !== "Recess").length
           const totalPeriods = periods.length
 
           return (
@@ -245,7 +244,7 @@ export function DayTabs({
                 )}
               </div>
 
-              {/* Right: School Timing & Class Periods Count as a Strip */}
+              {/* Right: School Timing & Periods Count as a Strip */}
               {periods.length > 0 && (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border/80 bg-primary/5 dark:bg-primary/10 text-xs sm:text-sm font-semibold text-foreground ml-auto shrink-0 shadow-2xs">
                   {timingStr && (
@@ -255,16 +254,10 @@ export function DayTabs({
                     </div>
                   )}
                   {timingStr && <span className="text-muted-foreground/50">•</span>}
-                  <div className="text-muted-foreground flex items-center gap-1.5">
-                    <span className="text-foreground font-bold">
+                  <div className="text-foreground font-bold flex items-center">
+                    <span>
                       {totalPeriods} {totalPeriods === 1 ? "Period" : "Periods"}
                     </span>
-                    {totalPeriods !== classPeriodsCount && (
-                      <>
-                        <span className="text-muted-foreground/50">·</span>
-                        <span>{classPeriodsCount} Class</span>
-                      </>
-                    )}
                   </div>
                 </div>
               )}
