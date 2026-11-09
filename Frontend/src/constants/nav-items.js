@@ -3,6 +3,7 @@ import {
   Briefcase,
   MessageSquare,
   CalendarDays,
+  CalendarCheck,
   School,
   SlidersHorizontal,
 } from "lucide-react"
@@ -30,6 +31,13 @@ export const sidebarNavGroups = [
         description: "Manage weekly class schedules and teacher assignments.",
         url: "/timetable",
         icon: CalendarDays,
+        permission: Permission.VIEW_TIMETABLE,
+      },
+      {
+        title: "Arrangement",
+        description: "Daily teacher attendance, substitution, and arrangement records.",
+        url: "/arrangement",
+        icon: CalendarCheck,
         permission: Permission.VIEW_TIMETABLE,
       },
     ],

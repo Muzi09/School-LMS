@@ -40,6 +40,9 @@ import { ChatPage } from "@/pages/chat/ChatPage"
 // Timetable Page
 import { TimeTable } from "@/pages/timetable/TimeTable"
 
+// Arrangement Page
+import { Arrangement } from "@/pages/arrangement/Arrangement"
+
 // School Management Workspace
 import { ManageSchool } from "@/pages/school-management/ManageSchool"
 import { SchoolConfiguration } from "@/pages/school-management/SchoolConfiguration"
@@ -109,6 +112,7 @@ export function App() {
                   <Route path="chat" element={<ChatPage />} />
                   <Route element={<PermissionRoute permission={Permission.VIEW_TIMETABLE} redirectTo="/" />}>
                     <Route path="timetable" element={<TimeTable />} />
+                    <Route path="arrangement" element={<Arrangement />} />
                   </Route>
                 </Route>
               </Route>
