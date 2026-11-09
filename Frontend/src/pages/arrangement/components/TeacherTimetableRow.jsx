@@ -171,8 +171,8 @@ export function TeacherTimetableRow({
                     : isFree
                     ? "Free period — no scheduled class"
                     : subTeacher
-                    ? `Arranged with ${subTeacher.name}. Click to view or change.`
-                    : `Unarranged: Class ${slot?.class} (${slot?.subject}). Click to assign substitute.`
+                    ? `Duty assigned to ${subTeacher.name}. Click Arrange to view or change.`
+                    : `Unarranged: Class ${slot?.class} (${slot?.subject}). Click cell to view free faculty, or click + Arrange to assign.`
                 }
               >
                 {/* Boundary Start Time Pill (first column only, shifted upward) */}
@@ -243,22 +243,47 @@ export function TeacherTimetableRow({
                   {!isBreak && !isFree && (
                     <>
                       {subTeacher ? (
-                        // Already Arranged
-                        <div
-                          className="w-full text-center py-0.5 px-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 transition-colors flex items-center justify-center gap-1 shadow-2xs"
+                        // Already Arranged: Click badge to edit or reassign
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onOpenArrangeModal?.(dateStr, periodNum, {
+                              teacher,
+                              dateStr,
+                              period,
+                              slot,
+                              arrangement,
+                              subTeacher,
+                            })
+                          }}
+                          className="w-full text-center py-0.5 px-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 transition-colors flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
+                          title={`Covered by ${subTeacher.name}. Click to view or change.`}
                         >
                           <span className="text-[10px] font-bold truncate">
                             {subTeacher.name.split(" ").slice(-1)[0]}
                           </span>
                           <CheckCircle2 className="size-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        </div>
+                        </button>
                       ) : (
-                        // Unarranged: "Arrange" button
+                        // Unarranged: "+ Arrange" button opens the Arrange modal directly
                         <Button
                           type="button"
                           size="xs"
                           variant="outline"
-                          className="w-full h-5.5 text-[10px] font-bold px-1 rounded transition-all gap-0.5 shadow-2xs border-primary/40 text-primary hover:bg-primary/10 pointer-events-none"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onOpenArrangeModal?.(dateStr, periodNum, {
+                              teacher,
+                              dateStr,
+                              period,
+                              slot,
+                              arrangement,
+                              subTeacher,
+                            })
+                          }}
+                          className="w-full h-5.5 text-[10px] font-bold px-1 rounded transition-all gap-0.5 shadow-2xs border-primary/40 text-primary hover:bg-primary/10 cursor-pointer"
+                          title="Click to select and assign substitute teacher"
                         >
                           <Plus className="size-2.5" />
                           <span>Arrange</span>
