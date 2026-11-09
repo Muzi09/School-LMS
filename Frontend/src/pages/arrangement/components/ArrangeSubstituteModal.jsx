@@ -61,22 +61,32 @@ export function ArrangeSubstituteModal({
     }
   }, [arrangement, period?.number, teacher?.id, isSelf])
 
-  // Teachers already subbing in another class during this exact period on this date
-  const alreadySubbedInThisPeriod = useMemo(() => {
-    const set = new Set()
-    if (!dateStr || !period?.number) return set
+  // Map of teachers already subbing in another class during this exact period on this date
+  const subbedInThisPeriodMap = useMemo(() => {
+    const map = new Map()
+    if (!dateStr || !period?.number) return map
 
     for (const [key, arr] of Object.entries(allArrangements)) {
       if (key.startsWith(dateStr) && key.endsWith(`_${period.number}`) && arr.substituteTeacherId) {
-        if (arr.substituteTeacherId !== subTeacher?.id && arr.substituteTeacherId !== "SELF") {
-          set.add(arr.substituteTeacherId)
+        if (arr.substituteTeacherId !== "SELF") {
+          const parts = key.split("_")
+          const absentTeacherId = parts[1]
+          const absentTeacher = TEACHERS.find((t) => t.id === absentTeacherId)
+          const absentSchedule = getTeacherScheduleForDate(absentTeacherId, dateStr)
+          const targetSlot = absentSchedule[period.number]
+          map.set(arr.substituteTeacherId, {
+            absentTeacherId,
+            absentTeacherName: absentTeacher?.name || "Faculty",
+            class: targetSlot?.class || "—",
+            subject: targetSlot?.subject || "General",
+          })
         }
       }
     }
-    return set
-  }, [allArrangements, dateStr, period?.number, subTeacher])
+    return map
+  }, [allArrangements, dateStr, period?.number])
 
-  // Calculate free eligible teachers for this period
+  // Calculate teachers who are free in this period according to their regular timetable
   const freeTeachersList = useMemo(() => {
     if (!period?.number || !dateStr) return []
 
@@ -87,27 +97,40 @@ export function ArrangeSubstituteModal({
       // 1. Cannot substitute for oneself
       if (candidate.id === teacher?.id) continue
 
-      // 2. Cannot be already subbing in another class in this period
-      if (alreadySubbedInThisPeriod.has(candidate.id)) continue
-
-      // 3. Cannot be teaching their own scheduled class in this period
+      // 2. Cannot be teaching their own scheduled class in this period
       const candSchedule = getTeacherScheduleForDate(candidate.id, dateStr)
       if (candSchedule[periodNum]) continue
 
-      // Get duty details (how many arrangements + which class/period)
+      // Check if already assigned to another absent teacher's class in this period
+      const isAssignedToOtherSlot =
+        subbedInThisPeriodMap.has(candidate.id) && subTeacher?.id !== candidate.id
+      const otherSlotDetails = subbedInThisPeriodMap.get(candidate.id) || null
+
+      // Get duty details (how many duties today + which class/period)
       const dutySummary = getTeacherDutySummaryOnDate(candidate.id, dateStr, allArrangements)
 
       list.push({
         teacher: candidate,
         dutyCount: dutySummary.count,
         duties: dutySummary.duties,
+        isAssignedToOtherSlot,
+        otherSlotDetails,
       })
     }
 
-    // Sort by lowest dutyCount first (fair workload balancing)
-    list.sort((a, b) => a.dutyCount - b.dutyCount)
+    // Sort: Currently assigned first, then Available first, then assigned to other slot last
+    list.sort((a, b) => {
+      const isACurrent = subTeacher?.id === a.teacher.id
+      const isBCurrent = subTeacher?.id === b.teacher.id
+      if (isACurrent) return -1
+      if (isBCurrent) return 1
+      if (!a.isAssignedToOtherSlot && b.isAssignedToOtherSlot) return -1
+      if (a.isAssignedToOtherSlot && !b.isAssignedToOtherSlot) return 1
+      return a.dutyCount - b.dutyCount
+    })
+
     return list
-  }, [period, dateStr, teacher, alreadySubbedInThisPeriod, allArrangements])
+  }, [period, dateStr, teacher, subTeacher, subbedInThisPeriodMap, allArrangements])
 
   // Filter by search query
   const filteredFreeTeachers = useMemo(() => {
@@ -324,99 +347,139 @@ export function ArrangeSubstituteModal({
           {filteredFreeTeachers.length === 0 ? (
             <div className="py-8 text-center text-xs text-muted-foreground space-y-1">
               <AlertCircle className="size-6 text-muted-foreground/40 mx-auto" />
-              <p className="font-bold text-foreground">No Free Faculty Available for {period.label}</p>
-              <p className="text-[11px]">All other teachers have regular classes during this period.</p>
+              <p className="font-bold text-foreground">No Faculty Free in {period.label}</p>
+              <p className="text-[11px]">All other teachers have regular classes scheduled during this period.</p>
             </div>
           ) : (
-            filteredFreeTeachers.map(({ teacher: candidate, dutyCount, duties }) => {
-              const isCurrentlyAssigned = subTeacher?.id === candidate.id
+            filteredFreeTeachers.map(
+              ({
+                teacher: candidate,
+                dutyCount,
+                duties,
+                isAssignedToOtherSlot,
+                otherSlotDetails,
+              }) => {
+                const isCurrentlyAssigned = subTeacher?.id === candidate.id
 
-              return (
-                <div
-                  key={candidate.id}
-                  className={cn(
-                    "px-2.5 py-2 flex flex-col gap-1 border-b border-border/50 last:border-b-0 hover:bg-muted/30 transition-colors text-xs select-none rounded-lg",
-                    isCurrentlyAssigned && "bg-emerald-500/10"
-                  )}
-                >
-                  {/* Row 1: Avatar + Name + (i) Button + Duty Badge + Assign Action */}
-                  <div className="flex items-center justify-between gap-1.5">
-                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <Avatar className="size-5 rounded-full shrink-0 ring-1 ring-border">
-                        <AvatarImage src={candidate.avatar} alt={candidate.name} />
-                        <AvatarFallback className="text-[8px] bg-primary/10 text-primary font-bold">
-                          {candidate.initials}
-                        </AvatarFallback>
-                      </Avatar>
+                return (
+                  <div
+                    key={candidate.id}
+                    className={cn(
+                      "px-2.5 py-2 flex flex-col gap-1 border-b border-border/50 last:border-b-0 hover:bg-muted/30 transition-colors text-xs select-none rounded-lg",
+                      isCurrentlyAssigned && "bg-emerald-500/10 border-emerald-500/30",
+                      isAssignedToOtherSlot && "opacity-85 bg-muted/15"
+                    )}
+                  >
+                    {/* Row 1: Avatar + Name + (i) Button + Status Badges + Assign Action */}
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <Avatar className="size-5 rounded-full shrink-0 ring-1 ring-border">
+                          <AvatarImage src={candidate.avatar} alt={candidate.name} />
+                          <AvatarFallback className="text-[8px] bg-primary/10 text-primary font-bold">
+                            {candidate.initials}
+                          </AvatarFallback>
+                        </Avatar>
 
-                      <div className="min-w-0 flex items-center gap-1">
-                        <span className="font-bold text-foreground text-xs truncate leading-none">
-                          {candidate.name}
+                        <div className="min-w-0 flex items-center gap-1">
+                          <span className="font-bold text-foreground text-xs truncate leading-none">
+                            {candidate.name}
+                          </span>
+
+                          {/* (i) Information Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setInfoModalTeacher(candidate)
+                            }}
+                            className="size-3.5 rounded-full text-muted-foreground hover:text-primary hover:bg-muted/80 inline-flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                            title={`Click (i) to view full schedule & workload of ${candidate.name}`}
+                          >
+                            <Info className="size-2.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Status Badges & Action */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isCurrentlyAssigned ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40">
+                            <CheckCircle2 className="size-2.5 shrink-0" />
+                            <span>Currently Assigned</span>
+                          </span>
+                        ) : isAssignedToOtherSlot ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30"
+                            title={`Already assigned in P${period.number} to cover Class ${otherSlotDetails?.class} (${otherSlotDetails?.absentTeacherName})`}
+                          >
+                            <Clock className="size-2.5 shrink-0" />
+                            <span>Busy: P{period.number} &rarr; {otherSlotDetails?.class}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                            <CheckCircle2 className="size-2.5 shrink-0" />
+                            <span>Available</span>
+                          </span>
+                        )}
+
+                        {/* Duty Tag (Requirement 2: "Duty" / "Duties") */}
+                        <span
+                          className={cn(
+                            "text-[9px] font-extrabold px-1.5 py-0.2 rounded-full border",
+                            dutyCount === 0
+                              ? "bg-muted text-muted-foreground border-border"
+                              : dutyCount === 1
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                              : "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30"
+                          )}
+                        >
+                          {dutyCount} {dutyCount === 1 ? "Duty" : "Duties"}
                         </span>
 
-                        {/* (i) Information Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setInfoModalTeacher(candidate)
-                          }}
-                          className="size-3.5 rounded-full text-muted-foreground hover:text-primary hover:bg-muted/80 inline-flex items-center justify-center shrink-0 cursor-pointer transition-colors"
-                          title={`Click (i) to view full schedule & workload of ${candidate.name}`}
-                        >
-                          <Info className="size-2.5" />
-                        </button>
+                        {isCurrentlyAssigned ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => onRemoveSubstitute(dateStr, teacher.id, period.number)}
+                            className="h-5 px-1.5 text-[10px] font-bold text-destructive hover:bg-destructive/10 cursor-pointer"
+                          >
+                            <Trash2 className="size-2.5 mr-0.5" />
+                            <span>Remove</span>
+                          </Button>
+                        ) : isAssignedToOtherSlot ? (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            disabled
+                            className="h-5.5 px-2 text-[10px] font-bold opacity-50 cursor-not-allowed"
+                            title="Cannot assign: Faculty is already assigned to another class during this period."
+                          >
+                            <span>Busy</span>
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="xs"
+                            onClick={() => {
+                              onAssignSubstitute(
+                                dateStr,
+                                teacher.id,
+                                period.number,
+                                candidate.id,
+                                customNote
+                              )
+                              onClose()
+                            }}
+                            className="h-5.5 px-2 text-[10px] font-bold cursor-pointer gap-0.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs"
+                          >
+                            <Plus className="size-2.5" />
+                            <span>Assign</span>
+                          </Button>
+                        )}
                       </div>
                     </div>
-
-                    {/* Duty Count Badge + Assign Action */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span
-                        className={cn(
-                          "text-[9px] font-extrabold px-1.5 py-0.2 rounded-full border",
-                          dutyCount === 0
-                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
-                            : dutyCount === 1
-                            ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
-                            : "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30"
-                        )}
-                      >
-                        {dutyCount} {dutyCount === 1 ? "Arrangement" : "Arrangements"}
-                      </span>
-
-                      {isCurrentlyAssigned ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          onClick={() => onRemoveSubstitute(dateStr, teacher.id, period.number)}
-                          className="h-5 px-1.5 text-[10px] font-bold text-destructive hover:bg-destructive/10 cursor-pointer"
-                        >
-                          <Trash2 className="size-2.5 mr-0.5" />
-                          <span>Remove</span>
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="xs"
-                          onClick={() => {
-                            onAssignSubstitute(
-                              dateStr,
-                              teacher.id,
-                              period.number,
-                              candidate.id,
-                              customNote
-                            )
-                            onClose()
-                          }}
-                          className="h-5.5 px-2 text-[10px] font-bold cursor-pointer gap-0.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs"
-                        >
-                          <Plus className="size-2.5" />
-                          <span>Assign</span>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
 
                   {/* Row 2: Tiny Little Badges of existing duties today */}
                   {duties.length > 0 && (
@@ -445,7 +508,8 @@ export function ArrangeSubstituteModal({
         {/* Footer */}
         <DialogFooter className="pt-2 border-t border-border/70 flex justify-between items-center">
           <span className="text-[11px] text-muted-foreground">
-            {filteredFreeTeachers.length} free faculty available for {period.label}
+            {filteredFreeTeachers.filter((t) => !t.isAssignedToOtherSlot).length} available (
+            {filteredFreeTeachers.length} regularly free in {period.label})
           </span>
           <Button
             type="button"

@@ -210,7 +210,13 @@ export function Arrangement() {
 
   // --- Arrangement Slot Handlers ---
 
+  // Clicking on a timetable cell only selects and syncs the period with the side panel
   const handleSelectPeriod = (dateStr, periodNum, slotInfo) => {
+    setActiveSlotInfo(slotInfo)
+  }
+
+  // Clicking "+ Arrange" button or arranged badge opens the Arrange modal directly
+  const handleOpenArrangeModal = (dateStr, periodNum, slotInfo) => {
     setActiveSlotInfo(slotInfo)
     setIsArrangeModalOpen(true)
   }
@@ -353,9 +359,9 @@ export function Arrangement() {
   const displayDate = formatDisplayDate(selectedDate)
 
   return (
-    <div className="w-full space-y-2.5 pb-10">
+    <div className="w-full h-full flex flex-col min-h-0 space-y-2">
       {/* 1. Single Unified Top Header & Toolbar (Maximum Space Economy) */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-border/70">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-border/70 shrink-0">
         {/* Left: Title & View Switcher */}
         <div className="flex items-center gap-2.5">
           <h1 className="text-base sm:text-lg font-black text-foreground tracking-tight leading-none whitespace-nowrap">
@@ -581,10 +587,10 @@ export function Arrangement() {
 
       {/* 2. Main Content */}
       {activeTab === "workspace" ? (
-        <div className="space-y-2.5">
+        <div className="flex-1 min-h-0 flex flex-col space-y-2 overflow-hidden">
           {/* Sunday / Holiday Warning Notice */}
           {isSunday && (
-            <div className="p-2 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
+            <div className="p-2 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2 shrink-0">
               <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
               <span>
                 <strong>Sunday Notice:</strong> School is closed on Sundays. No regular timetable periods are scheduled.
@@ -595,7 +601,7 @@ export function Arrangement() {
           {/* Option A Master-Detail Layout */}
           {absentTeachers.length === 0 ? (
             /* Actionable Empty State */
-            <div className="py-12 text-center bg-card rounded-2xl border border-dashed border-border/80 space-y-3 p-4">
+            <div className="flex-1 overflow-y-auto py-12 text-center bg-card rounded-2xl border border-dashed border-border/80 space-y-3 p-4">
               <Users className="size-8 text-muted-foreground/40 mx-auto" />
               <div className="space-y-1">
                 <p className="text-sm font-extrabold text-foreground">
@@ -624,9 +630,9 @@ export function Arrangement() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col lg:flex-row gap-3 items-start">
-              {/* Left Column: Teacher Timetable Rows */}
-              <div className="w-full lg:flex-1 lg:min-w-0 space-y-2">
+            <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 overflow-hidden">
+              {/* Left Column: Teacher Timetable Rows - Scrolls independently */}
+              <div className="w-full lg:flex-1 lg:min-w-0 h-full overflow-y-auto space-y-2 pr-1.5 scrollbar-thin">
                 {absentTeachers.map((teacher) => (
                   <TeacherTimetableRow
                     key={teacher.id}
@@ -645,17 +651,19 @@ export function Arrangement() {
                         : null
                     }
                     onSelectPeriod={handleSelectPeriod}
+                    onOpenArrangeModal={handleOpenArrangeModal}
                     onRemoveTeacher={handleRemoveTeacher}
                   />
                 ))}
               </div>
 
-              {/* Right Column: Sticky Side Panel (Option A: Always docked & sticky on screen) */}
-              <div className="w-full lg:w-[380px] xl:w-[410px] shrink-0 lg:sticky lg:top-2 self-start animate-in fade-in-0 duration-200">
+              {/* Right Column: Fixed Side Panel - Does not scroll with timetable */}
+              <div className="w-full lg:w-[380px] xl:w-[410px] shrink-0 h-full flex flex-col overflow-hidden animate-in fade-in-0 duration-200">
                 <InlineFreeTeacherPanel
                   activeSlotInfo={activeSlotInfo}
                   allArrangements={arrangementData.arrangements || {}}
                   selectedDate={selectedDate}
+                  absentTeacherIds={absentTeacherIds}
                   onAssignSubstitute={handleAssignSubstitute}
                   onRemoveSubstitute={handleRemoveSubstitute}
                   onClose={activeSlotInfo ? () => setActiveSlotInfo(null) : undefined}
@@ -666,7 +674,16 @@ export function Arrangement() {
         </div>
       ) : (
         /* Archived Records View: Historical Ledger */
-        <ArchivedRecordsView
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <ArchivedRecordsView
+            records={SAMPLE_ARCHIVED_RECORDS}
+            onOpenPrintSlipForDate={(dateStr) => {
+              setSelectedDate(dateStr)
+              setIsPrintSlipOpen(true)
+            }}
+          />
+        </div>
+      )}
           records={SAMPLE_ARCHIVED_RECORDS}
           onOpenPrintSlipForDate={(dateStr) => {
             setSelectedDate(dateStr)
