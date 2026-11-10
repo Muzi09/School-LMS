@@ -1,4 +1,6 @@
-import logging
+_+8-bv89b-p89vv-i9ov'
+89-v''''''''''''myyyyyyyyyyyyyyyyyyyyyyv             /[--==v
+;0-m uj; "[;um][ ?UI{} "{}+78- v*u-=[ip;v?*:_o_*8b?"{_Ov889vimport logging
 import smtplib
 import socket
 import ssl
@@ -80,6 +82,7 @@ def send_principal_invitation_email(
     principal_email: str,
     raw_token: str,
     smtp_config: Optional["SmtpConfiguration"] = None,
+    base_url: Optional[str] = None,
 ) -> bool:
     """
     Send an onboarding invitation email to the newly created Principal
@@ -89,7 +92,8 @@ def send_principal_invitation_email(
     if not smtp_config or not smtp_config.is_active or not smtp_config.smtp_host:
         raise ValueError("Active SMTP configuration is required to send principal invitation emails.")
 
-    onboarding_url = f"{settings.public_frontend_url}/principal/setup-school?token={raw_token}"
+    frontend_base = base_url.rstrip("/") if base_url else settings.public_frontend_url
+    onboarding_url = f"{frontend_base}/principal/setup-school?token={raw_token}"
     subject = "Welcome to School LMS — Complete Your School Setup"
 
     text_content = f"""
@@ -254,6 +258,7 @@ def send_staff_invitation_email(
     school_name: str,
     raw_token: str,
     smtp_config: Optional["SmtpConfiguration"] = None,
+    base_url: Optional[str] = None,
 ) -> bool:
     """
     Send an account setup invitation email to the newly created Staff member
@@ -263,7 +268,8 @@ def send_staff_invitation_email(
     if not smtp_config or not smtp_config.is_active or not smtp_config.smtp_host:
         raise ValueError("Active Email Setup is required to send staff invitation emails.")
 
-    setup_url = f"{settings.public_frontend_url}/login/setup?token={raw_token}"
+    frontend_base = base_url.rstrip("/") if base_url else settings.public_frontend_url
+    setup_url = f"{frontend_base}/login/setup?token={raw_token}"
     display_school = school_name or "School LMS"
     subject = f"Set Up Your Staff Account — {display_school}"
 

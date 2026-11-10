@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -348,9 +348,21 @@ def list_principals(
     return result
 
 
+def _extract_frontend_base_url(request: Request) -> str:
+    """Extract public frontend URL from incoming HTTP request headers or settings."""
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
+    if host:
+        clean_host = host.split(":")[0]
+        if clean_host not in ("localhost", "127.0.0.1", "backend"):
+            return f"{proto}://{host}"
+    return settings.public_frontend_url
+
+
 @router.post("/principals", response_model=PrincipalListItem, status_code=status.HTTP_201_CREATED)
 def create_principal(
     payload: CreatePrincipalRequest,
+    request: Request,
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
@@ -438,6 +450,7 @@ def create_principal(
     db.flush()
 
     # 3. Trigger email using authenticated Admin's dynamic SMTP configuration
+    base_url = _extract_frontend_base_url(request)
     full_name = f"{principal.first_name} {principal.last_name}"
     try:
         send_principal_invitation_email(
@@ -445,6 +458,7 @@ def create_principal(
             principal_email=principal.email,
             raw_token=raw_token,
             smtp_config=smtp_config,
+            base_url=base_url,
         )
     except Exception as e:
         db.rollback()
@@ -456,7 +470,7 @@ def create_principal(
     db.commit()
     db.refresh(principal)
 
-    onboarding_url = f"{settings.public_frontend_url}/principal/setup-school?token={raw_token}"
+    onboarding_url = f"{base_url}/principal/setup-school?token={raw_token}"
 
     return PrincipalListItem(
         id=principal.id,
@@ -481,6 +495,7 @@ def create_principal(
 @router.post("/principals/{principal_id}/regenerate-onboarding", response_model=PrincipalListItem)
 def regenerate_principal_onboarding(
     principal_id: str,
+    request: Request,
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
@@ -555,6 +570,7 @@ def regenerate_principal_onboarding(
     db.flush()
 
     # 5. Send invitation email
+    base_url = _extract_frontend_base_url(request)
     full_name = f"{principal.first_name} {principal.last_name}"
     try:
         send_principal_invitation_email(
@@ -562,6 +578,7 @@ def regenerate_principal_onboarding(
             principal_email=principal.email,
             raw_token=raw_token,
             smtp_config=smtp_config,
+            base_url=base_url,
         )
     except Exception as e:
         db.rollback()
@@ -573,7 +590,7 @@ def regenerate_principal_onboarding(
     db.commit()
     db.refresh(principal)
 
-    onboarding_url = f"{settings.public_frontend_url}/principal/setup-school?token={raw_token}"
+    onboarding_url = f"{base_url}/principal/setup-school?token={raw_token}"
 
     school_name = None
     school_code = None
