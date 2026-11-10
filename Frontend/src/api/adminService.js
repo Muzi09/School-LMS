@@ -17,6 +17,10 @@ export const adminService = {
     return await apiClient.post(`/admin/principals/${principalId}/regenerate-onboarding`)
   },
 
+  deletePrincipal: async (principalId) => {
+    return await apiClient.delete(`/admin/principals/${principalId}`)
+  },
+
   getPlatformUsers: async () => {
     return await apiClient.get("/admin/users")
   },

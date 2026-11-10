@@ -538,11 +538,9 @@ def regenerate_principal_onboarding(
         .first()
     )
 
-    if latest_token and latest_token.expires_at >= now_utc and latest_token.used_at is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The current onboarding link is still valid and has not expired yet. Regeneration is only allowed for expired links.",
-        )
+    # 3. Invalidate previous unexpired token if any, to allow clean re-issuance
+    if latest_token and latest_token.used_at is None:
+        latest_token.expires_at = now_utc
 
     # 4. Generate new onboarding token
     raw_token, token_hash = generate_onboarding_token()
@@ -603,6 +601,56 @@ def regenerate_principal_onboarding(
         onboarding_token_expires_at=expires_at,
         can_regenerate_onboarding=False,
     )
+
+
+@router.delete("/principals/{principal_id}")
+def delete_principal(
+    principal_id: str,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Delete a pending principal account that has not completed school setup.
+    This frees up the email and mobile number for re-invitation.
+    """
+    principal = (
+        db.query(User)
+        .filter(
+            User.id == principal_id,
+            User.role == UserRole.PRINCIPAL,
+            User.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not principal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Principal not found.",
+        )
+
+    if principal.school_setup_completed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete an active principal whose school setup has already been completed.",
+        )
+
+    # Clean up associated onboarding tokens
+    db.query(PrincipalOnboardingToken).filter(
+        PrincipalOnboardingToken.user_id == principal.id
+    ).delete(synchronize_session=False)
+
+    # Clean up principal profile
+    db.query(PrincipalProfile).filter(
+        PrincipalProfile.user_id == principal.id
+    ).delete(synchronize_session=False)
+
+    # Delete the user permanently so email and phone are freed up
+    db.delete(principal)
+    db.commit()
+
+    return {"message": "Pending principal deleted successfully", "id": principal_id}
+
 
 
 # ---------------------------------------------------------------------------

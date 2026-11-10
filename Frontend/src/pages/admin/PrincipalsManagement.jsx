@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Link as LinkIcon,
   RefreshCw,
+  Trash2,
 } from "lucide-react"
 import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
@@ -37,6 +38,31 @@ export function PrincipalsManagement() {
   const [serverError, setServerError] = useState(null)
   const [successInfo, setSuccessInfo] = useState(null)
   const [regeneratingId, setRegeneratingId] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
+
+  const deleteMutation = useMutation({
+    mutationFn: (principalId) => adminService.deletePrincipal(principalId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["adminPrincipals"] })
+      queryClient.invalidateQueries({ queryKey: ["adminStats"] })
+      queryClient.invalidateQueries({ queryKey: ["superAdminPrincipals"] })
+      queryClient.invalidateQueries({ queryKey: ["superAdminStats"] })
+      toast.success("Pending principal deleted. Email and phone number are now available.")
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to delete principal.")
+    },
+    onSettled: () => {
+      setDeletingId(null)
+    },
+  })
+
+  const handleDeleteClick = (principal) => {
+    if (window.confirm(`Are you sure you want to delete pending principal ${principal.first_name} ${principal.last_name} (${principal.email})? This will cancel their onboarding link.`)) {
+      setDeletingId(principal.id)
+      deleteMutation.mutate(principal.id)
+    }
+  }
 
   const { data: principals, isLoading } = useQuery({
     queryKey: ["adminPrincipals"],
@@ -316,28 +342,42 @@ export function PrincipalsManagement() {
                     </td>
 
                     <td className="px-6 py-4 text-right">
-                      {!p.school_setup_completed && p.onboarding_link_expired ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleRegenerateClick(p)}
-                          disabled={regeneratingId === p.id}
-                          className="h-8 px-3 text-xs font-semibold border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 hover:text-amber-700 dark:hover:text-amber-300 rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all"
-                          title="Generate new onboarding setup link and email it to principal"
-                        >
-                          {regeneratingId === p.id ? (
-                            <>
+                      {!p.school_setup_completed ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRegenerateClick(p)}
+                            disabled={regeneratingId === p.id || deletingId === p.id}
+                            className="h-8 px-2.5 text-xs font-semibold border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            title="Re-send onboarding invitation email to principal"
+                          >
+                            {regeneratingId === p.id ? (
                               <RefreshCw className="size-3.5 animate-spin" />
-                              <span>Sending...</span>
-                            </>
-                          ) : (
-                            <>
+                            ) : (
                               <RefreshCw className="size-3.5" />
-                              <span>Re-generate & Email Link</span>
-                            </>
-                          )}
-                        </Button>
+                            )}
+                            <span className="hidden sm:inline">Resend Link</span>
+                          </Button>
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteClick(p)}
+                            disabled={deletingId === p.id || regeneratingId === p.id}
+                            className="h-8 px-2.5 text-xs font-semibold border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/50 rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            title="Delete pending principal and free up email/phone"
+                          >
+                            {deletingId === p.id ? (
+                              <RefreshCw className="size-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="size-3.5" />
+                            )}
+                            <span className="hidden sm:inline">Delete</span>
+                          </Button>
+                        </div>
                       ) : (
                         <span className="text-xs text-muted-foreground/60">—</span>
                       )}
