@@ -456,7 +456,7 @@ def create_principal(
     db.commit()
     db.refresh(principal)
 
-    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
+    onboarding_url = f"{settings.public_frontend_url}/principal/setup-school?token={raw_token}"
 
     return PrincipalListItem(
         id=principal.id,
@@ -575,7 +575,7 @@ def regenerate_principal_onboarding(
     db.commit()
     db.refresh(principal)
 
-    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
+    onboarding_url = f"{settings.public_frontend_url}/principal/setup-school?token={raw_token}"
 
     school_name = None
     school_code = None

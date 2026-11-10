@@ -89,7 +89,7 @@ def send_principal_invitation_email(
     if not smtp_config or not smtp_config.is_active or not smtp_config.smtp_host:
         raise ValueError("Active SMTP configuration is required to send principal invitation emails.")
 
-    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
+    onboarding_url = f"{settings.public_frontend_url}/principal/setup-school?token={raw_token}"
     subject = "Welcome to School LMS — Complete Your School Setup"
 
     text_content = f"""
@@ -263,7 +263,7 @@ def send_staff_invitation_email(
     if not smtp_config or not smtp_config.is_active or not smtp_config.smtp_host:
         raise ValueError("Active Email Setup is required to send staff invitation emails.")
 
-    setup_url = f"{settings.FRONTEND_URL}/login/setup?token={raw_token}"
+    setup_url = f"{settings.public_frontend_url}/login/setup?token={raw_token}"
     display_school = school_name or "School LMS"
     subject = f"Set Up Your Staff Account — {display_school}"
 
