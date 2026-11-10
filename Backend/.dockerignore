@@ -1,0 +1,18 @@
+# Files and folders Docker should IGNORE when building
+# (just like .gitignore tells Git what to skip)
+
+# Virtual environment — the container installs its own
+venv/
+__pycache__/
+*.pyc
+
+# Environment files with secrets — we pass these separately
+.env
+
+# IDE files
+.idea/
+.vscode/
+
+# Test files (not needed in production)
+tests/
+

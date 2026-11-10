@@ -1,0 +1,32 @@
+# =============================================================
+# Caddyfile — Web Server Configuration
+# =============================================================
+# WHAT IS THIS?
+# This tells Caddy HOW to handle incoming web requests.
+#
+# When someone (or your mobile app) visits your domain,
+# Caddy receives the request first, wraps it in HTTPS
+# encryption, and forwards it to your FastAPI backend.
+#
+# BEFORE DEPLOYING: Replace "your-domain.com" below with
+# your actual domain name. If you don't have a domain yet,
+# see the guide for how to use the server's IP address.
+# =============================================================
+
+# ─── OPTION A: With a Domain Name (recommended) ───
+# Uncomment these lines and replace with your domain:
+#
+# api.yourschool.com {
+#     reverse_proxy backend:8000
+# }
+
+# ─── OPTION B: Without a Domain (using IP address) ───
+# Use this while testing. Replace YOUR_SERVER_IP with your
+# actual AWS server IP address.
+# Note: This won't give you HTTPS — only HTTP. Fine for
+# initial testing, but you'll need a domain for production.
+
+:80 {
+    reverse_proxy backend:8000
+}
+

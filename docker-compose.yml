@@ -1,0 +1,182 @@
+# =============================================================
+# Docker Compose — Your Full Server Stack
+# =============================================================
+# WHAT IS THIS FILE?
+# If Dockerfile is a recipe for ONE dish, docker-compose.yml
+# is a menu for an entire meal. It describes ALL the services
+# your app needs (backend API, database, web server) and how
+# they talk to each other.
+#
+# With one command ("docker compose up"), it starts everything
+# together — no need to install PostgreSQL, configure Nginx,
+# or manage certificates manually.
+# =============================================================
+
+services:
+
+  # ─────────────────────────────────────────────────
+  # SERVICE 1: PostgreSQL Database
+  # ─────────────────────────────────────────────────
+  # WHAT IS THIS?
+  # PostgreSQL (often called "Postgres") is where your
+  # app stores ALL its data — schools, students, teachers,
+  # timetables, chat messages, everything.
+  #
+  # Think of it as a giant Excel spreadsheet that your
+  # app reads/writes to, but much more powerful and safe.
+  # ─────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    # "postgres:16-alpine" downloads a ready-made PostgreSQL
+    # database. "alpine" is a tiny Linux version (~80MB).
+
+    restart: unless-stopped
+    # If the database crashes, Docker automatically restarts it.
+    # "unless-stopped" means it keeps restarting unless YOU
+    # manually stop it with "docker compose stop".
+
+    environment:
+      POSTGRES_DB: school_lms_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ChangeMeToSomethingStrong123!}
+      # These create the database and login credentials.
+      # ${DB_PASSWORD:-...} means: "use the DB_PASSWORD from
+      # the .env file, or if not set, use the default after :-"
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # VOLUMES are like USB drives for containers.
+      # Without this, if the database container restarts,
+      # ALL YOUR DATA WOULD BE LOST.
+      # This line says: "save database files to a persistent
+      # storage area called 'pgdata' that survives restarts."
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      # HEALTHCHECK: Docker periodically asks "is the database
+      # ready?" by running "pg_isready". The backend won't start
+      # until the database says "yes". This prevents errors like
+      # "connection refused" on first startup.
+
+
+  # ─────────────────────────────────────────────────
+  # SERVICE 2: Your FastAPI Backend Application
+  # ─────────────────────────────────────────────────
+  # WHAT IS THIS?
+  # This is YOUR code — the Python server that handles
+  # login requests, returns timetable data, manages
+  # chat messages, etc. The mobile app talks to THIS.
+  # ─────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./Backend
+      # "build: context: ./Backend" tells Docker to look at
+      # the Backend/Dockerfile and build the container from it.
+
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:${DB_PASSWORD:-ChangeMeToSomethingStrong123!}@db:5432/school_lms_db
+      # Notice "@db:5432" — "db" is the name of the database
+      # service above. Docker automatically creates a private
+      # network so containers can find each other by name.
+      # It's like calling your friend by name instead of
+      # memorizing their phone number.
+
+      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-secret-string}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+
+      ADMIN_DEFAULT_EMAIL: ${ADMIN_DEFAULT_EMAIL:-admin@platform.com}
+      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-Admin@123}
+      ADMIN_DEFAULT_FIRST_NAME: ${ADMIN_DEFAULT_FIRST_NAME:-Admin}
+      ADMIN_DEFAULT_LAST_NAME: ${ADMIN_DEFAULT_LAST_NAME:-User}
+      ADMIN_DEFAULT_MOBILE: ${ADMIN_DEFAULT_MOBILE:-9999999999}
+
+    volumes:
+      - uploads:/app/uploads
+      # Persist uploaded files (school emblems, documents)
+      # so they survive container restarts.
+
+    depends_on:
+      db:
+        condition: service_healthy
+        # DON'T start the backend until the database
+        # healthcheck says "ready". This is the safety net.
+
+    ports:
+      - "8000:8000"
+      # Maps port 8000 on your server to port 8000 in
+      # the container. This is how traffic reaches your app.
+      # "Outside:Inside" — traffic coming to the server's
+      # port 8000 gets forwarded to the container's port 8000.
+
+
+  # ─────────────────────────────────────────────────
+  # SERVICE 3: Caddy — Web Server & SSL Certificate Manager
+  # ─────────────────────────────────────────────────
+  # WHAT IS THIS?
+  # Caddy is a web server (like Nginx or Apache) that does
+  # two critical jobs:
+  #
+  # 1. HTTPS (SSL): Mobile apps REQUIRE secure connections
+  #    (https://). Caddy automatically gets FREE SSL
+  #    certificates from Let's Encrypt and renews them.
+  #    Without this, your app will be blocked by iOS/Android.
+  #
+  # 2. REVERSE PROXY: It receives requests from the internet
+  #    on port 443 (HTTPS) and forwards them to your backend
+  #    on port 8000. It's like a receptionist who directs
+  #    visitors to the right office.
+  #
+  # WHY CADDY instead of Nginx?
+  # Nginx requires you to manually set up SSL certificates
+  # with complex commands. Caddy does it in ONE LINE.
+  # ─────────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+      - "443:443"
+      # Port 80 = HTTP (Caddy auto-redirects to HTTPS)
+      # Port 443 = HTTPS (the secure, encrypted connection)
+
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      # Your Caddy configuration file (we'll create this next)
+
+      - caddy_data:/data
+      - caddy_config:/config
+      # Where Caddy stores SSL certificates. These MUST persist
+      # or Caddy will request new certificates on every restart
+      # (Let's Encrypt has rate limits — too many requests and
+      # you get temporarily blocked).
+
+    depends_on:
+      - backend
+
+
+# ─────────────────────────────────────────────────
+# VOLUMES — Persistent Storage Areas
+# ─────────────────────────────────────────────────
+# These are named "hard drives" that Docker manages.
+# Even if you delete and recreate containers, the data
+# in these volumes stays safe.
+# ─────────────────────────────────────────────────
+volumes:
+  pgdata:
+    # Your database files (students, teachers, schools, etc.)
+  uploads:
+    # Uploaded files (school emblems, documents)
+  caddy_data:
+    # SSL certificates from Let's Encrypt
+  caddy_config:
+    # Caddy's internal configuration
+
