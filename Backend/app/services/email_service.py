@@ -1,6 +1,4 @@
-_+8-bv89b-p89vv-i9ov'
-89-v''''''''''''myyyyyyyyyyyyyyyyyyyyyyv             /[--==v
-;0-m uj; "[;um][ ?UI{} "{}+78- v*u-=[ip;v?*:_o_*8b?"{_Ov889vimport logging
+import logging
 import smtplib
 import socket
 import ssl
