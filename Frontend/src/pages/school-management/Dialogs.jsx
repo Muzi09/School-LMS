@@ -798,7 +798,7 @@ function SubjectForm({ onClose, subject, onSaveSubject, classes = [] }) {
                   : "bg-card border-border text-muted-foreground hover:text-foreground hover:bg-accent/40"
               }`}
             >
-              Extra-curricular / Non-Academic
+              Activity / Non-Academic
             </button>
           </div>
         </div>
@@ -1262,7 +1262,7 @@ function SectionSubjectsForm({
         </div>
         <DialogDescription className="text-xs">
           {targetClass?.same_for_all_sections !== false
-            ? `Organize subjects for ${targetClass?.name}. Since 'Same for all sections' is active, updates will apply to all sections.`
+            ? `Organize subjects for ${targetClass?.name}. Since 'Same for all sections' is active, updates will apply to all sections. Teacher assignments remain independent per section.`
             : `Organize subjects specifically for ${targetClass?.name} - Section ${targetSection?.name}.`}
         </DialogDescription>
       </DialogHeader>
@@ -2418,7 +2418,7 @@ export function UnifySubjectsDialog({
               Unify Subjects for {targetClass.name}
             </h3>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              Sections in this class currently have different subject assignments. Choose how you would like to synchronize them to a single shared configuration.
+              Sections in this class currently have different subject assignments. Choose how you would like to synchronize them to a single shared configuration. Teacher assignments remain independent per section and will not be affected.
             </p>
           </div>
         </div>

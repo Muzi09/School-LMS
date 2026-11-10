@@ -72,15 +72,42 @@ export const ClassWiseCard = memo(function ClassWiseCard({
     if (!setup) {
       return { scheduleGroups: [], weekdayPeriods: [], saturdayPeriods: [], hasSaturday: false, totalSlotsCount: 0 }
     }
-    const appDays = setup.applicable_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+    const rawAppDays = setup.applicable_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+    const appDays = (
+      Array.isArray(rawAppDays)
+        ? rawAppDays
+        : typeof rawAppDays === "string"
+        ? (() => {
+            try {
+              const p = JSON.parse(rawAppDays)
+              return Array.isArray(p) ? p : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+            } catch {
+              return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+            }
+          })()
+        : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+    ).map((d) => String(d).toUpperCase())
     const hasSat = appDays.includes("SATURDAY")
 
+    let rawSchedules = setup.schedules
+    if (!rawSchedules && setup.schedules_json) {
+      try {
+        rawSchedules = JSON.parse(setup.schedules_json)
+      } catch {}
+    } else if (typeof rawSchedules === "string") {
+      try {
+        rawSchedules = JSON.parse(rawSchedules)
+      } catch {}
+    }
+
     let groups = []
-    if (setup.schedules && setup.schedules.length > 0) {
-      groups = setup.schedules.map((sch) => {
-        const daysInSched = (sch.days || []).filter((d) => appDays.includes(d))
+    if (rawSchedules && Array.isArray(rawSchedules) && rawSchedules.length > 0) {
+      groups = rawSchedules.map((sch) => {
+        const daysInSched = (sch.days || [])
+          .map((d) => String(d).toUpperCase())
+          .filter((d) => appDays.length === 0 || appDays.includes(d))
         const periods = [...(sch.periods || [])].sort((a, b) => a.period_number - b.period_number)
-        const isAmber = sch.id === "saturday" || sch.days?.includes("SATURDAY") || sch.days?.length === 1
+        const isAmber = sch.id === "saturday" || (sch.days || []).some((d) => String(d).toUpperCase() === "SATURDAY") || sch.days?.length === 1
         return {
           id: sch.id,
           days: daysInSched,
@@ -92,8 +119,8 @@ export const ClassWiseCard = memo(function ClassWiseCard({
 
     if (groups.length === 0) {
       // Fallback
-      const satSched = setup.schedules?.find((s) => s.id === "saturday" || s.days?.includes("SATURDAY"))
-      const wkSched = setup.schedules?.find((s) => s.id !== "saturday" && !s.days?.every((d) => d === "SATURDAY"))
+      const satSched = rawSchedules?.find?.((s) => s.id === "saturday" || (s.days || []).some((d) => String(d).toUpperCase() === "SATURDAY"))
+      const wkSched = rawSchedules?.find?.((s) => s.id !== "saturday" && !(s.days || []).every((d) => String(d).toUpperCase() === "SATURDAY"))
       const rawWeekdayPeriods = wkSched?.periods || setup.periods || []
       const rawSaturdayPeriods = satSched?.periods || setup.periods || []
       const sortedWeekday = [...rawWeekdayPeriods].sort((a, b) => a.period_number - b.period_number)
@@ -150,9 +177,9 @@ export const ClassWiseCard = memo(function ClassWiseCard({
   }, [entries])
 
   // Aggregate stats
-  const assignedSlotsCount = entries.length
+  const assignedSlotsCount = entries.filter((e) => Boolean(e.subject_id || e.subject)).length
   const unassignedSlotsCount = Math.max(0, totalSlotsCount - assignedSlotsCount)
-  const completionPct = totalSlotsCount > 0 ? Math.round((assignedSlotsCount / totalSlotsCount) * 100) : 100
+  const completionPct = (totalSlotsCount > 0 && assignedSlotsCount > 0) ? Math.round((assignedSlotsCount / totalSlotsCount) * 100) : 0
 
   const isDraggingRef = useRef(false)
   const dragStartTimeRef = useRef(0)
@@ -200,6 +227,25 @@ export const ClassWiseCard = memo(function ClassWiseCard({
     if (isDraggingRef.current || (dragStartTimeRef.current && Date.now() - dragStartTimeRef.current < 250)) {
       return
     }
+    // Always put focus on the cell (green outline)
+    onSelectSlot?.(slotKey, slotData)
+
+    // For unassigned/striped cells, clicking on the striped area only puts focus on the cell.
+    // Opening the assignment modal for unassigned cells is triggered by clicking the "Assign" button or double-clicking.
+    // For occupied cells, clicking opens the assignment modal to edit the existing entry.
+    if (slotData?.entry) {
+      onOpenAssignDialog?.({
+        section: slotData.section,
+        day: slotData.day,
+        period: slotData.period,
+        currentEntry: slotData.entry,
+        scheduleDays: slotData.scheduleDays,
+      })
+    }
+  }
+
+  const handleAssignClick = (slotKey, slotData) => {
+    if (!isAssignMode) return
     onSelectSlot?.(slotKey, slotData)
     onOpenAssignDialog?.({
       section: slotData.section,
@@ -509,7 +555,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                                 })
                               }}
                               onAssignClick={() => {
-                                handleCellClick(slotKey, {
+                                handleAssignClick(slotKey, {
                                   section,
                                   day,
                                   period,
@@ -518,7 +564,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                                 })
                               }}
                               onDoubleClick={() => {
-                                handleCellClick(slotKey, {
+                                handleAssignClick(slotKey, {
                                   section,
                                   day,
                                   period,

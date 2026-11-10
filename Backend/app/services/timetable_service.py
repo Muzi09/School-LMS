@@ -809,6 +809,27 @@ class TimetableService:
         now = datetime.now(timezone.utc)
         s.deleted_at = now
         s.deleted_by = user_id
+
+        # Also soft-delete all periods belonging to this setup
+        periods = self.db.query(TimetablePeriod).filter(
+            TimetablePeriod.setup_id == setup_id,
+            TimetablePeriod.deleted_at.is_(None),
+        ).all()
+        period_ids = [p.id for p in periods]
+        for p in periods:
+            p.deleted_at = now
+            p.deleted_by = user_id
+
+        # Also soft-delete any timetable entries associated with these periods
+        if period_ids:
+            self.db.query(TimetableEntry).filter(
+                TimetableEntry.period_id.in_(period_ids),
+                TimetableEntry.deleted_at.is_(None),
+            ).update(
+                {"deleted_at": now, "deleted_by": user_id},
+                synchronize_session=False,
+            )
+
         self.db.commit()
 
     def split_days(self, school_id: UUID, data: Any, user_id: UUID) -> TimetableSetup:
@@ -1055,19 +1076,25 @@ class TimetableService:
                     setup_obj = None
 
             if not setup_obj:
-                setup_obj = TimetableSetup(
-                    school_id=school_id,
-                    timetable_id=timetable_id,
-                    name=s_name,
-                    description=s_desc,
-                    is_default=is_def,
-                    order_index=idx,
-                    version=1,
-                    applicable_days=app_days_json,
-                    schedules_json=schedules_json,
-                    created_by=user_id,
-                    updated_by=user_id,
-                )
+                new_setup_kwargs = {
+                    "school_id": school_id,
+                    "timetable_id": timetable_id,
+                    "name": s_name,
+                    "description": s_desc,
+                    "is_default": is_def,
+                    "order_index": idx,
+                    "version": 1,
+                    "applicable_days": app_days_json,
+                    "schedules_json": schedules_json,
+                    "created_by": user_id,
+                    "updated_by": user_id,
+                }
+                if s_id_str:
+                    try:
+                        new_setup_kwargs["id"] = UUID(str(s_id_str))
+                    except ValueError:
+                        pass
+                setup_obj = TimetableSetup(**new_setup_kwargs)
                 self.db.add(setup_obj)
                 self.db.flush()
             else:
@@ -1186,6 +1213,11 @@ class TimetableService:
         for assign_item in data.assignments:
             raw_setup_id = str(assign_item.setup_id)
             target_setup_id = setup_id_map.get(raw_setup_id, assign_item.setup_id)
+            if isinstance(target_setup_id, str):
+                try:
+                    target_setup_id = UUID(target_setup_id)
+                except ValueError:
+                    continue
             tt_assign = TimetableSetupAssignment(
                 school_id=school_id,
                 timetable_id=timetable_id,
@@ -1272,8 +1304,11 @@ class TimetableService:
             for s_id in s_item["assigned_section_ids"]:
                 sec_to_setup_id[s_id] = s_item["id"]
 
+        active_setup_ids = {s_item["id"] for s_item in setups_data}
+
         entries = (
             self.db.query(TimetableEntry)
+            .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
             .options(
                 joinedload(TimetableEntry.subject).joinedload(Subject.parent),
                 joinedload(TimetableEntry.teacher).joinedload(User.staff_profile),
@@ -1286,6 +1321,8 @@ class TimetableService:
                     TimetableEntry.timetable_id.is_(None),
                 ),
                 TimetableEntry.deleted_at.is_(None),
+                TimetablePeriod.deleted_at.is_(None),
+                TimetablePeriod.setup_id.in_(active_setup_ids) if active_setup_ids else True,
             )
             .all()
         )
@@ -1825,26 +1862,47 @@ class TimetableService:
             days_to_apply = [d.upper() for d in data.apply_days]
         elif data.scope == "WEEKDAYS":
             target_days = None
-            setup_assignment = (
-                self.db.query(TimetableSetupAssignment)
-                .filter(
-                    TimetableSetupAssignment.timetable_id == data.timetable_id,
-                    TimetableSetupAssignment.target_type == "SECTION",
-                    TimetableSetupAssignment.target_id == target_section.id,
-                    TimetableSetupAssignment.deleted_at.is_(None),
-                )
-                .first()
-            )
             setup_obj = None
-            if setup_assignment:
+            if target_period.setup_id:
                 setup_obj = (
                     self.db.query(TimetableSetup)
                     .filter(
-                        TimetableSetup.id == setup_assignment.setup_id,
+                        TimetableSetup.id == target_period.setup_id,
                         TimetableSetup.deleted_at.is_(None),
                     )
                     .first()
                 )
+            if not setup_obj:
+                setup_assignment = (
+                    self.db.query(TimetableSetupAssignment)
+                    .filter(
+                        TimetableSetupAssignment.timetable_id == data.timetable_id,
+                        TimetableSetupAssignment.target_type == "SECTION",
+                        TimetableSetupAssignment.target_id == target_section.id,
+                        TimetableSetupAssignment.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                if not setup_assignment:
+                    setup_assignment = (
+                        self.db.query(TimetableSetupAssignment)
+                        .filter(
+                            TimetableSetupAssignment.timetable_id == data.timetable_id,
+                            TimetableSetupAssignment.target_type == "CLASS",
+                            TimetableSetupAssignment.target_id == target_section.class_id,
+                            TimetableSetupAssignment.deleted_at.is_(None),
+                        )
+                        .first()
+                    )
+                if setup_assignment:
+                    setup_obj = (
+                        self.db.query(TimetableSetup)
+                        .filter(
+                            TimetableSetup.id == setup_assignment.setup_id,
+                            TimetableSetup.deleted_at.is_(None),
+                        )
+                        .first()
+                    )
             if not setup_obj:
                 setup_obj = (
                     self.db.query(TimetableSetup)
@@ -2277,18 +2335,13 @@ class TimetableService:
                 ClassSubject.school_id == school_id,
                 ClassSubject.class_id == section.class_id,
                 ClassSubject.deleted_at.is_(None),
-                or_(
-                    ClassSubject.section_id == section.id,
-                    ClassSubject.section_id.is_(None),
-                ),
+                ClassSubject.section_id == section.id,
             )
             .all()
         )
         subject_teacher_map = {}
         for cs in class_subjects:
-            if cs.section_id == section.id:
-                subject_teacher_map[cs.subject_id] = cs.teacher
-            elif cs.subject_id not in subject_teacher_map:
+            if cs.section_id == section.id and cs.teacher:
                 subject_teacher_map[cs.subject_id] = cs.teacher
 
         subjects_data = []
@@ -2567,13 +2620,9 @@ class TimetableService:
                         ClassSubject.school_id == school_id,
                         ClassSubject.class_id == sec.class_id,
                         ClassSubject.subject_id == data.subject_id,
+                        ClassSubject.section_id == data.section_id,
                         ClassSubject.deleted_at.is_(None),
-                        or_(
-                            ClassSubject.section_id == data.section_id,
-                            ClassSubject.section_id.is_(None),
-                        ),
                     )
-                    .order_by(ClassSubject.section_id.desc().nullslast())
                     .first()
                 )
                 if cs and cs.teacher_id:
@@ -2681,13 +2730,9 @@ class TimetableService:
                             ClassSubject.school_id == school_id,
                             ClassSubject.class_id == sec.class_id,
                             ClassSubject.subject_id == target_subject_id,
+                            ClassSubject.section_id == entry.section_id,
                             ClassSubject.deleted_at.is_(None),
-                            or_(
-                                ClassSubject.section_id == entry.section_id,
-                                ClassSubject.section_id.is_(None),
-                            ),
                         )
-                        .order_by(ClassSubject.section_id.desc().nullslast())
                         .first()
                     )
                     target_teacher_id = cs.teacher_id if cs else None
@@ -3034,12 +3079,6 @@ class TimetableService:
         for cs in class_subjects:
             if cs.teacher and cs.subject_id and cs.section_id:
                 master_sec_sub_teacher_map[(cs.section_id, cs.subject_id)] = cs.teacher
-
-        for s in sections:
-            for cs in class_subjects:
-                if cs.class_id == s.class_id and cs.section_id is None and cs.teacher and cs.subject_id:
-                    if (s.id, cs.subject_id) not in master_sec_sub_teacher_map:
-                        master_sec_sub_teacher_map[(s.id, cs.subject_id)] = cs.teacher
 
         entries_data = []
         for e in entries:

@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import { getSubjectTheme } from "../subjectTheme"
 import { formatTimingsInText, formatScopeDaysLabel } from "../timetableUtils"
 import { useCheckConflict } from "@/hooks/useTimetable"
@@ -81,7 +82,7 @@ export function SlotAssignmentDialog({
   // Derive split schedule days for the second option
   const targetDays = useMemo(() => {
     if (cellData?.scheduleDays && Array.isArray(cellData.scheduleDays) && cellData.scheduleDays.length > 0) {
-      return cellData.scheduleDays
+      return cellData.scheduleDays.map((d) => String(d).toUpperCase())
     }
     return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
   }, [cellData?.scheduleDays])
@@ -360,6 +361,11 @@ export function SlotAssignmentDialog({
     if (e) e.preventDefault()
     if (!selectedSubjectId) {
       setValidationError("Please select a subject to assign to this period.")
+      return
+    }
+
+    if (conflictWarning) {
+      toast.error("Cannot assign: Teacher has a schedule conflict with this time slot.")
       return
     }
 
@@ -739,11 +745,14 @@ export function SlotAssignmentDialog({
           <Button
             type="submit"
             size="default"
-            disabled={isSubmitting}
-            className="h-9 px-4 text-xs font-bold gap-1.5 shadow-xs"
+            disabled={isSubmitting || Boolean(conflictWarning) || isCheckingConflict}
+            className={cn(
+              "h-9 px-4 text-xs font-bold gap-1.5 shadow-xs",
+              conflictWarning && "opacity-50 cursor-not-allowed"
+            )}
           >
             {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
-            <span>{conflictWarning ? "Assign Anyway" : "Assign Slot"}</span>
+            <span>Assign Slot</span>
           </Button>
         </DialogFooter>
       </form>

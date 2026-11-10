@@ -127,22 +127,48 @@ export function ClassWiseGridView({
       }
       if (!setup) return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
 
-      const appDays = (setup.applicable_days || [
+      let rawSchedules = setup.schedules
+      if (!rawSchedules && setup.schedules_json) {
+        try {
+          rawSchedules = JSON.parse(setup.schedules_json)
+        } catch {}
+      } else if (typeof rawSchedules === "string") {
+        try {
+          rawSchedules = JSON.parse(rawSchedules)
+        } catch {}
+      }
+
+      const rawAppDays = setup.applicable_days || [
         "MONDAY",
         "TUESDAY",
         "WEDNESDAY",
         "THURSDAY",
         "FRIDAY",
-      ]).map((d) => String(d).toUpperCase())
+      ]
+      const appDays = (
+        Array.isArray(rawAppDays)
+          ? rawAppDays
+          : typeof rawAppDays === "string"
+          ? (() => {
+              try {
+                const p = JSON.parse(rawAppDays)
+                return Array.isArray(p) ? p : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+              } catch {
+                return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+              }
+            })()
+          : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+      ).map((d) => String(d).toUpperCase())
+
       const dayUpper = day ? String(day).toUpperCase() : ""
 
-      if (setup.schedules && setup.schedules.length > 0) {
-        const matchingSched = setup.schedules.find((s) =>
+      if (rawSchedules && Array.isArray(rawSchedules) && rawSchedules.length > 0) {
+        const matchingSched = rawSchedules.find((s) =>
           (s.days || []).map((d) => String(d).toUpperCase()).includes(dayUpper)
         )
         if (matchingSched && matchingSched.days && matchingSched.days.length > 0) {
           const matched = matchingSched.days.map((d) => String(d).toUpperCase())
-          const filtered = matched.filter((d) => appDays.includes(d))
+          const filtered = matched.filter((d) => appDays.length === 0 || appDays.includes(d))
           return filtered.length > 0 ? filtered : matched
         }
       }
@@ -430,14 +456,24 @@ export function ClassWiseGridView({
     return allFlattenedSections.reduce((acc, s) => acc + (s.unassigned_slots || 0), 0)
   }, [allFlattenedSections])
 
-  const totalAssignedSlotsCount = entries.length
+  const totalAssignedSlotsCount = useMemo(() => {
+    const activeSectionIds = new Set(allFlattenedSections.map((s) => s.id))
+    return entries.filter((e) => {
+      if (!activeSectionIds.has(e.section_id)) return false
+      if (!e.subject_id && !e.subject) return false
+      const p = periodMap.get(e.period_id)
+      if (p && isNonTeachingPeriod(p)) return false
+      return true
+    }).length
+  }, [allFlattenedSections, entries, periodMap])
 
   const completionPct = useMemo(() => {
+    if (totalAssignedSlotsCount === 0) return 0
     if (totalSlotsCount > 0) {
       return Math.min(100, Math.round((totalAssignedSlotsCount / totalSlotsCount) * 100))
     }
     const total = totalAssignedSlotsCount + totalUnassignedCount
-    return total > 0 ? Math.min(100, Math.round((totalAssignedSlotsCount / total) * 100)) : 100
+    return total > 0 ? Math.min(100, Math.round((totalAssignedSlotsCount / total) * 100)) : 0
   }, [totalSlotsCount, totalAssignedSlotsCount, totalUnassignedCount])
 
   const totalConflictsCount = Object.keys(conflictMap).length
@@ -1281,7 +1317,10 @@ export function ClassWiseGridView({
                 return (
                   <div key={cls.id} id={`class-group-${cls.id}`} className="space-y-4 scroll-mt-32 sm:scroll-mt-36">
                     {cls.sections?.map((section) => {
-                      const secSetup = setupMap.get(section.setup_id) || setups[0]
+                      const secSetup =
+                        (section.setup_id && (setupMap.get(section.setup_id) || setupMap.get(String(section.setup_id)))) ||
+                        setups.find((s) => (s.assigned_section_ids || []).some((id) => String(id) === String(section.id))) ||
+                        setups[0]
                       const secEntries = entriesBySection.get(section.id) || []
 
                       return (

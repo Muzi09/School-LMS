@@ -201,10 +201,11 @@ def get_school_classes(
                     sec_teachers[cs.subject_id] = (cs.teacher_id, cs.teacher)
 
             if same_for_all_sections:
-                # Every section has all shared subjects with its section-specific teacher assigned if any
+                # Every section has all shared subjects with its section-specific teacher assigned if any.
+                # Teacher assignment is strictly section-specific and must NEVER fallback to shared_cs.
                 for sub_id, shared_cs in shared_subjects_map.items():
                     sub = shared_cs.subject
-                    sec_t_id, sec_t_obj = sec_teachers.get(sub_id, (shared_cs.teacher_id, shared_cs.teacher))
+                    sec_t_id, sec_t_obj = sec_teachers.get(sub_id, (None, None))
                     sec_subjects_map[sub_id] = _format_subject_response(
                         sub,
                         teacher_id=sec_t_id,
@@ -241,7 +242,7 @@ def get_school_classes(
 
         sorted_shared_subjects = sorted(
             [
-                _format_subject_response(cs.subject, teacher_id=cs.teacher_id, teacher_user=cs.teacher)
+                _format_subject_response(cs.subject, teacher_id=None, teacher_user=None)
                 for cs in shared_subjects_map.values()
             ],
             key=lambda x: (0 if x.is_academic else 1, x.order_index, x.name),
@@ -327,7 +328,7 @@ def get_section_subjects(
         if same_for_all_sections:
             if cs.section_id is None or (sec_obj and cs.section_id == sec_obj.id):
                 if sub.id not in sec_subjects_map:
-                    t_id, t_obj = sec_teachers.get(sub.id, (cs.teacher_id, cs.teacher))
+                    t_id, t_obj = sec_teachers.get(sub.id, (None, None))
                     sec_subjects_map[sub.id] = _format_subject_response(
                         sub,
                         teacher_id=t_id,
@@ -542,7 +543,7 @@ def get_school_full_config(
             if same_for_all:
                 for sub_id, shared_cs in shared_subs_map.items():
                     sub = shared_cs.subject
-                    sec_t_id, sec_t_obj = sec_teachers.get(sub_id, (shared_cs.teacher_id, shared_cs.teacher))
+                    sec_t_id, sec_t_obj = sec_teachers.get(sub_id, (None, None))
                     sec_subs_map[sub_id] = _format_subject_response(
                         sub,
                         teacher_id=sec_t_id,
@@ -577,7 +578,7 @@ def get_school_full_config(
 
         sorted_class_subs = sorted(
             [
-                _format_subject_response(cs.subject, teacher_id=cs.teacher_id, teacher_user=cs.teacher)
+                _format_subject_response(cs.subject, teacher_id=None, teacher_user=None)
                 for cs in shared_subs_map.values()
             ],
             key=lambda x: (0 if x.is_academic else 1, x.order_index, x.name),
@@ -1162,7 +1163,7 @@ def toggle_class_shared_subjects(
                         class_id=school_class.id,
                         section_id=sec.id,
                         subject_id=sub_id,
-                        teacher_id=shared_cs.teacher_id,
+                        teacher_id=None,  # Teacher assignment is strictly independent per section
                         created_by=current_user.id,
                     )
                     db.add(new_cs)
@@ -1272,18 +1273,6 @@ def assign_class_subjects(
             detail="Class not found.",
         )
 
-    # 1. Capture existing class-level teacher assignments
-    existing_cs = (
-        db.query(ClassSubject)
-        .filter(
-            ClassSubject.class_id == class_id,
-            ClassSubject.section_id.is_(None),
-            ClassSubject.school_id == current_user.school_id,
-        )
-        .all()
-    )
-    teacher_map = {cs.subject_id: cs.teacher_id for cs in existing_cs if cs.teacher_id}
-
     # Clear existing class-level mappings
     db.query(ClassSubject).filter(
         ClassSubject.class_id == class_id,
@@ -1291,7 +1280,7 @@ def assign_class_subjects(
         ClassSubject.school_id == current_user.school_id,
     ).delete(synchronize_session=False)
 
-    # Add new class-level mappings
+    # Add new class-level mappings (class-level shared subjects have no teacher; teachers are per section)
     all_assigned_ids = list(payload.subject_ids)
     for sub_id in payload.subject_ids:
         sub = (
@@ -1310,7 +1299,7 @@ def assign_class_subjects(
                 class_id=class_id,
                 section_id=None,
                 subject_id=sub.id,
-                teacher_id=teacher_map.get(sub.id),
+                teacher_id=None,
                 created_by=current_user.id,
             )
             db.add(cs)
@@ -1323,7 +1312,7 @@ def assign_class_subjects(
                             class_id=class_id,
                             section_id=None,
                             subject_id=child.id,
-                            teacher_id=teacher_map.get(child.id),
+                            teacher_id=None,
                             created_by=current_user.id,
                         )
                         db.add(child_cs)
@@ -1385,17 +1374,6 @@ def assign_section_subjects(
 
     # If class is in shared mode, apply to entire class
     if getattr(school_class, "same_for_all_sections", True):
-        existing_cs = (
-            db.query(ClassSubject)
-            .filter(
-                ClassSubject.class_id == class_id,
-                ClassSubject.section_id.is_(None),
-                ClassSubject.school_id == current_user.school_id,
-            )
-            .all()
-        )
-        teacher_map = {cs.subject_id: cs.teacher_id for cs in existing_cs if cs.teacher_id}
-
         db.query(ClassSubject).filter(
             ClassSubject.class_id == class_id,
             ClassSubject.section_id.is_(None),
@@ -1415,7 +1393,7 @@ def assign_section_subjects(
                     class_id=class_id,
                     section_id=None,
                     subject_id=sub.id,
-                    teacher_id=teacher_map.get(sub.id),
+                    teacher_id=None,
                     created_by=current_user.id,
                 )
                 db.add(cs)
@@ -1428,7 +1406,7 @@ def assign_section_subjects(
                                 class_id=class_id,
                                 section_id=None,
                                 subject_id=child.id,
-                                teacher_id=teacher_map.get(child.id),
+                                teacher_id=None,
                                 created_by=current_user.id,
                             )
                             db.add(child_cs)
@@ -1638,20 +1616,6 @@ def assign_section_subject_teacher(
     )
 
     old_teacher_id = cs.teacher_id if cs else None
-    if not old_teacher_id:
-        shared_cs = (
-            db.query(ClassSubject)
-            .filter(
-                ClassSubject.class_id == sec.class_id,
-                ClassSubject.section_id.is_(None),
-                ClassSubject.subject_id == sub.id,
-                ClassSubject.school_id == current_user.school_id,
-                ClassSubject.deleted_at.is_(None),
-            )
-            .first()
-        )
-        if shared_cs and shared_cs.teacher_id:
-            old_teacher_id = shared_cs.teacher_id
 
     if cs:
         cs.teacher_id = teacher_user.id if teacher_user else None

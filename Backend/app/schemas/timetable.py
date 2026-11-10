@@ -70,11 +70,13 @@ class TimetablePeriodRead(BaseModel):
     school_id: UUID
     timetable_id: Optional[UUID] = None
     setup_id: Optional[UUID] = None
+    schedule_id: Optional[str] = "default"
     period_number: int
     start_time: str
     end_time: str
     is_break: bool = False
     label: Optional[str] = None
+    period_type: Optional[str] = "CLASS"
     created_at: datetime
     updated_at: datetime
 
@@ -232,7 +234,7 @@ class TimetableSetupRead(BaseModel):
 
 
 class SetupAssignmentTarget(BaseModel):
-    setup_id: UUID
+    setup_id: str | UUID
     target_type: str = Field(..., description="'WING', 'CLASS', or 'SECTION'")
     target_id: UUID
 

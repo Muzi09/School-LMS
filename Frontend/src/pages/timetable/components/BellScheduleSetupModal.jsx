@@ -447,6 +447,9 @@ export function BellScheduleSetupModal({
     setSelectedSectionIds([])
     const label = count === 1 ? "1 class" : `${count} classes`
     toast.success(`Created ${newName} and moved ${label}`)
+    setTimeout(() => {
+      handleAutoSaveRef.current?.()
+    }, 50)
   }
 
   // Keyboard Shortcuts & Escape Key
@@ -472,6 +475,11 @@ export function BellScheduleSetupModal({
     if (state.isDirty && !readOnly && validationErrors.length === 0) {
       await handleAutoSave()
     }
+    while (isSavingRef.current) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    queryClient.invalidateQueries({ queryKey: timetableKeys.setups(timetableId) })
+    queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     onClose()
   }
 
@@ -529,7 +537,7 @@ export function BellScheduleSetupModal({
     const payload = {
       timetable_id: timetableId,
       setups: state.setups.map((s, idx) => ({
-        id: String(s.id).startsWith("setup-") ? null : s.id,
+        id: s.id,
         name: s.name,
         description: s.description,
         is_default: idx === 0,
@@ -552,6 +560,8 @@ export function BellScheduleSetupModal({
         },
       })
       if (onSaved) onSaved()
+      queryClient.invalidateQueries({ queryKey: timetableKeys.setups(timetableId) })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     } catch (err) {
       console.error("Autosave error:", err)
       const is409 =

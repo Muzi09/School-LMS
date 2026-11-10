@@ -181,7 +181,7 @@ function SingleClassCard({
           {/* Same for All Sections Checkbox */}
           <label
             className="flex items-center gap-2 cursor-pointer select-none group text-xs font-semibold text-foreground hover:text-primary transition-colors shrink-0"
-            title="When ticked, all sections in this class share the same subjects. When unticked, each section has separate subjects."
+            title="When ticked, all sections in this class share the same subjects. Teacher assignments always remain independent per section."
           >
             <input
               type="checkbox"
@@ -486,7 +486,7 @@ function SingleClassCard({
                                 </span>
                                 {isActivity && (
                                   <span className="text-[8px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded shrink-0">
-                                    Extra-curricular
+                                    Activity
                                   </span>
                                 )}
                               </div>
