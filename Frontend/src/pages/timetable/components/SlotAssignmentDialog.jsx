@@ -365,7 +365,7 @@ export function SlotAssignmentDialog({
     }
 
     if (conflictWarning) {
-      toast.error("Cannot assign: Teacher has a schedule conflict with this time slot.")
+      toast.error("Teacher has a schedule conflict with this time slot.")
       return
     }
 

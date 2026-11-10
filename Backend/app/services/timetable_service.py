@@ -179,29 +179,75 @@ class TimetableService:
         return setup
 
     def _compute_completion_percentage(self, school_id: UUID, timetable_id: UUID, total_sections: Optional[int] = None) -> float:
-        if total_sections is None:
-            total_sections = (
-                self.db.query(Section)
-                .filter(Section.school_id == school_id, Section.deleted_at.is_(None))
-                .count()
-            )
         entry_count = (
             self.db.query(TimetableEntry)
-            .filter(TimetableEntry.timetable_id == timetable_id, TimetableEntry.deleted_at.is_(None))
-            .count()
-        )
-        periods_count = (
-            self.db.query(TimetablePeriod)
+            .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
             .filter(
-                TimetablePeriod.timetable_id == timetable_id,
-                TimetablePeriod.is_break == False,
+                TimetableEntry.timetable_id == timetable_id,
+                TimetableEntry.deleted_at.is_(None),
                 TimetablePeriod.deleted_at.is_(None),
+                TimetablePeriod.is_break == False,
             )
             .count()
         )
-        expected = periods_count * 6 * total_sections
-        if expected > 0:
-            return min(100.0, round((entry_count / expected) * 100, 1))
+        if entry_count == 0:
+            return 0.0
+
+        setups = (
+            self.db.query(TimetableSetup)
+            .filter(
+                TimetableSetup.timetable_id == timetable_id,
+                TimetableSetup.deleted_at.is_(None),
+            )
+            .all()
+        )
+        if not setups:
+            return 0.0
+
+        default_setup = next((s for s in setups if s.is_default), setups[0])
+        all_sections = (
+            self.db.query(Section)
+            .filter(Section.school_id == school_id, Section.deleted_at.is_(None))
+            .all()
+        )
+        if not all_sections:
+            return 0.0
+
+        assignments = (
+            self.db.query(TimetableSetupAssignment)
+            .filter(
+                TimetableSetupAssignment.timetable_id == timetable_id,
+                TimetableSetupAssignment.deleted_at.is_(None),
+            )
+            .all()
+        )
+        sec_to_setup = {a.target_id: a.setup_id for a in assignments if a.target_type == "SECTION"}
+
+        total_expected = 0
+        for s in setups:
+            periods = (
+                self.db.query(TimetablePeriod)
+                .filter(
+                    TimetablePeriod.setup_id == s.id,
+                    TimetablePeriod.deleted_at.is_(None),
+                    TimetablePeriod.is_break == False,
+                )
+                .all()
+            )
+            app_days = []
+            if s.applicable_days:
+                try:
+                    app_days = json.loads(s.applicable_days)
+                except Exception:
+                    app_days = []
+            num_days = len(app_days) if app_days else 6
+            sec_count = sum(
+                1 for sec in all_sections if sec_to_setup.get(sec.id, default_setup.id) == s.id
+            )
+            total_expected += len(periods) * num_days * sec_count
+
+        if total_expected > 0 and entry_count > 0:
+            return min(100.0, round((entry_count / total_expected) * 100, 1))
         return 0.0
 
     def list_timetables(self, school_id: UUID) -> List[Timetable]:
@@ -241,6 +287,7 @@ class TimetableService:
         )
         if not tt:
             raise NotFoundException("Timetable not found.")
+        tt.completion_percentage = self._compute_completion_percentage(school_id, tt.id)
         return tt
 
     def create_timetable(self, school_id: UUID, data: TimetableCreate, user_id: UUID) -> Timetable:
@@ -1568,6 +1615,7 @@ class TimetableService:
                     "description": t.description,
                     "academic_year": t.academic_year,
                     "is_active": t.is_active,
+                    "completion_percentage": getattr(t, "completion_percentage", 0.0),
                     "created_at": t.created_at,
                     "updated_at": t.updated_at,
                 }

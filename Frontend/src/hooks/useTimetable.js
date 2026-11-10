@@ -268,6 +268,8 @@ export function useBulkAssignSlot() {
   return useMutation({
     mutationFn: (payload) => bulkAssignSlotApi(payload),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     },
   })
@@ -284,6 +286,8 @@ export function useCreateTimetableEntry() {
     mutationFn: (payload) => createTimetableEntryApi(payload),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.section_id) })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     },
   })
@@ -298,6 +302,8 @@ export function useUpdateTimetableEntry() {
       if (variables?.sectionId) {
         queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId) })
       }
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     },
   })
@@ -312,6 +318,8 @@ export function useDeleteTimetableEntry() {
       if (variables?.sectionId) {
         queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId) })
       }
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.all })
     },
   })

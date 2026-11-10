@@ -19,13 +19,13 @@ const Toaster = ({ ...props }) => {
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-2xl group-[.toaster]:rounded-2xl group-[.toaster]:font-sans group-[.toaster]:p-4 group-[.toaster]:border group-[.toaster]:opacity-100",
-          title: "group-[.toast]:font-bold group-[.toast]:text-xs leading-snug",
-          description: "group-[.toast]:text-xs group-[.toast]:opacity-90 leading-relaxed",
+            "group toast group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-2xl group-[.toaster]:rounded-xl group-[.toaster]:font-sans group-[.toaster]:!py-2.5 group-[.toaster]:!px-3.5 group-[.toaster]:border group-[.toaster]:opacity-100 group-[.toaster]:[&_[data-title]]:!text-sm group-[.toaster]:[&_[data-title]]:!font-semibold group-[.toaster]:[&_[data-icon]]:!shrink-0",
+          title: "group-[.toast]:!font-semibold group-[.toast]:!text-sm leading-snug",
+          description: "group-[.toast]:!text-xs group-[.toast]:opacity-90 leading-relaxed",
           actionButton:
-            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground group-[.toast]:text-xs group-[.toast]:font-semibold group-[.toast]:rounded-xl group-[.toast]:px-3 group-[.toast]:py-1.5",
+            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground group-[.toast]:text-xs group-[.toast]:font-semibold group-[.toast]:rounded-lg group-[.toast]:px-2.5 group-[.toast]:py-1",
           cancelButton:
-            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground group-[.toast]:text-xs group-[.toast]:rounded-xl group-[.toast]:px-3 group-[.toast]:py-1.5",
+            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground group-[.toast]:text-xs group-[.toast]:rounded-lg group-[.toast]:px-2.5 group-[.toast]:py-1",
           // Error: Solid light red (no transparency), crisp dark red text
           error:
             "group-[.toaster]:!bg-red-50 group-[.toaster]:!text-red-950 group-[.toaster]:!border-red-200 dark:group-[.toaster]:!bg-red-950 dark:group-[.toaster]:!text-red-100 dark:group-[.toaster]:!border-red-800 group-[.toaster]:[&_[data-icon]]:!text-red-600 dark:group-[.toaster]:[&_[data-icon]]:!text-red-400 group-[.toaster]:[&_[data-description]]:!text-red-800 dark:group-[.toaster]:[&_[data-description]]:!text-red-200",

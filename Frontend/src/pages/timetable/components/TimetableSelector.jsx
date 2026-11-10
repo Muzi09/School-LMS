@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils"
 export function TimetableSelector({
   timetables = [],
   selectedTimetableId,
+  currentCompletionPct = null,
   onSelectTimetable,
   onCreateNew,
   canManage = false,
