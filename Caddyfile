@@ -2,10 +2,9 @@
 # Caddyfile — Reverse Proxy & Static Frontend Server
 # =============================================================
 # WHAT THIS DOES:
-# 1. Serves the built React Web App (HTML/CSS/JS) to visitors.
-# 2. Forwards all API requests (/api/*, /docs, /ws/*) to FastAPI.
-# 3. Forwards uploaded media (/uploads/*) to the backend.
-# 4. Supports React Router (single-page-app routing fallback).
+# 1. Forwards all API requests (/api/*, /docs, /ws/*) to FastAPI.
+# 2. Serves the built React Web App (HTML/CSS/JS) for all other URLs.
+# 3. Ensures POST requests to /api/* are NOT intercepted by try_files.
 # =============================================================
 
 :80 {
@@ -36,10 +35,12 @@
         reverse_proxy backend:8000
     }
 
-    # ── 4. React Web Application (SPA) ─────────────────────
-    root * /srv/dist
-    file_server
-
-    # Any non-file URL (e.g. /login, /dashboard) loads index.html
-    try_files {path} /index.html
+    # ── 4. React Web Application (SPA Fallback) ────────────
+    # In Caddy, a handle block with no matcher acts as a fallback
+    # that only runs if none of the above handles matched!
+    handle {
+        root * /srv/dist
+        try_files {path} /index.html
+        file_server
+    }
 }
