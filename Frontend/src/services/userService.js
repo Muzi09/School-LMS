@@ -9,7 +9,7 @@ const getApiBase = () => {
   return "/api/v1"
 }
 
-const API_BASE = 'http://localhost:8000/api/v1/'
+const API_BASE = getApiBase()
 
 export async function fetchUsers({ schoolId, role, isActive, search, page = 1, pageSize = 20 } = {}) {
   const params = new URLSearchParams();

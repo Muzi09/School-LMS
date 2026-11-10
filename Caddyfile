@@ -1,32 +1,45 @@
 # =============================================================
-# Caddyfile — Web Server Configuration
+# Caddyfile — Reverse Proxy & Static Frontend Server
 # =============================================================
-# WHAT IS THIS?
-# This tells Caddy HOW to handle incoming web requests.
-#
-# When someone (or your mobile app) visits your domain,
-# Caddy receives the request first, wraps it in HTTPS
-# encryption, and forwards it to your FastAPI backend.
-#
-# BEFORE DEPLOYING: Replace "your-domain.com" below with
-# your actual domain name. If you don't have a domain yet,
-# see the guide for how to use the server's IP address.
+# WHAT THIS DOES:
+# 1. Serves the built React Web App (HTML/CSS/JS) to visitors.
+# 2. Forwards all API requests (/api/*, /docs, /ws/*) to FastAPI.
+# 3. Forwards uploaded media (/uploads/*) to the backend.
+# 4. Supports React Router (single-page-app routing fallback).
 # =============================================================
-
-# ─── OPTION A: With a Domain Name (recommended) ───
-# Uncomment these lines and replace with your domain:
-#
-# api.yourschool.com {
-#     reverse_proxy backend:8000
-# }
-
-# ─── OPTION B: Without a Domain (using IP address) ───
-# Use this while testing. Replace YOUR_SERVER_IP with your
-# actual AWS server IP address.
-# Note: This won't give you HTTPS — only HTTP. Fine for
-# initial testing, but you'll need a domain for production.
 
 :80 {
-    reverse_proxy backend:8000
-}
+    # ── 1. Backend API & Documentation ─────────────────────
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
 
+    handle /docs* {
+        reverse_proxy backend:8000
+    }
+
+    handle /redoc* {
+        reverse_proxy backend:8000
+    }
+
+    handle /openapi.json {
+        reverse_proxy backend:8000
+    }
+
+    # ── 2. Real-time WebSocket Chat ────────────────────────
+    handle /ws/* {
+        reverse_proxy backend:8000
+    }
+
+    # ── 3. Uploaded Files (School emblems, homework) ───────
+    handle /uploads/* {
+        reverse_proxy backend:8000
+    }
+
+    # ── 4. React Web Application (SPA) ─────────────────────
+    root * /srv/dist
+    file_server
+
+    # Any non-file URL (e.g. /login, /dashboard) loads index.html
+    try_files {path} /index.html
+}
