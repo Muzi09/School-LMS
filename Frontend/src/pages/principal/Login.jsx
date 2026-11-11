@@ -2,7 +2,6 @@ import { useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useFormik } from "formik"
 import {
-  GraduationCap,
   Mail,
   Lock,
   Eye,
@@ -14,6 +13,7 @@ import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { generalValidationSchema } from "@/validations"
+import schoolLogo from "@/assets/ideal-school-logo.png"
 
 export function PrincipalLogin() {
   const { login, quickLogin } = useAuth()
@@ -73,15 +73,28 @@ export function PrincipalLogin() {
   })
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-muted/20">
-      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-xl p-8 animate-in fade-in-0 zoom-in-95 duration-200">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-muted/20 relative overflow-hidden">
+      {/* Background Subtle Ambient Glow */}
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+        <div className="size-[500px] rounded-full bg-primary/5 blur-3xl" />
+      </div>
+
+      <div className="relative w-full max-w-md bg-card/95 backdrop-blur-sm border border-border rounded-2xl shadow-xl p-8 animate-in fade-in-0 zoom-in-95 duration-200">
         {/* Brand Header */}
         <div className="text-center mb-6">
-          <div className="size-14 mx-auto mb-3 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-sm">
-            <GraduationCap className="size-8" />
+          <div className="size-20 sm:size-24 mx-auto mb-3.5 rounded-full bg-white dark:bg-card p-1.5 shadow-md ring-1 ring-border/80 flex items-center justify-center overflow-hidden transition-transform duration-200 hover:scale-105">
+            <img
+              src={schoolLogo}
+              alt="Ideal International School Logo"
+              className="size-full object-contain rounded-full"
+            />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">School Portal</h1>
-          <p className="text-sm text-muted-foreground mt-1">Sign in to your school management workspace</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-snug">
+            Ideal International School
+          </h1>
+          <p className="text-sm font-medium text-muted-foreground mt-1">
+            Indore
+          </p>
         </div>
 
         {/* Server Error Alert */}
