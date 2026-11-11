@@ -82,7 +82,7 @@ export function PrincipalLogin() {
       <div className="relative w-full max-w-md bg-card/95 backdrop-blur-sm border border-border rounded-2xl shadow-xl p-8 animate-in fade-in-0 zoom-in-95 duration-200">
         {/* Brand Header */}
         <div className="text-center mb-6">
-          <div className="size-20 sm:size-24 mx-auto mb-3.5 rounded-full bg-white dark:bg-card p-1.5 shadow-md ring-1 ring-border/80 flex items-center justify-center overflow-hidden transition-transform duration-200 hover:scale-105">
+          <div className="size-28 sm:size-32 mx-auto mb-4 rounded-full bg-white dark:bg-card p-2 shadow-lg ring-1 ring-border/80 flex items-center justify-center overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-xl">
             <img
               src={schoolLogo}
               alt="Ideal International School Logo"
