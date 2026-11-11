@@ -4,7 +4,6 @@ import {
   MessageSquare,
   CalendarDays,
   School,
-  SlidersHorizontal,
 } from "lucide-react"
 import { Permission } from "@/lib/permissions"
 
@@ -57,13 +56,6 @@ export const sidebarNavGroups = [
         description: "Manage school classes, sections, wings, and teacher assignments.",
         url: "/manage-school",
         icon: School,
-        permission: Permission.MANAGE_SCHOOL,
-      },
-      {
-        title: "School Configuration",
-        description: "Configure curriculum subjects, school houses, and institution branding.",
-        url: "/school-configuration",
-        icon: SlidersHorizontal,
         permission: Permission.MANAGE_SCHOOL,
       },
     ],

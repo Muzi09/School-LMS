@@ -6,10 +6,6 @@ import {
   Bell,
   Sun,
   Moon,
-  Plus,
-  BookPlus,
-  UserPlus,
-  FilePlus,
   CheckCircle2,
   AlertCircle,
   Clock,
@@ -135,36 +131,6 @@ export function AppHeader() {
           </kbd>
         </div>
 
-        {/* Quick Add Action Dropdown */}
-        <DropdownMenuTrigger>
-          <Button
-            size="sm"
-            variant="outline"
-            className="hidden sm:flex items-center gap-1.5 h-9 rounded-lg border-border bg-background font-medium text-xs shadow-xs hover:bg-muted"
-          >
-            <Plus className="size-4 text-primary" />
-            <span>Create</span>
-          </Button>
-          <DropdownMenu className="w-52" placement="bottom end">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold">
-                Quick Scaffolding
-              </DropdownMenuLabel>
-              <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
-                <BookPlus className="size-4 text-blue-500" />
-                <span>New Course Section</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
-                <UserPlus className="size-4 text-emerald-500" />
-                <span>Enroll Student</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem className="cursor-pointer gap-2 text-xs">
-                <FilePlus className="size-4 text-purple-500" />
-                <span>Publish Assignment</span>
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenu>
-        </DropdownMenuTrigger>
 
         {/* Principal Email Setup Status Indicator */}
         {isPrincipal && (

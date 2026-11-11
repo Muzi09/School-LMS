@@ -107,9 +107,6 @@ export function AppSidebar({ ...props }) {
                 <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
                   {user?.school_name || "Apex Academy"}
                 </span>
-                <span className="truncate text-[11px] text-muted-foreground">
-                  LMS Enterprise v2.4
-                </span>
               </div>
             )}
           </Link>

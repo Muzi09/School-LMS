@@ -42,7 +42,6 @@ import { TimeTable } from "@/pages/timetable/TimeTable"
 
 // School Management Workspace
 import { ManageSchool } from "@/pages/school-management/ManageSchool"
-import { SchoolConfiguration } from "@/pages/school-management/SchoolConfiguration"
 import { Toaster } from "@/components/ui/sonner"
 
 // Status grid 
@@ -103,8 +102,8 @@ export function App() {
                   <Route path="students" element={<StudentList />} />
                   <Route element={<PermissionRoute permission={Permission.MANAGE_SCHOOL} redirectTo="/" />}>
                     <Route path="manage-school" element={<ManageSchool />} />
-                    <Route path="school-configuration" element={<SchoolConfiguration />} />
-                    <Route path="school-settings" element={<Navigate to="/school-configuration" replace />} />
+                    <Route path="school-configuration" element={<Navigate to="/manage-school" replace />} />
+                    <Route path="school-settings" element={<Navigate to="/manage-school" replace />} />
                   </Route>
                   <Route path="chat" element={<ChatPage />} />
                   <Route element={<PermissionRoute permission={Permission.VIEW_TIMETABLE} redirectTo="/" />}>
