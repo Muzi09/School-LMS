@@ -151,7 +151,7 @@ export function AppSidebar({ ...props }) {
 
           return (
             <SidebarGroup key={group.id}>
-              {group.label && (
+              {!isCollapsed && group.label && (
                 <SidebarGroupLabel className="px-2 text-[11px] font-medium text-muted-foreground/80 tracking-wider uppercase">
                   {group.label}
                 </SidebarGroupLabel>
