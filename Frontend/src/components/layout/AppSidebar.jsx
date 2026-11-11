@@ -41,6 +41,7 @@ import { hasPermission } from "@/lib/permissions"
 import { useQuery } from "@tanstack/react-query"
 import { getPrincipalEmailSetupApi } from "@/api/principalEmailService"
 import { PrincipalEmailSetupModal } from "@/pages/principal/PrincipalEmailSetupModal"
+import schoolLogo from "@/assets/ideal-school-logo.png"
 
 export function AppSidebar({ ...props }) {
   const location = useLocation()
@@ -90,7 +91,7 @@ export function AppSidebar({ ...props }) {
   const emblemUrl = user?.school_emblem_url
     ? user.school_emblem_url.startsWith("http")
       ? user.school_emblem_url
-      : `http://localhost:8000${user.school_emblem_url}`
+      : user.school_emblem_url
     : null
 
   return (
@@ -105,24 +106,22 @@ export function AppSidebar({ ...props }) {
             }}
             className="flex items-center gap-2.5 flex-1 min-w-0 group-data-[collapsible=icon]:justify-center"
           >
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/25 overflow-hidden">
-              {emblemUrl ? (
-                <img
-                  src={emblemUrl}
-                  alt={user?.school_name || "School Emblem"}
-                  className="size-full object-contain p-0.5"
-                  onError={(e) => {
-                    e.currentTarget.style.display = "none"
-                  }}
-                />
-              ) : (
-                <Sparkles className="size-4" />
-              )}
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white dark:bg-card shadow-xs ring-1 ring-border/80 p-0.5 overflow-hidden transition-transform hover:scale-105">
+              <img
+                src={emblemUrl || schoolLogo}
+                alt={user?.school_name || "Ideal International School"}
+                className="size-full object-contain rounded-full"
+                onError={(e) => {
+                  e.currentTarget.src = schoolLogo
+                }}
+              />
             </div>
             {!isCollapsed && (
               <div className="flex flex-col overflow-hidden text-left">
                 <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
-                  {user?.school_name || "Apex Academy"}
+                  {user?.school_name && user.school_name !== "Apex Academy"
+                    ? user.school_name
+                    : "Ideal International School"}
                 </span>
               </div>
             )}
