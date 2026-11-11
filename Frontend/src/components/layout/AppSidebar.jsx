@@ -6,9 +6,8 @@ import {
   ChevronDown,
   LogOut,
   UserCheck,
-  Shield,
-  Bell,
-  HelpCircle,
+  Mail,
+  CheckCircle2,
   X,
 } from "lucide-react"
 
@@ -39,6 +38,9 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { sidebarNavGroups } from "@/constants/nav-items"
 import { useAuth } from "@/context/AuthContext"
 import { hasPermission } from "@/lib/permissions"
+import { useQuery } from "@tanstack/react-query"
+import { getPrincipalEmailSetupApi } from "@/api/principalEmailService"
+import { PrincipalEmailSetupModal } from "@/pages/principal/PrincipalEmailSetupModal"
 
 export function AppSidebar({ ...props }) {
   const location = useLocation()
@@ -47,6 +49,21 @@ export function AppSidebar({ ...props }) {
   const { user, logout } = useAuth()
   // On mobile drawer, sidebar should never be icon-collapsed
   const isCollapsed = state === "collapsed" && !isMobile
+
+  const [isEmailModalOpen, setIsEmailModalOpen] = React.useState(false)
+
+  const isPrincipal = user?.role === 1
+  const { data: emailSetupData } = useQuery({
+    queryKey: ["principalEmailSetup"],
+    queryFn: async () => {
+      const res = await getPrincipalEmailSetupApi()
+      return res?.data ?? res
+    },
+    enabled: isPrincipal,
+    staleTime: 30000,
+  })
+
+  const isEmailConfigured = Boolean(emailSetupData?.is_configured)
 
   // Auto-close mobile drawer on route change
   React.useEffect(() => {
@@ -206,12 +223,20 @@ export function AppSidebar({ ...props }) {
                 size="lg"
                 className="w-full justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               >
-                <Avatar className="size-8 rounded-lg shrink-0">
-                  <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
-                  <AvatarFallback className="rounded-lg bg-primary/10 text-primary font-semibold text-xs">
-                    {currentUser.initials}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative shrink-0">
+                  <Avatar className="size-8 rounded-lg shrink-0">
+                    <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
+                    <AvatarFallback className="rounded-lg bg-primary/10 text-primary font-semibold text-xs">
+                      {currentUser.initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  {isPrincipal && !isEmailConfigured && (
+                    <span className="absolute -top-1 -right-1 flex size-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full size-2.5 bg-amber-500 ring-2 ring-sidebar"></span>
+                    </span>
+                  )}
+                </div>
                 {!isCollapsed && (
                   <div className="grid flex-1 text-left text-xs leading-tight ml-1">
                     <span className="truncate font-semibold text-sidebar-foreground">
@@ -248,18 +273,31 @@ export function AppSidebar({ ...props }) {
                     <UserCheck className="size-4 text-muted-foreground" />
                     <span>My Profile</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
-                    <Bell className="size-4 text-muted-foreground" />
-                    <span>Notification Center</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
-                    <Shield className="size-4 text-muted-foreground" />
-                    <span>Role & Permissions</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer gap-2 py-1.5">
-                    <HelpCircle className="size-4 text-muted-foreground" />
-                    <span>Help & Documentation</span>
-                  </DropdownMenuItem>
+
+                  {isPrincipal && (
+                    <DropdownMenuItem
+                      onAction={() => setIsEmailModalOpen(true)}
+                      className="cursor-pointer gap-2 py-1.5 justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Mail className="size-4 text-muted-foreground" />
+                        <span>{isEmailConfigured ? "Email Setup" : "Email Setup Required"}</span>
+                      </div>
+                      {isEmailConfigured ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20">
+                          <CheckCircle2 className="size-3 text-emerald-500" /> Configured
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">
+                          <span className="relative flex size-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full size-1.5 bg-amber-500"></span>
+                          </span>
+                          Required
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -277,6 +315,15 @@ export function AppSidebar({ ...props }) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+
+      {isPrincipal && (
+        <PrincipalEmailSetupModal
+          isOpen={isEmailModalOpen}
+          onClose={() => setIsEmailModalOpen(false)}
+          existingConfig={emailSetupData}
+        />
+      )}
+
       <SidebarRail />
     </Sidebar>
   )

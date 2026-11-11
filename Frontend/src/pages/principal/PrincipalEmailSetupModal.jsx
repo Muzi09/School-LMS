@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import { ModalHeader } from "@/components/common/ModalHeader"
-import { Popover, PopoverDialog } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import * as Yup from "yup"
 import { SIMPLE_EMAIL_REGEX } from "@/validations/patterns"
@@ -177,37 +176,48 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
     }
   }
 
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        resetToSavedState()
+        onClose?.()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isOpen])
+
+  if (!isOpen) return null
+
   const isSaving = formik.isSubmitting
   const isTesting = testState === "testing"
 
-  return (
-    <Popover
-      placement="bottom end"
-      offset={8}
-      className="w-[calc(100vw-2rem)] sm:w-[490px] max-h-[85vh] p-0 overflow-hidden"
-    >
-      <PopoverDialog className="h-full flex flex-col">
-        {({ close }) => {
-          const handleModalClose = (e) => {
-            if (e?.preventDefault) e.preventDefault()
-            if (e?.stopPropagation) e.stopPropagation()
-            resetToSavedState()
-            close?.()
-            onClose?.()
-          }
+  const handleModalClose = (e) => {
+    if (e?.preventDefault) e.preventDefault()
+    if (e?.stopPropagation) e.stopPropagation()
+    resetToSavedState()
+    onClose?.()
+  }
 
-          return (
-            <>
-              {/* Header */}
-            <ModalHeader
-              icon={Mail}
-              iconClassName="bg-primary/10 border-primary/20 text-primary"
-              title="School Email Setup"
-              description="Configure your outgoing email for sending invitations and login links"
-              onClose={handleModalClose}
-              className="px-5 py-4 border-b border-border/70 shrink-0"
-              titleClassName="text-base font-semibold"
-            />
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0 duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleModalClose(e)
+      }}
+    >
+      <div className="relative w-full max-w-lg bg-card border border-border shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <ModalHeader
+          icon={Mail}
+          iconClassName="bg-primary/10 border-primary/20 text-primary"
+          title="School Email Setup"
+          description="Configure your outgoing email for sending invitations and login links"
+          onClose={handleModalClose}
+          className="px-5 py-4 border-b border-border/70 shrink-0"
+          titleClassName="text-base font-semibold"
+        />
 
             {/* Form Body */}
             <form onSubmit={formik.handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
@@ -376,11 +386,8 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
                 </div>
               </div>
             </form>
-          </>
-        )
-      }}
-    </PopoverDialog>
-  </Popover>
+      </div>
+    </div>
   )
 }
 
