@@ -544,6 +544,7 @@ export function ClassWiseGridView({
         scope: payload.scope || "SLOT",
         target_count: payload.target_count || null,
         apply_days: payload.scope === "WEEKDAYS" ? targetDays : [cell.day],
+        overwrite: payload.overwrite ?? true,
       }
 
       // Record for undo
@@ -587,7 +588,7 @@ export function ClassWiseGridView({
           String(e.day_of_week) === String(target.day) &&
           (String(e.period_id) === String(target.periodId) ||
             String(e.period_number) === String(target.periodNumber)) &&
-          String(e.subject_id) === String(target.subjectId)
+          String(e.subject_id || e.subject?.id) === String(target.subjectId)
       )
 
       if (!hasSlot && target.subjectId && target.timetableId) {
