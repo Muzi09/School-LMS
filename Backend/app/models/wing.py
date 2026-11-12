@@ -10,6 +10,7 @@ from app.models.base import Base, AuditMixin
 if TYPE_CHECKING:
     from app.models.school import School
     from app.models.school_class import SchoolClass
+    from app.models.staff import StaffWing
 
 
 class Wing(Base, AuditMixin):
@@ -47,6 +48,12 @@ class Wing(Base, AuditMixin):
 
     wing_classes: Mapped[List["WingClass"]] = relationship(
         "WingClass",
+        back_populates="wing",
+        cascade="all, delete-orphan",
+    )
+
+    staff_wings: Mapped[List["StaffWing"]] = relationship(
+        "StaffWing",
         back_populates="wing",
         cascade="all, delete-orphan",
     )

@@ -73,13 +73,19 @@ def _format_teacher(user: Optional[User]) -> Optional[TeacherSimpleRead]:
         return None
     sp = getattr(user, "staff_profile", None)
     full_name = f"{user.first_name} {user.last_name}".strip()
+    assigned_wing_ids = [sw.wing_id for sw in sp.staff_wings if getattr(sw, "deleted_at", None) is None] if (sp and hasattr(sp, "staff_wings") and sp.staff_wings) else []
+    tag_val = (sp.tag if sp and sp.tag else (sp.designation if sp and sp.designation else "Teacher"))
     return TeacherSimpleRead(
         id=user.id,
         name=full_name,
         email=user.email,
         roll_no=sp.roll_no if sp else None,
         department=sp.department if sp else None,
-        designation=sp.designation if sp else None,
+        designation=tag_val,
+        tag=tag_val,
+        is_academic=sp.is_academic if sp else True,
+        assigned_wing_ids=assigned_wing_ids,
+        working_shifts=sp.working_shifts if (sp and sp.working_shifts) else [],
     )
 
 
@@ -1703,9 +1709,12 @@ def get_school_teachers(
     users = (
         db.query(User)
         .join(StaffProfile, StaffProfile.user_id == User.id)
-        .options(joinedload(User.staff_profile))
+        .options(
+            joinedload(User.staff_profile).selectinload(StaffProfile.staff_wings)
+        )
         .filter(
             StaffProfile.school_id == current_user.school_id,
+            StaffProfile.is_academic.is_(True),
             User.is_active.is_(True),
             User.deleted_at.is_(None),
             User.role == UserRole.STAFF,

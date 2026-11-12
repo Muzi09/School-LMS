@@ -89,6 +89,7 @@ export function StaffList() {
         header: "Staff Member",
         Cell: ({ row }) => {
           const s = row.original
+          const tag = s.staff_profile?.tag || s.staff_profile?.designation || "Teacher"
           return (
             <div className="flex items-center gap-3">
               <div className="size-9 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 font-bold flex items-center justify-center text-xs shrink-0">
@@ -97,6 +98,9 @@ export function StaffList() {
               <div>
                 <span className="font-semibold text-foreground text-sm block">
                   {s.first_name} {s.last_name}
+                </span>
+                <span className="text-[11px] font-medium text-primary block truncate max-w-[200px]">
+                  {tag}
                 </span>
                 <span className="text-xs text-muted-foreground block truncate max-w-[200px]">
                   {s.email}
@@ -114,6 +118,60 @@ export function StaffList() {
             {cell.getValue() || "—"}
           </span>
         ),
+      },
+      {
+        id: "classification",
+        header: "Classification",
+        Cell: ({ row }) => {
+          const sp = row.original.staff_profile || {}
+          const isAcad = sp.is_academic !== false
+          const isNonAcad = Boolean(sp.is_non_academic)
+          if (isAcad && isNonAcad) {
+            return (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30">
+                Both (Academic & Admin)
+              </span>
+            )
+          }
+          if (isNonAcad) {
+            return (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-500/10 text-slate-700 dark:text-slate-300 border border-slate-500/30">
+                Non-Academic Staff
+              </span>
+            )
+          }
+          return (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/30">
+              Academic Staff
+            </span>
+          )
+        },
+      },
+      {
+        id: "wings",
+        header: "Assigned Wings",
+        Cell: ({ row }) => {
+          const sp = row.original.staff_profile || {}
+          const wingsList = sp.assigned_wings || []
+          if (!sp.is_academic && sp.is_non_academic) {
+            return <span className="text-muted-foreground text-xs italic">N/A</span>
+          }
+          if (wingsList.length === 0) {
+            return <span className="text-muted-foreground text-xs">All Wings</span>
+          }
+          return (
+            <div className="flex flex-wrap gap-1 max-w-[180px]">
+              {wingsList.map((w, idx) => (
+                <span
+                  key={idx}
+                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted border border-border text-foreground"
+                >
+                  {w.name}
+                </span>
+              ))}
+            </div>
+          )
+        },
       },
       {
         id: "account_status",

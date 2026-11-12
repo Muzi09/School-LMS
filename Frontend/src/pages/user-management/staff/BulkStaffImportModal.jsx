@@ -684,11 +684,11 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                       <thead className="bg-muted/70 sticky top-0 z-10 text-muted-foreground font-semibold">
                         <tr>
                           <th className="py-2.5 px-3 w-12 text-center">Row</th>
-                          <th className="py-2.5 px-3">Name</th>
+                          <th className="py-2.5 px-3">Name & Designation</th>
+                          <th className="py-2.5 px-3">Type</th>
+                          <th className="py-2.5 px-3">Wings</th>
                           <th className="py-2.5 px-3">Email</th>
                           <th className="py-2.5 px-3">Mobile</th>
-                          <th className="py-2.5 px-3">Gender</th>
-                          <th className="py-2.5 px-3">DOB</th>
                           <th className="py-2.5 px-3 w-24">Status</th>
                           <th className="py-2.5 px-3">Reason</th>
                         </tr>
@@ -716,19 +716,24 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                                   {r.row_number}
                                 </td>
                                 <td className="py-2.5 px-3 font-medium text-foreground whitespace-nowrap">
-                                  {r.data.first_name} {r.data.last_name}
+                                  <div>
+                                    <span className="font-semibold block">{r.data.first_name} {r.data.last_name}</span>
+                                    <span className="text-[11px] font-medium text-primary block">{r.data.designation || r.data.tag || "Teacher"}</span>
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted border border-border">
+                                    {r.data.staff_type || "Academic"}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
+                                  {r.data.wings || "—"}
                                 </td>
                                 <td className="py-2.5 px-3 text-muted-foreground truncate max-w-[150px]">
                                   {r.data.email || "—"}
                                 </td>
                                 <td className="py-2.5 px-3 text-muted-foreground font-mono whitespace-nowrap">
                                   {r.data.login_mobile || "—"}
-                                </td>
-                                <td className="py-2.5 px-3 text-muted-foreground capitalize whitespace-nowrap">
-                                  {r.data.gender || "—"}
-                                </td>
-                                <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                                  {r.data.date_of_birth || "—"}
                                 </td>
                                 <td className="py-2.5 px-3">
                                   {isReady && (

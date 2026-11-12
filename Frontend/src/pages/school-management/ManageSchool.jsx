@@ -284,41 +284,122 @@ export function ManageSchool() {
     },
   })
 
-  // 7. Class Teacher Assignment Mutation
+  // 7. Class Teacher Assignment Mutation (Optimistic + Surgical Cache Update)
   const assignClassTeacherMutation = useMutation({
     mutationFn: ({ sectionId, teacherId }) =>
       schoolConfigService.assignClassTeacher(sectionId, teacherId),
+    onMutate: async ({ sectionId, teacherId }) => {
+      await queryClient.cancelQueries({ queryKey: ["schoolConfig"] })
+      const previousConfig = queryClient.getQueryData(["schoolConfig"])
+      const assignedTeacher = teacherId
+        ? teachers.find((t) => String(t.id) === String(teacherId)) || null
+        : null
+
+      queryClient.setQueryData(["schoolConfig"], (old) => {
+        if (!old || !old.classes) return old
+        return {
+          ...old,
+          classes: old.classes.map((cls) => ({
+            ...cls,
+            sections: (cls.sections || []).map((sec) => {
+              if (String(sec.id) !== String(sectionId)) return sec
+              return {
+                ...sec,
+                class_teacher_id: teacherId || null,
+                class_teacher: assignedTeacher,
+              }
+            }),
+          })),
+        }
+      })
+
+      return { previousConfig }
+    },
+    onError: (err, _, context) => {
+      if (context?.previousConfig) {
+        queryClient.setQueryData(["schoolConfig"], context.previousConfig)
+      }
+      const msg = err.response?.data?.detail || err.message || "Failed to update class teacher."
+      toast.error(msg)
+    },
     onSuccess: (_, variables) => {
-      invalidateConfig()
-      queryClient.invalidateQueries({ queryKey: ["timetable"] })
+      queryClient.invalidateQueries({ queryKey: ["timetable"], refetchType: "none" })
       toast.success(
         variables.teacherId
           ? "Class teacher assigned successfully."
           : "Class teacher unassigned successfully."
       )
     },
-    onError: (err) => {
-      const msg = err.response?.data?.detail || err.message || "Failed to update class teacher."
-      toast.error(msg)
-    },
   })
 
-  // 8. Section Subject Teacher Assignment Mutation
+  // 8. Section Subject Teacher Assignment Mutation (Optimistic + Surgical Cache Update)
   const assignSubjectTeacherMutation = useMutation({
     mutationFn: ({ sectionId, subjectId, teacherId }) =>
       schoolConfigService.assignSectionSubjectTeacher(sectionId, subjectId, teacherId),
+    onMutate: async ({ sectionId, subjectId, teacherId }) => {
+      await queryClient.cancelQueries({ queryKey: ["schoolConfig"] })
+      const previousConfig = queryClient.getQueryData(["schoolConfig"])
+      const assignedTeacher = teacherId
+        ? teachers.find((t) => String(t.id) === String(teacherId)) || null
+        : null
+
+      queryClient.setQueryData(["schoolConfig"], (old) => {
+        if (!old || !old.classes) return old
+        return {
+          ...old,
+          classes: old.classes.map((cls) => ({
+            ...cls,
+            sections: (cls.sections || []).map((sec) => {
+              if (String(sec.id) !== String(sectionId)) return sec
+              return {
+                ...sec,
+                subjects: (sec.subjects || []).map((sub) => {
+                  if (String(sub.id) === String(subjectId)) {
+                    return {
+                      ...sub,
+                      teacher_id: teacherId || null,
+                      teacher: assignedTeacher,
+                    }
+                  }
+                  if (sub.child_subjects && sub.child_subjects.length > 0) {
+                    return {
+                      ...sub,
+                      child_subjects: sub.child_subjects.map((cs) => {
+                        if (String(cs.id) === String(subjectId)) {
+                          return {
+                            ...cs,
+                            teacher_id: teacherId || null,
+                            teacher: assignedTeacher,
+                          }
+                        }
+                        return cs
+                      }),
+                    }
+                  }
+                  return sub
+                }),
+              }
+            }),
+          })),
+        }
+      })
+
+      return { previousConfig }
+    },
+    onError: (err, _, context) => {
+      if (context?.previousConfig) {
+        queryClient.setQueryData(["schoolConfig"], context.previousConfig)
+      }
+      const msg = err.response?.data?.detail || err.message || "Failed to update subject teacher."
+      toast.error(msg)
+    },
     onSuccess: (_, variables) => {
-      invalidateConfig()
-      queryClient.invalidateQueries({ queryKey: ["timetable"] })
+      queryClient.invalidateQueries({ queryKey: ["timetable"], refetchType: "none" })
       toast.success(
         variables.teacherId
           ? "Subject teacher assigned successfully."
           : "Subject teacher unassigned successfully."
       )
-    },
-    onError: (err) => {
-      const msg = err.response?.data?.detail || err.message || "Failed to update subject teacher."
-      toast.error(msg)
     },
   })
 

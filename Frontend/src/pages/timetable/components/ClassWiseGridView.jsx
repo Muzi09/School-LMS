@@ -179,6 +179,48 @@ export function ClassWiseGridView({
     [setupMap, setups]
   )
 
+  // Get all active schedule days for a section (e.g. Mon-Sat)
+  const getAllDaysForSection = useCallback(
+    (sec) => {
+      let setup = null
+      if (sec?.id && setupMap.has(sec.id)) {
+        setup = setupMap.get(sec.id)
+      } else if (sec) {
+        setup = setups?.find((s) =>
+          (s.assigned_section_ids || []).some(
+            (id) => String(id) === String(sec.id)
+          )
+        )
+      }
+      if (!setup) setup = setups?.[0]
+      const rawAppDays = setup?.applicable_days || [
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+        "SATURDAY",
+      ]
+      return (
+        Array.isArray(rawAppDays)
+          ? rawAppDays
+          : typeof rawAppDays === "string"
+          ? (() => {
+              try {
+                const p = JSON.parse(rawAppDays)
+                return Array.isArray(p)
+                  ? p
+                  : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+              } catch {
+                return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+              }
+            })()
+          : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+      ).map((d) => String(d).toUpperCase())
+    },
+    [setupMap, setups]
+  )
+
   // Filter wings according to selectedWingId (when actively searching, search across all wings)
   const activeWings = useMemo(() => {
     if (searchQuery && searchQuery.trim()) return wings
@@ -380,6 +422,7 @@ export function ClassWiseGridView({
               period: periodObj,
               currentEntry: entry,
               scheduleDays: getSplitDaysForSectionAndDay(sec, entry.day_of_week),
+              allDays: getAllDaysForSection(sec),
               timetableId: timetable?.id,
             },
           })
@@ -498,6 +541,7 @@ export function ClassWiseGridView({
             period: periodObj,
             currentEntry: conflict.entry,
             scheduleDays: getSplitDaysForSectionAndDay(sec, conflict.entry.day_of_week),
+            allDays: getAllDaysForSection(sec),
             timetableId: timetable?.id,
           },
         })
@@ -510,18 +554,24 @@ export function ClassWiseGridView({
   const availableSubjectsForDialog = useMemo(() => {
     if (!dialogState.cellData?.section) return []
     const sec = dialogState.cellData.section
-    return (sec.subject_stats || []).map((s) => ({
-      id: s.subject_id,
+    const liveSec =
+      allFlattenedSections.find((s) => String(s.id) === String(sec.id)) || sec
+    const rawList = liveSec.subject_stats || liveSec.subjects || []
+    return rawList.map((s) => ({
+      id: s.subject_id || s.id,
+      subject_id: s.subject_id || s.id,
       name: s.name,
       code: s.code,
-      category: s.category,
-      is_academic: s.is_academic,
-      target_weekly: s.target,
-      current_assigned: s.assigned,
+      category: s.category || (s.is_academic ? "academic" : "non_academic"),
+      is_academic: s.is_academic !== undefined ? s.is_academic : s.category === "academic",
+      assigned: s.assigned ?? s.current_assigned ?? 0,
+      target: s.target ?? s.target_weekly ?? (s.is_academic ? 6 : 3),
+      target_weekly: s.target ?? s.target_weekly ?? (s.is_academic ? 6 : 3),
+      current_assigned: s.assigned ?? s.current_assigned ?? 0,
       teacher_id: s.teacher_id || s.teacher?.id || null,
       teacher: s.teacher || null,
     }))
-  }, [dialogState.cellData])
+  }, [dialogState.cellData, allFlattenedSections])
 
   // Handle slot assignment
   const handleAssignSlot = useCallback(
@@ -543,8 +593,19 @@ export function ClassWiseGridView({
         teacher_user_id: payload.teacher_user_id || null,
         scope: payload.scope || "SLOT",
         target_count: payload.target_count || null,
-        apply_days: payload.scope === "WEEKDAYS" ? targetDays : [cell.day],
+        apply_days:
+          payload.apply_days && payload.apply_days.length > 0
+            ? payload.apply_days
+            : payload.scope === "ALL_DAYS"
+            ? (cell.allDays || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"])
+            : payload.scope === "WEEKDAYS"
+            ? targetDays
+            : [cell.day],
         overwrite: payload.overwrite ?? true,
+        _optimisticSubject: payload.subject || null,
+        _optimisticTeacher: payload.teacher || null,
+        _optimisticPeriod: cell.period,
+        _section: cell.section,
       }
 
       // Record for undo
@@ -559,12 +620,14 @@ export function ClassWiseGridView({
       ])
       setFutureStack([])
 
+      // Close dialog immediately for instant 0 ms feedback
+      setDialogState({ isOpen: false, cellData: null })
+
       try {
         await bulkAssignMutation.mutateAsync(requestPayload)
         if (!payload.silent) {
           toast.success("Timetable slot assigned successfully")
         }
-        setDialogState({ isOpen: false, cellData: null })
       } catch (err) {
         if (!payload.silent) {
           toast.error("Failed to assign slot: " + (err.message || "Unknown error"))
@@ -627,13 +690,15 @@ export function ClassWiseGridView({
       ])
       setFutureStack([])
 
+      // Close dialog immediately if open
+      setDialogState({ isOpen: false, cellData: null })
+
       try {
         await deleteEntryMutation.mutateAsync({
           entryId,
           sectionId: entryToDelete.section_id,
         })
         toast.success("Slot unassigned")
-        setDialogState({ isOpen: false, cellData: null })
       } catch (err) {
         toast.error("Failed to unassign slot")
       }
@@ -1158,6 +1223,7 @@ export function ClassWiseGridView({
               scheduleDays:
                 selectedSlotData.scheduleDays ||
                 getSplitDaysForSectionAndDay(selectedSlotData.section, selectedSlotData.day),
+              allDays: getAllDaysForSection(selectedSlotData.section),
               timetableId: timetable?.id,
             },
           })
@@ -1352,6 +1418,7 @@ export function ClassWiseGridView({
                                 scheduleDays:
                                   cellInfo.scheduleDays ||
                                   getSplitDaysForSectionAndDay(cellInfo.section, cellInfo.day),
+                                allDays: getAllDaysForSection(cellInfo.section),
                                 timetableId: timetable.id,
                               },
                             })
@@ -1386,6 +1453,7 @@ export function ClassWiseGridView({
           cellData={dialogState.cellData}
           availableSubjects={availableSubjectsForDialog}
           eligibleTeachers={eligible_teachers}
+          existingEntries={entries}
           onAssign={handleAssignSlot}
           onUnassign={handleUnassignSlot}
           isSubmitting={bulkAssignMutation.isPending || deleteEntryMutation.isPending}

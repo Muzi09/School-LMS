@@ -18,6 +18,7 @@ from app.models.school import School
 from app.models.smtp_configuration import SmtpConfiguration
 from app.models.staff import StaffProfile
 from app.models.user import User
+from app.models.wing import Wing
 from app.schemas.profile import StaffProfileCreate
 from app.schemas.staff import (
     BulkStaffCreationResponse,
@@ -36,8 +37,7 @@ MAX_BULK_IMPORT_ROWS = 500
 PHONE_REGEX = re.compile(r"^[0-9]{10,15}$")
 EMAIL_REGEX = re.compile(r"^[\w\.-]+@[\w\.-]+\.\w+$")
 
-# 6 Columns Contract: father names & roll_no removed; staff ID auto-generated sequentially
-EXPECTED_COLUMNS = [
+REQUIRED_COLUMNS = [
     "first_name",
     "last_name",
     "login_mobile",
@@ -45,6 +45,63 @@ EXPECTED_COLUMNS = [
     "gender",
     "date_of_birth",
 ]
+
+OPTIONAL_COLUMNS = [
+    "tag",
+    "staff_type",
+    "wings",
+    "timings",
+]
+
+EXPECTED_COLUMNS = REQUIRED_COLUMNS + OPTIONAL_COLUMNS
+
+SPECIMEN_COLUMNS = [
+    "first_name",
+    "last_name",
+    "login_mobile",
+    "email",
+    "gender",
+    "date_of_birth (YYYY-MM-DD)",
+    "designation",
+    "staff_type",
+    "wings",
+    "timings",
+]
+
+COLUMN_ALIASES = {
+    "first_name": "first_name",
+    "firstname": "first_name",
+    "first name": "first_name",
+    "last_name": "last_name",
+    "lastname": "last_name",
+    "last name": "last_name",
+    "login_mobile": "login_mobile",
+    "mobile": "login_mobile",
+    "mobile_number": "login_mobile",
+    "login mobile": "login_mobile",
+    "email": "email",
+    "email_address": "email",
+    "email address": "email",
+    "gender": "gender",
+    "date_of_birth": "date_of_birth",
+    "date_of_birth (yyyy-mm-dd)": "date_of_birth",
+    "date_of_birth(yyyy-mm-dd)": "date_of_birth",
+    "date of birth (yyyy-mm-dd)": "date_of_birth",
+    "date of birth": "date_of_birth",
+    "dob": "date_of_birth",
+    "tag": "tag",
+    "designation": "tag",
+    "tag / designation": "tag",
+    "staff_type": "staff_type",
+    "staff type": "staff_type",
+    "type": "staff_type",
+    "wings": "wings",
+    "assigned_wings": "wings",
+    "assigned wings": "wings",
+    "timings": "timings",
+    "working_hours": "timings",
+    "working hours": "timings",
+}
 
 COLUMNS_METADATA = [
     {
@@ -83,11 +140,39 @@ COLUMNS_METADATA = [
         "required": True,
     },
     {
-        "name": "date_of_birth",
-        "label": "Date of Birth",
+        "name": "date_of_birth (YYYY-MM-DD)",
+        "label": "Date of Birth (YYYY-MM-DD)",
         "description": "Date of birth in YYYY-MM-DD format (e.g. 1988-06-15)",
         "example": "1988-06-15",
         "required": True,
+    },
+    {
+        "name": "designation",
+        "label": "Designation",
+        "description": "Staff designation displayed with name (defaults to 'Teacher')",
+        "example": "PGT Commerce",
+        "required": False,
+    },
+    {
+        "name": "staff_type",
+        "label": "Staff Type",
+        "description": "Classification: 'Academic', 'Non-Academic', or 'Both' (defaults to 'Academic')",
+        "example": "Academic",
+        "required": False,
+    },
+    {
+        "name": "wings",
+        "label": "Assigned Wings",
+        "description": "Comma-separated school wings. Required for Academic staff if school has wings (e.g. 'Primary, Middle')",
+        "example": "Senior",
+        "required": False,
+    },
+    {
+        "name": "timings",
+        "label": "Working Hours",
+        "description": "Working timings in HH:MM-HH:MM (e.g. '08:00-14:00' or '08:00-12:00, 14:00-17:00')",
+        "example": "08:00-14:00",
+        "required": False,
     },
 ]
 
@@ -98,7 +183,11 @@ MOCK_STAFF_RECORDS = [
         "login_mobile": "9876543210",
         "email": "rajesh.sharma@school.edu",
         "gender": "Male",
-        "date_of_birth": "1988-06-15",
+        "date_of_birth (YYYY-MM-DD)": "1988-06-15",
+        "designation": "PGT Commerce",
+        "staff_type": "Academic",
+        "wings": "Senior",
+        "timings": "08:00-14:00",
     },
     {
         "first_name": "Priya",
@@ -106,7 +195,11 @@ MOCK_STAFF_RECORDS = [
         "login_mobile": "9876543211",
         "email": "priya.patel@school.edu",
         "gender": "Female",
-        "date_of_birth": "1992-09-22",
+        "date_of_birth (YYYY-MM-DD)": "1992-09-22",
+        "designation": "Coordinator",
+        "staff_type": "Both",
+        "wings": "Primary, Middle",
+        "timings": "08:00-12:30, 14:00-16:30",
     },
     {
         "first_name": "Amit",
@@ -114,9 +207,62 @@ MOCK_STAFF_RECORDS = [
         "login_mobile": "9876543212",
         "email": "amit.verma@school.edu",
         "gender": "Male",
-        "date_of_birth": "1985-12-05",
+        "date_of_birth (YYYY-MM-DD)": "1985-12-05",
+        "designation": "Accountant",
+        "staff_type": "Non-Academic",
+        "wings": "",
+        "timings": "09:00-17:00",
     },
 ]
+
+
+def parse_time_str_to_hhmm(t_str: str) -> str | None:
+    t_clean = t_str.strip().upper()
+    for fmt in ("%H:%M", "%I:%M %p", "%I:%M%p", "%I %p", "%H"):
+        try:
+            dt = datetime.strptime(t_clean, fmt)
+            return dt.strftime("%H:%M")
+        except ValueError:
+            pass
+    m = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$", t_clean)
+    if m:
+        h, mn, mer = m.groups()
+        hour = int(h)
+        minute = int(mn) if mn else 0
+        if mer == "PM" and hour < 12:
+            hour += 12
+        elif mer == "AM" and hour == 12:
+            hour = 0
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return f"{hour:02d}:{minute:02d}"
+    return None
+
+
+def parse_shifts_string(timings_str: str) -> tuple[list[dict], list[str]]:
+    shifts = []
+    errors = []
+    if not timings_str or not timings_str.strip():
+        return [{"start_time": "08:00", "end_time": "14:00"}], []
+
+    parts = [p.strip() for p in timings_str.split(",") if p.strip()]
+    for p in parts:
+        m = re.split(r"\s*(?:-|–|—|to)\s*", p, maxsplit=1)
+        if len(m) != 2:
+            errors.append(f"Invalid shift timing format: '{p}'. Use 'HH:MM-HH:MM'")
+            continue
+        start_hhmm = parse_time_str_to_hhmm(m[0])
+        end_hhmm = parse_time_str_to_hhmm(m[1])
+        if not start_hhmm or not end_hhmm:
+            errors.append(f"Could not parse time range in '{p}'")
+            continue
+        if start_hhmm >= end_hhmm:
+            errors.append(f"Start time ({start_hhmm}) must be earlier than end time ({end_hhmm}) in '{p}'")
+            continue
+        shifts.append({"start_time": start_hhmm, "end_time": end_hhmm})
+
+    if not shifts and not errors:
+        shifts = [{"start_time": "08:00", "end_time": "14:00"}]
+    return shifts, errors
 
 
 def generate_sample_xlsx() -> bytes:
@@ -145,7 +291,7 @@ def generate_sample_xlsx() -> bytes:
     )
 
     # Write Headers
-    for col_idx, col_name in enumerate(EXPECTED_COLUMNS, start=1):
+    for col_idx, col_name in enumerate(SPECIMEN_COLUMNS, start=1):
         cell = ws_data.cell(row=1, column=col_idx, value=col_name)
         cell.fill = header_fill
         cell.font = header_font
@@ -156,12 +302,12 @@ def generate_sample_xlsx() -> bytes:
     # Write 3 Mock Rows
     for row_idx, record in enumerate(MOCK_STAFF_RECORDS, start=2):
         ws_data.row_dimensions[row_idx].height = 22
-        for col_idx, col_name in enumerate(EXPECTED_COLUMNS, start=1):
+        for col_idx, col_name in enumerate(SPECIMEN_COLUMNS, start=1):
             val = record.get(col_name)
             cell = ws_data.cell(row=row_idx, column=col_idx, value=val)
             cell.font = data_font
             cell.border = thin_border
-            if col_name in ("gender", "login_mobile", "date_of_birth"):
+            if col_name in ("gender", "login_mobile", "date_of_birth", "date_of_birth (YYYY-MM-DD)"):
                 cell.alignment = center_align
             else:
                 cell.alignment = left_align
@@ -196,7 +342,11 @@ def generate_sample_xlsx() -> bytes:
         ("login_mobile", "Yes", "Mobile phone number used for login", "10-15 digits only, no spaces or special symbols", "9876543210"),
         ("email", "Yes", "Official email address (used for invitation link)", "Valid email format, must be unique across all users", "rajesh.sharma@school.edu"),
         ("gender", "Yes", "Staff member gender", "Text value: 'Male', 'Female', or 'Other'", "Male"),
-        ("date_of_birth", "Yes", "Date of birth", "YYYY-MM-DD format", "1988-06-15"),
+        ("date_of_birth (YYYY-MM-DD)", "Yes", "Date of birth in YYYY-MM-DD format", "YYYY-MM-DD format (e.g. 1988-06-15)", "1988-06-15"),
+        ("designation", "No", "Staff designation (defaults to 'Teacher')", "Text", "PGT Commerce"),
+        ("staff_type", "No", "Staff classification", "'Academic', 'Non-Academic', or 'Both' (defaults to 'Academic')", "Academic"),
+        ("wings", "Yes (if Academic)", "Assigned school wings. Mandatory for Academic staff if school has wings.", "Comma-separated wing names (e.g. 'Primary, Middle')", "Senior"),
+        ("timings", "No", "Working hours / shifts for timetable", "'HH:MM-HH:MM' or comma-separated for split shifts", "08:00-14:00"),
     ]
 
     for row_idx, item in enumerate(instructions_data, start=2):
@@ -214,14 +364,17 @@ def generate_sample_xlsx() -> bytes:
     start_note_row = len(instructions_data) + 4
     notes = [
         "IMPORTANT RULES & GUIDELINES:",
-        "1. Do not rename, reorder, or remove any columns in the 'Staff_Import_Template' sheet.",
-        "2. All 6 columns are mandatory. Blank or missing values in any row will cause that row to be rejected.",
-        "3. Gender must be specified as 'Male', 'Female', or 'Other'.",
-        "4. Staff IDs are automatically generated by the system in sequential order (e.g., 2026STF001). Do not include roll_no in this file.",
-        "5. Passwords and PINs are NOT collected in this file.",
-        "   Each created staff member will receive a secure invitation link to create their own password and 4-digit PIN.",
-        "6. Duplicate emails or mobile numbers within this file or in the database will be rejected.",
-        "7. Only valid rows will be imported. Any invalid or duplicate rows will be skipped safely.",
+        "1. Do not remove or alter the header row in the 'Staff_Import_Template' sheet.",
+        "2. The first 6 columns (first_name, last_name, login_mobile, email, gender, date_of_birth) are mandatory.",
+        "3. Optional columns (tag, staff_type, wings, timings) will take standard defaults if left blank.",
+        "   - tag defaults to 'Teacher'.",
+        "   - staff_type defaults to 'Academic'.",
+        "   - wings can be left blank or list existing wing names separated by commas.",
+        "   - timings defaults to '08:00-14:00'. For split shifts, separate by comma (e.g. '08:00-12:30, 14:00-16:30').",
+        "4. Gender must be specified as 'Male', 'Female', or 'Other'.",
+        "5. Staff IDs are automatically generated by the system in sequential order (e.g., 2026STF001). Do not include roll_no.",
+        "6. Passwords and PINs are NOT collected in this file; each staff member creates them via invitation link.",
+        "7. Duplicate emails or mobile numbers within this file or in the database will be skipped.",
     ]
 
     for i, note in enumerate(notes):
@@ -301,47 +454,41 @@ def parse_and_validate_file(
 
     missing_cols = []
     unexpected_cols = []
-    casing_errors = []
-
-    expected_set = set(EXPECTED_COLUMNS)
-    seen_headers = set()
+    seen_canonical = set()
     duplicate_headers = []
+    col_index_map: dict[str, int] = {}
 
-    for h in raw_headers:
+    for idx, h in enumerate(raw_headers, start=1):
         h_clean = h.strip()
         if not h_clean:
             continue
-        if h_clean in seen_headers:
-            duplicate_headers.append(h_clean)
-        seen_headers.add(h_clean)
+        h_norm = h_clean.lower()
+        canonical = COLUMN_ALIASES.get(h_norm)
 
-        if h != h_clean:
-            casing_errors.append(f"Header '{h}' contains leading or trailing spaces.")
-        elif h != h.lower():
-            casing_errors.append(f"Header '{h}' must be all lowercase.")
-
-        if h_clean not in expected_set:
+        if not canonical:
             unexpected_cols.append(h_clean)
+            continue
 
-    for exp in EXPECTED_COLUMNS:
-        if exp not in seen_headers:
+        if canonical in seen_canonical:
+            duplicate_headers.append(h_clean)
+        else:
+            seen_canonical.add(canonical)
+            col_index_map[canonical] = idx
+
+    for exp in REQUIRED_COLUMNS:
+        if exp not in seen_canonical:
             missing_cols.append(exp)
 
     if duplicate_headers:
         raise BadRequestException(f"Invalid file format. Duplicate column headers detected: {', '.join(duplicate_headers)}.")
 
-    if missing_cols or unexpected_cols or casing_errors:
+    if missing_cols or unexpected_cols:
         err_msg_parts = ["Invalid file format. The uploaded file does not match the Staff Import template."]
         if missing_cols:
-            err_msg_parts.append(f"Missing columns: {', '.join(missing_cols)}")
+            err_msg_parts.append(f"Missing mandatory columns: {', '.join(missing_cols)}")
         if unexpected_cols:
             err_msg_parts.append(f"Unexpected columns: {', '.join(unexpected_cols)}")
-        if casing_errors:
-            err_msg_parts.append(f"Header formatting issues: {'; '.join(casing_errors)}")
         raise BadRequestException("\n".join(err_msg_parts))
-
-    # Map column names to column indexes
-    col_index_map = {str(h).strip(): idx for idx, h in enumerate(raw_headers, start=1)}
 
     # Read data rows (Row 2 onwards, numbering data records starting from 1)
     raw_data_rows: list[tuple[int, dict[str, Any]]] = []
@@ -350,9 +497,12 @@ def parse_and_validate_file(
         row_dict = {}
         has_content = False
         for col_name in EXPECTED_COLUMNS:
-            col_idx = col_index_map[col_name]
-            raw_val = ws.cell(row=r, column=col_idx).value
-            normalized_val = _normalize_cell_value(raw_val)
+            col_idx = col_index_map.get(col_name)
+            if col_idx is not None:
+                raw_val = ws.cell(row=r, column=col_idx).value
+                normalized_val = _normalize_cell_value(raw_val)
+            else:
+                normalized_val = ""
             row_dict[col_name] = normalized_val
             if normalized_val:
                 has_content = True
@@ -402,6 +552,12 @@ def parse_and_validate_file(
         .first()
     )
     is_smtp_configured = bool(smtp_config and smtp_config.smtp_host)
+
+    # Fetch school wings for validation
+    school_wings = []
+    if school_id:
+        school_wings = db.query(Wing).filter(Wing.school_id == school_id, Wing.deleted_at.is_(None)).all()
+    school_wings_map = {w.name.strip().lower(): w for w in school_wings}
 
     # Track in-file duplicates
     seen_file_emails: dict[str, int] = {}
@@ -506,6 +662,54 @@ def parse_and_validate_file(
             except Exception:
                 errors.append("Invalid date of birth. Must be a valid date in YYYY-MM-DD format")
 
+        # 7. designation validation
+        tag_val = str(row_data.get("tag") or row_data.get("designation") or "").strip() or "Teacher"
+        if len(tag_val) > 100:
+            errors.append("Designation cannot exceed 100 characters")
+
+        # 8. staff_type validation
+        st_raw = str(row_data.get("staff_type") or "").strip().lower()
+        if not st_raw or st_raw in ("academic", "academic staff", "teacher", "teaching"):
+            st_display = "Academic"
+        elif st_raw in ("non-academic", "non academic", "non_academic", "administrative", "admin", "office"):
+            st_display = "Non-Academic"
+        elif st_raw in ("both", "all", "academic & non-academic", "academic and non-academic"):
+            st_display = "Both"
+        else:
+            st_display = str(row_data.get("staff_type") or "")
+            errors.append(f"Invalid staff_type '{row_data.get('staff_type')}'. Must be 'Academic', 'Non-Academic', or 'Both'")
+
+        # 9. wings validation (Academic staff must have at least one wing if school wings exist)
+        wings_val = str(row_data.get("wings") or "").strip()
+        is_academic_row = st_display in ("Academic", "Both")
+        if is_academic_row and school_wings:
+            if not wings_val:
+                errors.append("Academic staff must be assigned to at least one wing.")
+            else:
+                matched_wings_count = 0
+                for wp in wings_val.split(","):
+                    wp_clean = wp.strip().lower()
+                    if wp_clean:
+                        if wp_clean not in school_wings_map:
+                            avail_wings = ", ".join(w.name for w in school_wings)
+                            errors.append(f"Unknown wing '{wp.strip()}'. Valid wings: {avail_wings}")
+                        else:
+                            matched_wings_count += 1
+                if matched_wings_count == 0 and not any("Unknown wing" in e for e in errors):
+                    errors.append("Academic staff must be assigned to at least one wing.")
+        elif wings_val and school_wings:
+            for wp in wings_val.split(","):
+                wp_clean = wp.strip().lower()
+                if wp_clean and wp_clean not in school_wings_map:
+                    avail_wings = ", ".join(w.name for w in school_wings)
+                    errors.append(f"Unknown wing '{wp.strip()}'. Valid wings: {avail_wings}")
+
+        # 10. timings validation
+        timings_val = str(row_data.get("timings") or "").strip()
+        if timings_val:
+            _, timing_errs = parse_shifts_string(timings_val)
+            errors.extend(timing_errs)
+
         # Determine row status
         if is_duplicate:
             status = "DUPLICATE"
@@ -526,6 +730,11 @@ def parse_and_validate_file(
                 email=email,
                 gender=gender_display or str(gender_raw),
                 date_of_birth=dob_normalized or str(dob_raw),
+                tag=tag_val,
+                designation=tag_val,
+                staff_type=st_display,
+                wings=wings_val,
+                timings=timings_val or "08:00-14:00",
             ),
             status=status,
             errors=errors,
@@ -583,6 +792,12 @@ def execute_bulk_import(
     )
     is_smtp_configured = bool(smtp_config and smtp_config.smtp_host)
 
+    # Fetch school wings for wing resolution
+    school_wings = []
+    if school_id:
+        school_wings = db.query(Wing).filter(Wing.school_id == school_id, Wing.deleted_at.is_(None)).all()
+    school_wings_map = {w.name.strip().lower(): w for w in school_wings}
+
     results: list[BulkStaffCreationResultItem] = []
     created_count = 0
     failed_count = 0
@@ -631,6 +846,9 @@ def execute_bulk_import(
                         name=f"{row.data.first_name} {row.data.last_name}".strip(),
                         email=row.data.email,
                         login_mobile=row.data.login_mobile,
+                        tag=row.data.tag or "Teacher",
+                        designation=row.data.tag or "Teacher",
+                        staff_type=row.data.staff_type or "Academic",
                         status="DUPLICATE",
                         created=False,
                         email_sent=False,
@@ -658,6 +876,9 @@ def execute_bulk_import(
                         name=f"{row.data.first_name} {row.data.last_name}".strip(),
                         email=row.data.email,
                         login_mobile=row.data.login_mobile,
+                        tag=row.data.tag or "Teacher",
+                        designation=row.data.tag or "Teacher",
+                        staff_type=row.data.staff_type or "Academic",
                         status="DUPLICATE",
                         created=False,
                         email_sent=False,
@@ -675,6 +896,28 @@ def execute_bulk_import(
                 else Gender.OTHER
             )
 
+            # Determine classification
+            st_lower = (row.data.staff_type or "academic").strip().lower()
+            is_academic = True
+            is_non_academic = False
+            if st_lower in ("non-academic", "non academic", "non_academic", "administrative", "admin", "office"):
+                is_academic = False
+                is_non_academic = True
+            elif st_lower in ("both", "all", "academic & non-academic", "academic and non-academic"):
+                is_academic = True
+                is_non_academic = True
+
+            # Resolve wings
+            assigned_wing_ids = []
+            if is_academic and row.data.wings and school_wings_map:
+                for wp in row.data.wings.split(","):
+                    wp_clean = wp.strip().lower()
+                    if wp_clean in school_wings_map:
+                        assigned_wing_ids.append(school_wings_map[wp_clean].id)
+
+            # Resolve shifts
+            shifts, _ = parse_shifts_string(row.data.timings)
+
             # Construct typed CreateStaffRequest with roll_no="" so UserService assigns sequential Staff ID
             create_req = CreateStaffRequest(
                 first_name=row.data.first_name,
@@ -685,6 +928,12 @@ def execute_bulk_import(
                     roll_no="",
                     gender=gender_enum,
                     date_of_birth=parsed_dob,
+                    tag=row.data.tag or "Teacher",
+                    designation=row.data.tag or "Teacher",
+                    is_academic=is_academic,
+                    is_non_academic=is_non_academic,
+                    working_shifts=shifts,
+                    assigned_wing_ids=assigned_wing_ids,
                 ),
             )
 
@@ -732,6 +981,9 @@ def execute_bulk_import(
                     name=f"{user.first_name} {user.last_name}".strip(),
                     email=user.email,
                     login_mobile=user.login_mobile,
+                    tag=row.data.tag or "Teacher",
+                    designation=row.data.tag or "Teacher",
+                    staff_type=row.data.staff_type or "Academic",
                     status="CREATED",
                     created=True,
                     email_sent=email_sent,
@@ -753,6 +1005,9 @@ def execute_bulk_import(
                     name=f"{row.data.first_name} {row.data.last_name}".strip(),
                     email=row.data.email,
                     login_mobile=row.data.login_mobile,
+                    tag=row.data.tag or "Teacher",
+                    designation=row.data.tag or "Teacher",
+                    staff_type=row.data.staff_type or "Academic",
                     status="FAILED",
                     created=False,
                     email_sent=False,

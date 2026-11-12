@@ -36,6 +36,12 @@ class StaffProfileBase(BaseModel):
     roll_no: str = Field(default="", max_length=50, description="Roll number / Employee Identifier (auto-generated)")
     gender: Gender = Field(..., description="Gender (1=Male, 2=Female, 3=Other)")
     date_of_birth: date = Field(..., description="Date of birth")
+    tag: str = Field(default="Teacher", max_length=100, description="Designation tag displayed below teacher name")
+    designation: str | None = Field(default=None, max_length=100)
+    is_academic: bool = Field(default=True, description="Teaching & academic responsibilities")
+    is_non_academic: bool = Field(default=False, description="Administrative / non-academic responsibilities")
+    working_shifts: list[dict] = Field(default_factory=list, description="List of working intervals [{'start_time': '08:00', 'end_time': '14:00'}]")
+    assigned_wing_ids: list[UUID] = Field(default_factory=list, description="Assigned wing IDs for academic staff")
 
 
 class StaffProfileCreate(StaffProfileBase):
@@ -48,6 +54,11 @@ class StaffProfileUpdate(BaseModel):
     date_of_birth: date | None = None
     department: str | None = Field(default=None, max_length=100)
     designation: str | None = Field(default=None, max_length=100)
+    tag: str | None = Field(default=None, max_length=100)
+    is_academic: bool | None = None
+    is_non_academic: bool | None = None
+    working_shifts: list[dict] | None = None
+    assigned_wing_ids: list[UUID] | None = None
 
 
 class StaffProfileRead(StaffProfileBase):
@@ -58,6 +69,12 @@ class StaffProfileRead(StaffProfileBase):
     activated_at: datetime | None = None
     department: str | None = None
     designation: str | None = None
+    tag: str = "Teacher"
+    is_academic: bool = True
+    is_non_academic: bool = False
+    working_shifts: list[dict] = []
+    assigned_wing_ids: list[UUID] = []
+    assigned_wings: list[dict] = []
 
     model_config = ConfigDict(from_attributes=True)
 

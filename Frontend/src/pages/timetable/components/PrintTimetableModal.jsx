@@ -94,7 +94,7 @@ export function PrintTimetableModal({
     const q = teacherSearch.toLowerCase().trim()
     return teachers.filter((t) => {
       const name = `${t.first_name || ""} ${t.last_name || ""}`.toLowerCase()
-      const dept = (t.department || t.designation || "").toLowerCase()
+      const dept = (t.tag || t.designation || t.department || "").toLowerCase()
       return name.includes(q) || dept.includes(q)
     })
   }, [teachers, teacherSearch])
@@ -572,7 +572,7 @@ export function PrintTimetableModal({
                     {displayedTeachers.map((t) => {
                       const isSelected = selectedTeacherIds.has(t.id)
                       const name = `${t.first_name || ""} ${t.last_name || ""}`.trim() || t.email
-                      const dept = t.department || t.designation || ""
+                      const dept = t.tag || t.designation || t.department || "Teacher"
                       return (
                         <button
                           key={t.id}

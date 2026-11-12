@@ -94,6 +94,11 @@ class BulkStaffRowData(BaseModel):
     email: str = ""
     gender: str = ""
     date_of_birth: str = ""
+    tag: str = "Teacher"
+    designation: str = "Teacher"
+    staff_type: str = "Academic"
+    wings: str = ""
+    timings: str = ""
 
 
 
@@ -120,6 +125,9 @@ class BulkStaffCreationResultItem(BaseModel):
     name: str | None = None
     email: str | None = None
     login_mobile: str | None = None
+    tag: str | None = None
+    designation: str | None = None
+    staff_type: str | None = None
     status: str  # "CREATED", "FAILED", "DUPLICATE", "INVALID"
     created: bool
     email_sent: bool = False

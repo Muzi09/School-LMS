@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx"
 
-export const EXPECTED_COLUMNS = [
+export const REQUIRED_COLUMNS = [
   "first_name",
   "last_name",
   "login_mobile",
@@ -9,6 +9,63 @@ export const EXPECTED_COLUMNS = [
   "date_of_birth",
 ]
 
+export const OPTIONAL_COLUMNS = [
+  "tag",
+  "staff_type",
+  "wings",
+  "timings",
+]
+
+export const EXPECTED_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
+
+export const SPECIMEN_COLUMNS = [
+  "first_name",
+  "last_name",
+  "login_mobile",
+  "email",
+  "gender",
+  "date_of_birth (YYYY-MM-DD)",
+  "designation",
+  "staff_type",
+  "wings",
+  "timings",
+]
+
+export const COLUMN_ALIASES = {
+  first_name: "first_name",
+  firstname: "first_name",
+  "first name": "first_name",
+  last_name: "last_name",
+  lastname: "last_name",
+  "last name": "last_name",
+  login_mobile: "login_mobile",
+  mobile: "login_mobile",
+  mobile_number: "login_mobile",
+  "login mobile": "login_mobile",
+  email: "email",
+  email_address: "email",
+  "email address": "email",
+  gender: "gender",
+  date_of_birth: "date_of_birth",
+  "date_of_birth (yyyy-mm-dd)": "date_of_birth",
+  "date_of_birth(yyyy-mm-dd)": "date_of_birth",
+  "date of birth (yyyy-mm-dd)": "date_of_birth",
+  "date of birth": "date_of_birth",
+  dob: "date_of_birth",
+  tag: "tag",
+  designation: "tag",
+  "tag / designation": "tag",
+  staff_type: "staff_type",
+  "staff type": "staff_type",
+  type: "staff_type",
+  wings: "wings",
+  assigned_wings: "wings",
+  "assigned wings": "wings",
+  timings: "timings",
+  working_hours: "timings",
+  "working hours": "timings",
+}
+
 export const COLUMN_LABELS = {
   first_name: "First Name",
   last_name: "Last Name",
@@ -16,6 +73,12 @@ export const COLUMN_LABELS = {
   email: "Email Address",
   gender: "Gender (Male / Female / Other)",
   date_of_birth: "Date of Birth (YYYY-MM-DD)",
+  "date_of_birth (YYYY-MM-DD)": "Date of Birth (YYYY-MM-DD)",
+  tag: "Designation",
+  designation: "Designation",
+  staff_type: "Staff Type (Academic / Non-Academic / Both)",
+  wings: "Assigned Wings",
+  timings: "Working Hours (e.g. 08:00-14:00)",
 }
 
 /**
@@ -102,32 +165,30 @@ export async function validateXlsxFileClient(file) {
     }
 
     const stringHeaders = rawHeaders.map((h) => String(h ?? ""))
-    const seen = new Set()
+    const seenCanonical = new Set()
     const duplicateHeaders = []
     const unexpectedColumns = []
-    const casingOrSpacingErrors = []
 
     stringHeaders.forEach((h) => {
       const clean = h.trim()
       if (!clean) return
 
-      if (seen.has(clean)) {
-        duplicateHeaders.push(clean)
-      }
-      seen.add(clean)
+      const norm = clean.toLowerCase()
+      const canonical = COLUMN_ALIASES[norm]
 
-      if (h !== clean) {
-        casingOrSpacingErrors.push(`Header '${h}' contains leading or trailing spaces`)
-      } else if (h !== h.toLowerCase()) {
-        casingOrSpacingErrors.push(`Header '${h}' must be all lowercase`)
-      }
-
-      if (!EXPECTED_COLUMNS.includes(clean)) {
+      if (!canonical) {
         unexpectedColumns.push(clean)
+        return
+      }
+
+      if (seenCanonical.has(canonical)) {
+        duplicateHeaders.push(clean)
+      } else {
+        seenCanonical.add(canonical)
       }
     })
 
-    const missingColumns = EXPECTED_COLUMNS.filter((col) => !seen.has(col))
+    const missingColumns = REQUIRED_COLUMNS.filter((col) => !seenCanonical.has(col))
 
     if (duplicateHeaders.length > 0) {
       return {
@@ -139,11 +200,8 @@ export async function validateXlsxFileClient(file) {
       }
     }
 
-    if (missingColumns.length > 0 || unexpectedColumns.length > 0 || casingOrSpacingErrors.length > 0) {
+    if (missingColumns.length > 0 || unexpectedColumns.length > 0) {
       let errorMsg = "Invalid file format. The uploaded file does not match the Staff Import template."
-      if (casingOrSpacingErrors.length > 0) {
-        errorMsg += `\n${casingOrSpacingErrors.join("; ")}`
-      }
       return {
         isValid: false,
         error: errorMsg,
@@ -189,7 +247,11 @@ export const MOCK_STAFF_RECORDS = [
     login_mobile: "9876543210",
     email: "rajesh.sharma@school.edu",
     gender: "Male",
-    date_of_birth: "1988-06-15",
+    "date_of_birth (YYYY-MM-DD)": "1988-06-15",
+    designation: "PGT Commerce",
+    staff_type: "Academic",
+    wings: "Senior",
+    timings: "08:00-14:00",
   },
   {
     first_name: "Priya",
@@ -197,7 +259,11 @@ export const MOCK_STAFF_RECORDS = [
     login_mobile: "9876543211",
     email: "priya.patel@school.edu",
     gender: "Female",
-    date_of_birth: "1992-09-22",
+    "date_of_birth (YYYY-MM-DD)": "1992-09-22",
+    designation: "Coordinator",
+    staff_type: "Both",
+    wings: "Primary, Middle",
+    timings: "08:00-12:30, 14:00-16:30",
   },
   {
     first_name: "Amit",
@@ -205,7 +271,11 @@ export const MOCK_STAFF_RECORDS = [
     login_mobile: "9876543212",
     email: "amit.verma@school.edu",
     gender: "Male",
-    date_of_birth: "1985-12-05",
+    "date_of_birth (YYYY-MM-DD)": "1985-12-05",
+    designation: "Accountant",
+    staff_type: "Non-Academic",
+    wings: "",
+    timings: "09:00-17:00",
   },
 ]
 
@@ -215,7 +285,11 @@ export const INSTRUCTIONS_DATA = [
   { "Column Name": "login_mobile", Required: "Yes", Description: "Mobile phone number used for login", "Accepted Format / Values": "10-15 digits only, no spaces or special symbols", Example: "9876543210" },
   { "Column Name": "email", Required: "Yes", Description: "Official email address (used for invitation link)", "Accepted Format / Values": "Valid email format, must be unique across all users", Example: "rajesh.sharma@school.edu" },
   { "Column Name": "gender", Required: "Yes", Description: "Staff member gender", "Accepted Format / Values": "Text value: 'Male', 'Female', or 'Other'", Example: "Male" },
-  { "Column Name": "date_of_birth", Required: "Yes", Description: "Date of birth", "Accepted Format / Values": "YYYY-MM-DD format", Example: "1988-06-15" },
+  { "Column Name": "date_of_birth (YYYY-MM-DD)", Required: "Yes", Description: "Date of birth in YYYY-MM-DD format", "Accepted Format / Values": "YYYY-MM-DD format", Example: "1988-06-15" },
+  { "Column Name": "designation", Required: "No", Description: "Staff designation (defaults to 'Teacher')", "Accepted Format / Values": "Text", Example: "PGT Commerce" },
+  { "Column Name": "staff_type", Required: "No", Description: "Staff classification", "Accepted Format / Values": "'Academic', 'Non-Academic', or 'Both' (defaults to 'Academic')", Example: "Academic" },
+  { "Column Name": "wings", Required: "Yes (if Academic)", Description: "School wings for academic staff. Mandatory if school has wings.", "Accepted Format / Values": "Comma-separated wing names (e.g. 'Primary, Middle')", Example: "Senior" },
+  { "Column Name": "timings", Required: "No", Description: "Working hours / shifts for timetable", "Accepted Format / Values": "'HH:MM-HH:MM' or comma-separated for split shifts", Example: "08:00-14:00" },
 ]
 
 export const EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -253,7 +327,7 @@ export function generateSampleStaffXlsx(filename = "staff_bulk_import_sample.xls
 
   // Sheet 1: Staff_Import_Template with headers and 3 mock records
   const templateSheet = XLSX.utils.json_to_sheet(MOCK_STAFF_RECORDS, {
-    header: EXPECTED_COLUMNS,
+    header: SPECIMEN_COLUMNS,
   })
   templateSheet["!cols"] = [
     { wch: 18 },
@@ -261,16 +335,20 @@ export function generateSampleStaffXlsx(filename = "staff_bulk_import_sample.xls
     { wch: 18 },
     { wch: 28 },
     { wch: 16 },
-    { wch: 18 },
+    { wch: 26 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 25 },
   ]
   XLSX.utils.book_append_sheet(workbook, templateSheet, "Staff_Import_Template")
 
   // Sheet 2: Instructions
   const instructionsSheet = XLSX.utils.json_to_sheet(INSTRUCTIONS_DATA)
   instructionsSheet["!cols"] = [
-    { wch: 18 },
-    { wch: 12 },
-    { wch: 45 },
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 50 },
     { wch: 50 },
     { wch: 28 },
   ]
@@ -296,6 +374,10 @@ export function exportErrorReportXlsx(rows = []) {
     Email: r.data?.email || "",
     Gender: r.data?.gender || "",
     "Date of Birth": r.data?.date_of_birth || "",
+    Designation: r.data?.designation || r.data?.tag || "Teacher",
+    "Staff Type": r.data?.staff_type || "Academic",
+    Wings: r.data?.wings || "",
+    Timings: r.data?.timings || "",
     Status: r.status,
     "Error Reason": (r.errors || []).join("; "),
   }))
@@ -315,6 +397,8 @@ export function exportResultsXlsx(results = []) {
   const data = results.map((r) => ({
     "Staff ID": r.roll_no || "",
     Name: r.name || "",
+    Designation: r.designation || r.tag || "Teacher",
+    "Staff Type": r.staff_type || "Academic",
     Email: r.email || "",
     Mobile: r.login_mobile || "",
     Status: r.status,

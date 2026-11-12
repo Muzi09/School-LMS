@@ -71,8 +71,8 @@ function SingleClassCard({
       ...teachers.map((tch) => ({
         value: String(tch.id),
         label: tch.name,
-        description: tch.department
-          ? `${tch.department}${tch.designation ? ` • ${tch.designation}` : ""}`
+        description: (tch.tag || tch.designation)
+          ? `${tch.tag || tch.designation}${tch.department ? ` • ${tch.department}` : ""}`
           : (tch.email || null),
       })),
     ]
@@ -220,7 +220,7 @@ function SingleClassCard({
             const sectionSubjects = sec.subjects || schoolClass.subjects || []
             const hasClassTeacher = Boolean(sec.class_teacher || sec.class_teacher_id)
             const classTeacherName = sec.class_teacher?.name || (sec.class_teacher_id ? "Assigned Staff" : "")
-            const classTeacherSubtitle = sec.class_teacher?.designation || sec.class_teacher?.department || "Class Teacher"
+            const classTeacherSubtitle = sec.class_teacher?.tag || sec.class_teacher?.designation || sec.class_teacher?.department || "Class Teacher"
 
             return (
               <div
@@ -360,7 +360,7 @@ function SingleClassCard({
                                 {
                                   value: String(assignedTeacherId),
                                   label: sub.teacher?.name || "Assigned Teacher",
-                                  description: sub.teacher?.designation || null,
+                                  description: sub.teacher?.tag || sub.teacher?.designation || null,
                                 },
                               ]
                               : teacherComboboxOptions
@@ -397,7 +397,7 @@ function SingleClassCard({
                                           {
                                             value: String(childTeacherId),
                                             label: childSub.teacher?.name || "Assigned Teacher",
-                                            description: childSub.teacher?.designation || null,
+                                            description: childSub.teacher?.tag || childSub.teacher?.designation || null,
                                           },
                                         ]
                                         : teacherComboboxOptions

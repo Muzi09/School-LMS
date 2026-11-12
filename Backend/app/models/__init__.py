@@ -14,7 +14,7 @@ from app.models.school import School
 from app.models.school_class import SchoolClass
 from app.models.section import Section
 from app.models.smtp_configuration import SmtpConfiguration
-from app.models.staff import StaffProfile
+from app.models.staff import StaffProfile, StaffWing
 from app.models.staff_onboarding_token import StaffOnboardingToken
 from app.models.student import StudentProfile
 from app.models.subject import ClassSubject, Subject
@@ -52,6 +52,7 @@ __all__ = [
     "PrincipalProfile",
     "SmtpConfiguration",
     "StaffProfile",
+    "StaffWing",
     "StaffOnboardingToken",
     "StudentProfile",
     "Conversation",

@@ -1881,6 +1881,36 @@ class TimetableService:
         if not target_start or not target_end:
             return {"has_conflict": False, "message": None, "conflicting_entry": None}
 
+        t_name = f"{teacher.first_name} {teacher.last_name}".strip()
+        sp = getattr(teacher, "staff_profile", None)
+        if sp and not sp.is_academic:
+            return {
+                "has_conflict": True,
+                "message": f"{t_name} is registered as Non-Academic staff and cannot be assigned teaching periods.",
+                "conflicting_entry": None,
+            }
+
+        if sp and sp.working_shifts and len(sp.working_shifts) > 0:
+            fits_shift = False
+            for shift in sp.working_shifts:
+                s_start = _parse_time(shift.get("start_time"))
+                s_end = _parse_time(shift.get("end_time"))
+                if s_start and s_end and s_start <= target_start and target_end <= s_end:
+                    fits_shift = True
+                    break
+            if not fits_shift:
+                shift_strs = [
+                    f"{shift.get('start_time')} - {shift.get('end_time')}"
+                    for shift in sp.working_shifts
+                    if shift.get("start_time") and shift.get("end_time")
+                ]
+                shifts_display = ", ".join(shift_strs) if shift_strs else "None"
+                return {
+                    "has_conflict": True,
+                    "message": f"{t_name} is not available at {_format_time_12h(target_start)} - {_format_time_12h(target_end)}. Configured working hours: {shifts_display}.",
+                    "conflicting_entry": None,
+                }
+
         q = (
             self.db.query(TimetableEntry)
             .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
@@ -2042,31 +2072,62 @@ class TimetableService:
         updated_count = 0
         cleared_count = 0
 
+        # Pre-fetch all existing entries for all target sections and days in a single batch query
+        target_section_ids = [s.id for s in sections_to_apply]
+        existing_entries = (
+            self.db.query(TimetableEntry)
+            .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
+            .filter(
+                TimetableEntry.school_id == school_id,
+                TimetableEntry.section_id.in_(target_section_ids),
+                TimetableEntry.day_of_week.in_(days_to_apply),
+                or_(
+                    TimetableEntry.period_id == target_period.id,
+                    and_(
+                        TimetablePeriod.setup_id == target_period.setup_id,
+                        TimetablePeriod.period_number == target_period.period_number,
+                    ),
+                ),
+                or_(
+                    TimetableEntry.timetable_id == data.timetable_id,
+                    TimetableEntry.timetable_id.is_(None),
+                ),
+                TimetableEntry.deleted_at.is_(None),
+                TimetablePeriod.deleted_at.is_(None),
+            )
+            .all()
+        )
+        existing_map: Dict[Tuple[UUID, str], TimetableEntry] = {
+            (e.section_id, e.day_of_week): e for e in existing_entries
+        }
+
+        # Pre-fetch ClassSubject teacher fallbacks if teacher_user_id was not explicitly provided
+        cs_map: Dict[UUID, Optional[UUID]] = {}
+        if data.subject_id is not None and not data.teacher_user_id:
+            class_ids = list({s.class_id for s in sections_to_apply})
+            cs_list = (
+                self.db.query(ClassSubject)
+                .filter(
+                    ClassSubject.school_id == school_id,
+                    ClassSubject.class_id.in_(class_ids),
+                    ClassSubject.subject_id == data.subject_id,
+                    ClassSubject.deleted_at.is_(None),
+                )
+                .order_by(ClassSubject.section_id.desc().nullslast())
+                .all()
+            )
+            for cs in cs_list:
+                if cs.teacher_id:
+                    if cs.section_id and cs.section_id not in cs_map:
+                        cs_map[cs.section_id] = cs.teacher_id
+                    elif not cs.section_id:
+                        for s in sections_to_apply:
+                            if s.class_id == cs.class_id and s.id not in cs_map:
+                                cs_map[s.id] = cs.teacher_id
+
         for sec in sections_to_apply:
             for day in days_to_apply:
-                existing = (
-                    self.db.query(TimetableEntry)
-                    .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
-                    .filter(
-                        TimetableEntry.school_id == school_id,
-                        TimetableEntry.section_id == sec.id,
-                        TimetableEntry.day_of_week == day,
-                        or_(
-                            TimetableEntry.period_id == target_period.id,
-                            and_(
-                                TimetablePeriod.setup_id == target_period.setup_id,
-                                TimetablePeriod.period_number == target_period.period_number,
-                            ),
-                        ),
-                        or_(
-                            TimetableEntry.timetable_id == data.timetable_id,
-                            TimetableEntry.timetable_id.is_(None),
-                        ),
-                        TimetableEntry.deleted_at.is_(None),
-                        TimetablePeriod.deleted_at.is_(None),
-                    )
-                    .first()
-                )
+                existing = existing_map.get((sec.id, day))
 
                 if data.subject_id is None:
                     if existing:
@@ -2074,25 +2135,7 @@ class TimetableService:
                         existing.deleted_by = user_id
                         cleared_count += 1
                 else:
-                    assigned_teacher_id = data.teacher_user_id
-                    if not assigned_teacher_id:
-                        cs = (
-                            self.db.query(ClassSubject)
-                            .filter(
-                                ClassSubject.school_id == school_id,
-                                ClassSubject.class_id == sec.class_id,
-                                ClassSubject.subject_id == data.subject_id,
-                                ClassSubject.deleted_at.is_(None),
-                                or_(
-                                    ClassSubject.section_id == sec.id,
-                                    ClassSubject.section_id.is_(None),
-                                ),
-                            )
-                            .order_by(ClassSubject.section_id.desc().nullslast())
-                            .first()
-                        )
-                        if cs and cs.teacher_id:
-                            assigned_teacher_id = cs.teacher_id
+                    assigned_teacher_id = data.teacher_user_id or cs_map.get(sec.id)
 
                     if existing:
                         existing.subject_id = data.subject_id
@@ -2294,13 +2337,16 @@ class TimetableService:
     # =========================================================================
 
     def list_eligible_teachers(self, school_id: UUID) -> List[Dict[str, Any]]:
-        """List active teaching staff for the school."""
+        """List active teaching staff for the school (Academic staff only)."""
         users = (
             self.db.query(User)
             .join(StaffProfile, StaffProfile.user_id == User.id)
-            .options(joinedload(User.staff_profile))
+            .options(
+                joinedload(User.staff_profile).selectinload(StaffProfile.staff_wings)
+            )
             .filter(
                 StaffProfile.school_id == school_id,
+                StaffProfile.is_academic.is_(True),
                 User.is_active.is_(True),
                 User.deleted_at.is_(None),
                 User.role == UserRole.STAFF,
@@ -2312,6 +2358,8 @@ class TimetableService:
         teachers = []
         for u in users:
             sp = u.staff_profile
+            tag_val = (sp.tag if sp and sp.tag else (sp.designation if sp and sp.designation else "Teacher"))
+            assigned_wing_ids = [sw.wing_id for sw in sp.staff_wings if getattr(sw, "deleted_at", None) is None] if (sp and hasattr(sp, "staff_wings") and sp.staff_wings) else []
             teachers.append({
                 "id": u.id,
                 "name": f"{u.first_name} {u.last_name}".strip(),
@@ -2320,7 +2368,11 @@ class TimetableService:
                 "email": u.email,
                 "roll_no": sp.roll_no if sp else None,
                 "department": sp.department if sp else None,
-                "designation": sp.designation if sp else None,
+                "designation": tag_val,
+                "tag": tag_val,
+                "is_academic": sp.is_academic if sp else True,
+                "working_shifts": sp.working_shifts if (sp and sp.working_shifts) else [],
+                "assigned_wing_ids": assigned_wing_ids,
             })
         return teachers
 
@@ -2609,6 +2661,32 @@ class TimetableService:
             )
             if not teacher:
                 raise BadRequestException("Selected teacher is not an active teaching staff member of this school.")
+
+            sp = teacher.staff_profile
+            teacher_name = f"{teacher.first_name} {teacher.last_name}".strip()
+            if sp and not sp.is_academic:
+                raise BadRequestException(f"Staff member '{teacher_name}' is registered as Non-Academic only and cannot be assigned to teaching periods.")
+
+            if sp and sp.working_shifts and len(sp.working_shifts) > 0:
+                fits_shift = False
+                for shift in sp.working_shifts:
+                    s_start = _parse_time(shift.get("start_time"))
+                    s_end = _parse_time(shift.get("end_time"))
+                    if s_start and s_end and s_start <= period.start_time and period.end_time <= s_end:
+                        fits_shift = True
+                        break
+                if not fits_shift:
+                    shift_strs = [
+                        f"{shift.get('start_time')} - {shift.get('end_time')}"
+                        for shift in sp.working_shifts
+                        if shift.get("start_time") and shift.get("end_time")
+                    ]
+                    shifts_display = ", ".join(shift_strs) if shift_strs else "None"
+                    raise BadRequestException(
+                        f"Teacher '{teacher_name}' is unavailable during Period {period.period_number} "
+                        f"({_format_time_12h(period.start_time)} - {_format_time_12h(period.end_time)}). "
+                        f"Configured working hours: {shifts_display}."
+                    )
 
         # 5. Subject assigned to section via ClassSubject
         is_assigned = (

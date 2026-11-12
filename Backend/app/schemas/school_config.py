@@ -10,6 +10,10 @@ class TeacherSimpleRead(BaseModel):
     roll_no: str | None = None
     department: str | None = None
     designation: str | None = None
+    tag: str | None = None
+    is_academic: bool | None = None
+    assigned_wing_ids: list[UUID] = []
+    working_shifts: list[dict] = []
 
     model_config = ConfigDict(from_attributes=True)
 

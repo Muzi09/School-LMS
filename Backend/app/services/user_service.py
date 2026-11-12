@@ -9,7 +9,8 @@ from app.core.exceptions import BadRequestException, ConflictException, NotFound
 from app.core.security import generate_onboarding_token, hash_password, hash_pin, hash_token
 from app.models.enums import UserRole
 from app.models.principal import PrincipalProfile
-from app.models.staff import StaffProfile
+from app.models.staff import StaffProfile, StaffWing
+from app.models.wing import Wing
 from app.models.staff_onboarding_token import StaffOnboardingToken
 from app.models.student import StudentProfile
 from app.models.user import User
@@ -168,6 +169,21 @@ class UserService:
                 generated_id, _ = self.generate_staff_id(school_id=school_id)
                 profile_data["roll_no"] = generated_id
 
+            assigned_wing_ids = profile_data.pop("assigned_wing_ids", [])
+            tag_val = (profile_data.get("tag") or profile_data.get("designation") or "Teacher").strip()
+            profile_data["tag"] = tag_val
+            profile_data["designation"] = tag_val
+
+            is_academic = profile_data.get("is_academic", True)
+            is_non_academic = profile_data.get("is_non_academic", False)
+            if not is_academic and not is_non_academic:
+                raise BadRequestException("At least one staff classification (Academic or Non-Academic) must be selected.")
+
+            if school_id and is_academic:
+                school_wings_count = self.db.query(Wing).filter(Wing.school_id == school_id, Wing.deleted_at.is_(None)).count()
+                if school_wings_count > 0 and (not assigned_wing_ids or len(assigned_wing_ids) == 0):
+                    raise BadRequestException("Academic staff must be assigned to at least one wing.")
+
             staff_profile = StaffProfile(
                 user_id=user.id,
                 school_id=school_id,
@@ -175,6 +191,18 @@ class UserService:
                 **profile_data,
             )
             self.user_repo.add_staff_profile(staff_profile, autocommit=False)
+            self.db.flush()
+
+            if is_academic and assigned_wing_ids and school_id:
+                for w_id in assigned_wing_ids:
+                    self.db.add(
+                        StaffWing(
+                            school_id=school_id,
+                            staff_profile_id=staff_profile.id,
+                            wing_id=w_id,
+                            created_by=created_by_id,
+                        )
+                    )
 
             # 3. Generate secure onboarding token
             raw_token, token_hash = generate_onboarding_token()
@@ -335,8 +363,38 @@ class UserService:
         user.updated_at = datetime.utcnow()
 
         if data.profile and user.staff_profile:
-            for key, value in data.profile.model_dump(exclude_unset=True).items():
+            profile_dict = data.profile.model_dump(exclude_unset=True)
+            assigned_wing_ids = profile_dict.pop("assigned_wing_ids", None)
+            if "tag" in profile_dict:
+                tag_clean = (profile_dict["tag"] or "Teacher").strip()
+                profile_dict["tag"] = tag_clean
+                profile_dict["designation"] = tag_clean
+
+            for key, value in profile_dict.items():
                 setattr(user.staff_profile, key, value)
+
+            if not user.staff_profile.is_academic and not user.staff_profile.is_non_academic:
+                raise BadRequestException("At least one staff classification (Academic or Non-Academic) must be selected.")
+
+            school_id = user.staff_profile.school_id
+            if school_id and user.staff_profile.is_academic and assigned_wing_ids is not None:
+                school_wings_count = self.db.query(Wing).filter(Wing.school_id == school_id, Wing.deleted_at.is_(None)).count()
+                if school_wings_count > 0 and len(assigned_wing_ids) == 0:
+                    raise BadRequestException("Academic staff must be assigned to at least one wing.")
+
+            if assigned_wing_ids is not None:
+                # Remove existing staff_wings
+                self.db.query(StaffWing).filter(StaffWing.staff_profile_id == user.staff_profile.id).delete()
+                if user.staff_profile.is_academic and assigned_wing_ids and user.staff_profile.school_id:
+                    for w_id in assigned_wing_ids:
+                        self.db.add(
+                            StaffWing(
+                                school_id=user.staff_profile.school_id,
+                                staff_profile_id=user.staff_profile.id,
+                                wing_id=w_id,
+                                created_by=updated_by_id,
+                            )
+                        )
 
         self.db.commit()
         self.db.refresh(user)

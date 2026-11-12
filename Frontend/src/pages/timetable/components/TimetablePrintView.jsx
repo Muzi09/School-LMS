@@ -248,7 +248,7 @@ export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
   const renderTeacherCard = (teacher) => {
     const tId = String(teacher.id)
     const tName = `${teacher.first_name || ""} ${teacher.last_name || ""}`.trim() || teacher.email
-    const dept = teacher.department || teacher.designation || "Faculty"
+    const dept = teacher.tag || teacher.designation || teacher.department || "Teacher"
     const assignedCount = teacherWorkloadMap[tId] || 0
     const tMap = teacherEntriesMap[tId] || {}
     const secPeriods = fallbackPeriods

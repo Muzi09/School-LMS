@@ -10,6 +10,12 @@ import {
   Check,
   User,
   ShieldAlert,
+  Clock,
+  Plus,
+  Trash2,
+  GraduationCap,
+  Building2,
+  Briefcase,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -18,6 +24,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { useCreateStaff, useUpdateStaff } from "@/hooks/useStaff"
 import { getPrincipalEmailSetupApi } from "@/api/principalEmailService"
 import { generateStaffIdApi } from "@/api/staffService"
+import { schoolConfigService } from "@/api/schoolConfigService"
 import { getStaffValidationSchema } from "@/validations"
 import { ModalHeader } from "@/components/common/ModalHeader"
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
@@ -48,12 +55,31 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
     enabled: isOpen,
   })
 
+  // Query School Configuration to get Wings
+  const { data: schoolConfigData } = useQuery({
+    queryKey: ["schoolConfig"],
+    queryFn: async () => {
+      const res = await schoolConfigService.getFullConfig()
+      return res?.data ?? res
+    },
+    staleTime: 60000,
+    enabled: isOpen,
+  })
+
+  const wings = schoolConfigData?.wings || []
   const isEmailConfigured = Boolean(emailSetupData?.is_configured)
 
-  const validationSchema = React.useMemo(() => getStaffValidationSchema(isEdit), [isEdit])
+  const validationSchema = React.useMemo(
+    () => getStaffValidationSchema(isEdit, Boolean(wings && wings.length > 0)),
+    [isEdit, wings]
+  )
 
   const initialValues = React.useMemo(() => {
     const profile = staff?.staff_profile || {}
+    const defaultShifts =
+      profile.working_shifts && profile.working_shifts.length > 0
+        ? profile.working_shifts
+        : [{ start_time: "08:00", end_time: "14:00" }]
     return {
       first_name: staff?.first_name || "",
       last_name: staff?.last_name || "",
@@ -62,6 +88,11 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
       roll_no: profile.roll_no || "",
       gender: profile.gender ?? 1,
       date_of_birth: profile.date_of_birth || "",
+      tag: profile.tag || profile.designation || "Teacher",
+      is_academic: profile.is_academic !== undefined ? profile.is_academic : true,
+      is_non_academic: profile.is_non_academic !== undefined ? profile.is_non_academic : false,
+      assigned_wing_ids: profile.assigned_wing_ids || [],
+      working_shifts: defaultShifts,
     }
   }, [staff])
 
@@ -72,38 +103,38 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
     onSubmit: async (values) => {
       setServerError("")
 
+      if (values.is_academic && wings && wings.length > 0 && (!values.assigned_wing_ids || values.assigned_wing_ids.length === 0)) {
+        formik.setFieldError("assigned_wing_ids", "Please select at least one wing for academic staff.")
+        formik.setFieldTouched("assigned_wing_ids", true)
+        return
+      }
+
       try {
+        const payload = {
+          first_name: values.first_name.trim(),
+          last_name: values.last_name.trim(),
+          login_mobile: values.login_mobile.trim(),
+          email: values.email.trim(),
+          profile: {
+            roll_no: values.roll_no.trim(),
+            gender: Number(values.gender),
+            date_of_birth: values.date_of_birth,
+            tag: values.tag.trim() || "Teacher",
+            designation: values.tag.trim() || "Teacher",
+            is_academic: Boolean(values.is_academic),
+            is_non_academic: Boolean(values.is_non_academic),
+            assigned_wing_ids: values.is_academic ? values.assigned_wing_ids : [],
+            working_shifts: values.working_shifts,
+          },
+        }
+
         if (isEdit) {
-          const updatePayload = {
-            first_name: values.first_name.trim(),
-            last_name: values.last_name.trim(),
-            login_mobile: values.login_mobile.trim(),
-            email: values.email.trim(),
-            profile: {
-              roll_no: values.roll_no.trim(),
-              gender: Number(values.gender),
-              date_of_birth: values.date_of_birth,
-            },
-          }
-          await updateStaffMutation.mutateAsync({ staffId: staff.id, data: updatePayload })
+          await updateStaffMutation.mutateAsync({ staffId: staff.id, data: payload })
           handleClose()
         } else {
-          const payload = {
-            first_name: values.first_name.trim(),
-            last_name: values.last_name.trim(),
-            login_mobile: values.login_mobile.trim(),
-            email: values.email.trim(),
-            profile: {
-              roll_no: values.roll_no.trim(),
-              gender: Number(values.gender),
-              date_of_birth: values.date_of_birth,
-            },
-          }
-
           const res = await createStaffMutation.mutateAsync(payload)
           const data = res?.data || res
 
-          // If setup link is available and email wasn't sent or not configured, show copy link screen
           if (data?.setup_url && (!data.email_sent || !isEmailConfigured)) {
             setCreatedSetupUrl(data.setup_url)
             setCreatedStaffName(`${values.first_name} ${values.last_name}`.trim())
@@ -458,6 +489,250 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
                     </p>
                   )}
                 </div>
+
+                <div className="col-span-1 sm:col-span-3">
+                  <label htmlFor="tag" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
+                    Designation
+                  </label>
+                  <Input
+                    id="tag"
+                    name="tag"
+                    maxLength={100}
+                    value={formik.values.tag}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    placeholder="e.g. Vice Principal, Coordinator, PGT Commerce, Teacher"
+                    className={cn(
+                      "h-10 text-sm rounded-xl px-3.5",
+                      formik.touched.tag && formik.errors.tag && "border-destructive/80 ring-1 ring-destructive/30"
+                    )}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    This tag reflects throughout the app directly with the teacher&apos;s name
+                  </p>
+                  {formik.touched.tag && formik.errors.tag && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 leading-tight">
+                      {formik.errors.tag}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Staff Classification (Two Checkboxes) */}
+            <div className="space-y-3.5">
+              <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 border-b border-border/60 pb-2">
+                <Briefcase className="size-4 text-primary" />
+                <span>3. Staff Classification</span>
+              </h4>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Select one or both classifications (at least one must be checked):
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Academic Staff Checkbox Card */}
+                <label
+                  className={cn(
+                    "flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer select-none",
+                    formik.values.is_academic
+                      ? "bg-primary/5 border-primary/40 ring-1 ring-primary/20"
+                      : "bg-muted/20 border-border hover:bg-muted/40"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    id="is_academic"
+                    name="is_academic"
+                    checked={formik.values.is_academic}
+                    onChange={(e) => {
+                      formik.setFieldValue("is_academic", e.target.checked)
+                      formik.setFieldTouched("is_academic", true)
+                    }}
+                    className="mt-0.5 size-4 rounded text-primary focus:ring-primary cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs sm:text-sm font-semibold text-foreground block">
+                      Academic Staff
+                    </span>
+                    <span className="text-[11px] text-muted-foreground block mt-0.5 leading-relaxed">
+                      Teaches classes, subjects &amp; timetable periods.
+                    </span>
+                  </div>
+                </label>
+
+                {/* Non-Academic Staff Checkbox Card */}
+                <label
+                  className={cn(
+                    "flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer select-none",
+                    formik.values.is_non_academic
+                      ? "bg-primary/5 border-primary/40 ring-1 ring-primary/20"
+                      : "bg-muted/20 border-border hover:bg-muted/40"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    id="is_non_academic"
+                    name="is_non_academic"
+                    checked={formik.values.is_non_academic}
+                    onChange={(e) => {
+                      formik.setFieldValue("is_non_academic", e.target.checked)
+                      formik.setFieldTouched("is_non_academic", true)
+                    }}
+                    className="mt-0.5 size-4 rounded text-primary focus:ring-primary cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs sm:text-sm font-semibold text-foreground block">
+                      Non-Academic Staff
+                    </span>
+                    <span className="text-[11px] text-muted-foreground block mt-0.5 leading-relaxed">
+                      Administration, office, accounts &amp; operations.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {!formik.values.is_academic && !formik.values.is_non_academic && (
+                <p className="text-[11px] font-medium text-destructive mt-1">
+                  At least one classification must be selected.
+                </p>
+              )}
+            </div>
+
+            {/* Section 4: Assigned Wings (Visible when Academic is selected) */}
+            {formik.values.is_academic && (
+              <div className="space-y-3.5 animate-in fade-in-0 duration-200">
+                <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2 border-b border-border/60 pb-2">
+                  <Building2 className="size-4 text-primary" />
+                  <span>
+                    4. Assigned Wing(s)
+                    {wings && wings.length > 0 && <span className="text-destructive ml-1">*</span>}
+                  </span>
+                </h4>
+
+                {wings && wings.length > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {wings.map((w) => {
+                        const isSelected = formik.values.assigned_wing_ids.includes(w.id)
+                        return (
+                          <button
+                            key={w.id}
+                            type="button"
+                            onClick={() => {
+                              const current = formik.values.assigned_wing_ids
+                              const updated = isSelected
+                                ? current.filter((id) => id !== w.id)
+                                : [...current, w.id]
+                              formik.setFieldValue("assigned_wing_ids", updated)
+                              formik.setFieldTouched("assigned_wing_ids", true)
+                            }}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer",
+                              isSelected
+                                ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                : "bg-muted/40 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                            )}
+                          >
+                            <Check className={cn("size-3.5 transition-transform", isSelected ? "scale-100" : "scale-0 w-0 -mr-1")} />
+                            <span>{w.name}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {((formik.touched.assigned_wing_ids || formik.submitCount > 0) && formik.values.assigned_wing_ids.length === 0) && (
+                      <p className="text-[11px] font-medium text-destructive mt-1.5 leading-tight">
+                        Please select at least one wing for academic staff.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">
+                    No wings configured in school. Staff will be available across the entire school.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Section 5: Daily Working Hours & Timetable Timing */}
+            <div className="space-y-3.5">
+              <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                <h4 className="text-xs sm:text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Clock className="size-4 text-primary" />
+                  <span>{formik.values.is_academic ? "5. Daily Working Hours & Timetable Timing" : "4. Daily Working Hours"}</span>
+                </h4>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const shifts = formik.values.working_shifts || []
+                    formik.setFieldValue("working_shifts", [
+                      ...shifts,
+                      { start_time: "14:00", end_time: "17:00" },
+                    ])
+                  }}
+                  className="h-7 text-xs font-semibold gap-1 text-primary cursor-pointer hover:bg-primary/10"
+                >
+                  <Plus className="size-3.5" />
+                  <span>Add Shift</span>
+                </Button>
+              </div>
+
+              <div className="space-y-2.5">
+                {(formik.values.working_shifts || []).map((shift, idx) => (
+                  <div key={idx} className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 border border-border">
+                    <span className="text-xs font-semibold text-muted-foreground min-w-[50px]">
+                      Shift {idx + 1}:
+                    </span>
+                    <div className="flex-1 grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[10px] uppercase font-semibold text-muted-foreground block mb-0.5">
+                          Log In Time
+                        </label>
+                        <Input
+                          type="time"
+                          value={shift.start_time || "08:00"}
+                          onChange={(e) => {
+                            const copy = [...formik.values.working_shifts]
+                            copy[idx] = { ...copy[idx], start_time: e.target.value }
+                            formik.setFieldValue("working_shifts", copy)
+                          }}
+                          className="h-9 text-xs rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-semibold text-muted-foreground block mb-0.5">
+                          Log Out Time
+                        </label>
+                        <Input
+                          type="time"
+                          value={shift.end_time || "14:00"}
+                          onChange={(e) => {
+                            const copy = [...formik.values.working_shifts]
+                            copy[idx] = { ...copy[idx], end_time: e.target.value }
+                            formik.setFieldValue("working_shifts", copy)
+                          }}
+                          className="h-9 text-xs rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    {formik.values.working_shifts.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const copy = formik.values.working_shifts.filter((_, i) => i !== idx)
+                          formik.setFieldValue("working_shifts", copy)
+                        }}
+                        className="size-8 text-destructive hover:bg-destructive/10 rounded-lg cursor-pointer shrink-0 mt-3"
+                        title="Remove Shift"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 

@@ -37,7 +37,10 @@ export function StaffDetailsModal({ isOpen, onClose, staff, onEdit }) {
                   <Briefcase className="size-3" /> Staff
                 </Badge>
               </div>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 font-mono">
+              <p className="text-xs sm:text-sm font-semibold text-primary mt-0.5">
+                {profile.tag || profile.designation || "Teacher"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5 font-mono">
                 Staff ID: {profile.roll_no || staff.id.slice(0, 8)}
               </p>
             </div>
@@ -110,12 +113,50 @@ export function StaffDetailsModal({ isOpen, onClose, staff, onEdit }) {
                 <span className="text-xs font-medium text-muted-foreground block mb-0.5">Gender</span>
                 <span className="text-sm font-semibold text-foreground">{genderMap[profile.gender] || "N/A"}</span>
               </div>
-              <div className="col-span-2">
+              <div>
                 <span className="text-xs font-medium text-muted-foreground block mb-0.5">Date of Birth</span>
                 <span className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                   <Calendar className="size-3.5 text-muted-foreground" />
                   <span>{profile.date_of_birth || "N/A"}</span>
                 </span>
+              </div>
+              <div>
+                <span className="text-xs font-medium text-muted-foreground block mb-0.5">Designation</span>
+                <span className="text-sm font-semibold text-foreground">{profile.tag || profile.designation || "Teacher"}</span>
+              </div>
+              <div>
+                <span className="text-xs font-medium text-muted-foreground block mb-0.5">Classification</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {profile.is_academic && profile.is_non_academic
+                    ? "Both (Academic & Non-Academic)"
+                    : profile.is_non_academic
+                    ? "Non-Academic Staff"
+                    : "Academic Staff"}
+                </span>
+              </div>
+              <div>
+                <span className="text-xs font-medium text-muted-foreground block mb-0.5">Assigned Wings</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {profile.assigned_wings && profile.assigned_wings.length > 0
+                    ? profile.assigned_wings.map((w) => w.name).join(", ")
+                    : profile.is_academic
+                    ? "All Wings"
+                    : "N/A"}
+                </span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-xs font-medium text-muted-foreground block mb-0.5">Working Hours / Availability</span>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {profile.working_shifts && profile.working_shifts.length > 0 ? (
+                    profile.working_shifts.map((shift, idx) => (
+                      <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono bg-muted border border-border">
+                        Shift {idx + 1}: {shift.start_time} - {shift.end_time}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Standard School Timing (08:00 - 14:00)</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

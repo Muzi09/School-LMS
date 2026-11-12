@@ -264,14 +264,196 @@ export function useCheckConflict() {
   })
 }
 
+// Helper for optimistic bulk assignment in class-wise timetable
+function applyOptimisticBulkAssign(oldData, payload) {
+  if (!oldData || !Array.isArray(oldData.entries)) return oldData
+
+  const applyDays = new Set(
+    (payload.apply_days && payload.apply_days.length > 0
+      ? payload.apply_days
+      : [payload.day_of_week]
+    ).map((d) => String(d).toUpperCase())
+  )
+
+  const targetSectionIds = new Set()
+  if (payload.scope === "CLASS_SECTIONS" && payload._section?.class_id) {
+    for (const w of oldData.wings || []) {
+      for (const c of w.classes || []) {
+        if (String(c.id) === String(payload._section.class_id)) {
+          for (const s of c.sections || []) {
+            targetSectionIds.add(String(s.id))
+          }
+        }
+      }
+    }
+  }
+  if (targetSectionIds.size === 0 && payload.section_id) {
+    targetSectionIds.add(String(payload.section_id))
+  }
+
+  const isUnassign = !payload.subject_id
+
+  // 1. Filter out existing entries that match (section_id, day, period_id)
+  const updatedEntries = oldData.entries.filter((e) => {
+    const isTargetSection = targetSectionIds.has(String(e.section_id))
+    const isTargetDay = applyDays.has(String(e.day_of_week).toUpperCase())
+    const isTargetPeriod = String(e.period_id) === String(payload.period_id)
+    return !(isTargetSection && isTargetDay && isTargetPeriod)
+  })
+
+  // 2. If assigning, append optimistic entries
+  if (!isUnassign) {
+    for (const secId of targetSectionIds) {
+      for (const day of applyDays) {
+        updatedEntries.push({
+          id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          school_id: oldData.timetable?.school_id,
+          timetable_id: payload.timetable_id,
+          section_id: secId,
+          period_id: payload.period_id,
+          period_number: payload._optimisticPeriod?.period_number || 0,
+          day_of_week: day,
+          subject_id: payload.subject_id,
+          teacher_user_id: payload.teacher_user_id || payload._optimisticTeacher?.id || null,
+          subject: payload._optimisticSubject || null,
+          teacher: payload._optimisticTeacher || null,
+          period: payload._optimisticPeriod || null,
+        })
+      }
+    }
+  }
+
+  // 3. Recalculate section assigned_slots, unassigned_slots & subject_stats in wings
+  const updatedWings = (oldData.wings || []).map((wing) => ({
+    ...wing,
+    classes: (wing.classes || []).map((cls) => ({
+      ...cls,
+      sections: (cls.sections || []).map((sec) => {
+        if (!targetSectionIds.has(String(sec.id))) return sec
+
+        const secEntries = updatedEntries.filter((e) => String(e.section_id) === String(sec.id))
+        const assignedSlots = secEntries.length
+        const totalSlots = sec.total_slots || 30
+        const unassignedSlots = Math.max(0, totalSlots - assignedSlots)
+
+        const subCounts = new Map()
+        for (const e of secEntries) {
+          if (e.subject_id) {
+            subCounts.set(String(e.subject_id), (subCounts.get(String(e.subject_id)) || 0) + 1)
+          }
+        }
+
+        const updatedSubjectStats = (sec.subject_stats || []).map((stat) => {
+          const cnt = subCounts.get(String(stat.subject_id)) || 0
+          const target = stat.target || (stat.is_academic ? 6 : 3)
+          return {
+            ...stat,
+            assigned: cnt,
+            status: cnt === target ? "normal" : cnt < target ? "under" : "over",
+          }
+        })
+
+        return {
+          ...sec,
+          assigned_slots: assignedSlots,
+          unassigned_slots: unassignedSlots,
+          subject_stats: updatedSubjectStats,
+        }
+      }),
+    })),
+  }))
+
+  return {
+    ...oldData,
+    entries: updatedEntries,
+    wings: updatedWings,
+  }
+}
+
+// Helper for optimistic delete in class-wise timetable
+function applyOptimisticDelete(oldData, { entryId, sectionId }) {
+  if (!oldData || !Array.isArray(oldData.entries)) return oldData
+
+  const deletedEntry = oldData.entries.find((e) => String(e.id) === String(entryId))
+  const secId = sectionId || deletedEntry?.section_id
+  const updatedEntries = oldData.entries.filter((e) => String(e.id) !== String(entryId))
+
+  if (!secId) {
+    return { ...oldData, entries: updatedEntries }
+  }
+
+  const updatedWings = (oldData.wings || []).map((wing) => ({
+    ...wing,
+    classes: (wing.classes || []).map((cls) => ({
+      ...cls,
+      sections: (cls.sections || []).map((sec) => {
+        if (String(sec.id) !== String(secId)) return sec
+
+        const secEntries = updatedEntries.filter((e) => String(e.section_id) === String(sec.id))
+        const assignedSlots = secEntries.length
+        const totalSlots = sec.total_slots || 30
+        const unassignedSlots = Math.max(0, totalSlots - assignedSlots)
+
+        const subCounts = new Map()
+        for (const e of secEntries) {
+          if (e.subject_id) {
+            subCounts.set(String(e.subject_id), (subCounts.get(String(e.subject_id)) || 0) + 1)
+          }
+        }
+
+        const updatedSubjectStats = (sec.subject_stats || []).map((stat) => {
+          const cnt = subCounts.get(String(stat.subject_id)) || 0
+          const target = stat.target || (stat.is_academic ? 6 : 3)
+          return {
+            ...stat,
+            assigned: cnt,
+            status: cnt === target ? "normal" : cnt < target ? "under" : "over",
+          }
+        })
+
+        return {
+          ...sec,
+          assigned_slots: assignedSlots,
+          unassigned_slots: unassignedSlots,
+          subject_stats: updatedSubjectStats,
+        }
+      }),
+    })),
+  }))
+
+  return {
+    ...oldData,
+    entries: updatedEntries,
+    wings: updatedWings,
+  }
+}
+
 export function useBulkAssignSlot() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload) => bulkAssignSlotApi(payload),
+    onMutate: async (payload) => {
+      await queryClient.cancelQueries({ queryKey: ["timetable", "class-wise"] })
+      const previousData = queryClient.getQueriesData({ queryKey: ["timetable", "class-wise"] })
+
+      queryClient.setQueriesData({ queryKey: ["timetable", "class-wise"] }, (oldData) =>
+        applyOptimisticBulkAssign(oldData, payload)
+      )
+
+      return { previousData }
+    },
+    onError: (err, payload, context) => {
+      if (context?.previousData) {
+        context.previousData.forEach(([key, data]) => {
+          queryClient.setQueryData(key, data)
+        })
+      }
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.insights(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all, refetchType: "none" })
     },
   })
 }
@@ -286,10 +468,10 @@ export function useCreateTimetableEntry() {
   return useMutation({
     mutationFn: (payload) => createTimetableEntryApi(payload),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.section_id) })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.section_id), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all, refetchType: "none" })
     },
   })
 }
@@ -301,11 +483,11 @@ export function useUpdateTimetableEntry() {
     mutationFn: ({ entryId, payload, sectionId }) => updateTimetableEntryApi(entryId, payload),
     onSuccess: (_, variables) => {
       if (variables?.sectionId) {
-        queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId) })
+        queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId), refetchType: "none" })
       }
-      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all, refetchType: "none" })
     },
   })
 }
@@ -315,13 +497,31 @@ export function useDeleteTimetableEntry() {
 
   return useMutation({
     mutationFn: ({ entryId, sectionId }) => deleteTimetableEntryApi(entryId),
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey: ["timetable", "class-wise"] })
+      const previousData = queryClient.getQueriesData({ queryKey: ["timetable", "class-wise"] })
+
+      queryClient.setQueriesData({ queryKey: ["timetable", "class-wise"] }, (oldData) =>
+        applyOptimisticDelete(oldData, variables)
+      )
+
+      return { previousData }
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousData) {
+        context.previousData.forEach(([key, data]) => {
+          queryClient.setQueryData(key, data)
+        })
+      }
+    },
     onSuccess: (_, variables) => {
       if (variables?.sectionId) {
-        queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId) })
+        queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId), refetchType: "none" })
       }
-      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.insights(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all, refetchType: "none" })
     },
   })
 }

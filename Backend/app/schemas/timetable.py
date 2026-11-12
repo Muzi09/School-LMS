@@ -97,6 +97,10 @@ class TimetableTeacherRead(BaseModel):
     roll_no: Optional[str] = None
     department: Optional[str] = None
     designation: Optional[str] = None
+    tag: Optional[str] = None
+    is_academic: Optional[bool] = True
+    working_shifts: list[dict] = []
+    assigned_wing_ids: list[UUID] = []
 
     model_config = ConfigDict(from_attributes=True)
 

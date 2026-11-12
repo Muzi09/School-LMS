@@ -140,7 +140,7 @@ export function TeacherWiseGridView({
       {filteredTeachers.map((teacher) => {
         const tId = String(teacher.id)
         const tName = `${teacher.first_name || ""} ${teacher.last_name || ""}`.trim() || teacher.email
-        const dept = teacher.department || teacher.designation || "Faculty"
+        const dept = teacher.tag || teacher.designation || teacher.department || "Teacher"
         const stats = teacherStatsMap[tId] || { assigned: 0, classesSet: new Set() }
         const assignedCount = stats.assigned
         const totalTeachingSlots = defaultDays.length * (masterPeriods.filter((p) => !p.is_break).length || 8)

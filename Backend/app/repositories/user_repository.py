@@ -2,11 +2,11 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.enums import UserRole
 from app.models.principal import PrincipalProfile
-from app.models.staff import StaffProfile
+from app.models.staff import StaffProfile, StaffWing
 from app.models.student import StudentProfile
 from app.models.user import User
 from app.repositories.base import BaseRepository
@@ -24,7 +24,7 @@ class UserRepository(BaseRepository[User]):
             select(User)
             .options(
                 joinedload(User.principal_profile),
-                joinedload(User.staff_profile),
+                joinedload(User.staff_profile).selectinload(StaffProfile.staff_wings).joinedload(StaffWing.wing),
                 joinedload(User.student_profile),
             )
             .where(User.id == user_id)
@@ -143,7 +143,9 @@ class UserRepository(BaseRepository[User]):
         total = self.db.scalar(count_stmt) or 0
 
         stmt = (
-            stmt.options(joinedload(User.staff_profile))
+            stmt.options(
+                joinedload(User.staff_profile).selectinload(StaffProfile.staff_wings).joinedload(StaffWing.wing)
+            )
             .order_by(User.created_at.desc())
             .offset(skip)
             .limit(limit)
