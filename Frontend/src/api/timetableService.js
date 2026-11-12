@@ -156,6 +156,15 @@ export const bulkAssignSlotApi = async (payload) => {
   return await apiClient.post("/timetable/entries/bulk", payload)
 }
 
+export const exportTimetableExcelApi = async ({ timetableId, payload }) => {
+  const response = await apiClient.post(
+    `/timetable/${timetableId}/export-excel`,
+    payload,
+    { responseType: "blob" }
+  )
+  return response.data
+}
+
 export const timetableService = {
   getTimetable: getTimetableApi,
   createEntry: createTimetableEntryApi,
@@ -195,6 +204,7 @@ export const timetableService = {
   getClassWiseTimetable: getClassWiseTimetableApi,
   checkConflict: checkConflictApi,
   bulkAssignSlot: bulkAssignSlotApi,
+  exportTimetableExcel: exportTimetableExcelApi,
 }
 
 export default timetableService

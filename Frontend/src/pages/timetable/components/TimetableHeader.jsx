@@ -3,7 +3,10 @@ import {
   Check,
   CheckCircle2,
   Loader2,
+  FileSpreadsheet,
+  Printer,
 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { TimetableSelector } from "./TimetableSelector"
 import { WingSelector } from "./WingSelector"
 import { SearchFilterBar } from "./SearchFilterBar"
@@ -33,6 +36,10 @@ export function TimetableHeader({
   onToggleAssignMode,
   assignBarProps = null,
   saveStatus = "saved", // "saved" | "saving" | "unsaved"
+
+  // Export & Print actions
+  onOpenExport,
+  onOpenPrint,
 
   // Zoom
   zoomLevel = 100,
@@ -125,6 +132,36 @@ export function TimetableHeader({
                 </>
               )}
             </button>
+          )}
+
+          {/* Export Timetable to Excel Button */}
+          {onOpenExport && (
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              onClick={onOpenExport}
+              className="h-9 px-3 rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground flex items-center gap-1.5 text-xs font-semibold shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+              title="Export Timetable to Excel (.xlsx)"
+            >
+              <FileSpreadsheet className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+          )}
+
+          {/* Print Timetable Schedules Button */}
+          {onOpenPrint && (
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              onClick={onOpenPrint}
+              className="h-9 px-3 rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground flex items-center gap-1.5 text-xs font-semibold shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+              title="Print Timetable Schedules"
+            >
+              <Printer className="size-3.5 text-primary" />
+              <span className="hidden sm:inline">Print</span>
+            </Button>
           )}
 
           {/* Zoom Controls (placed after Assign button) */}

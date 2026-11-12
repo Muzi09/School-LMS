@@ -32,6 +32,7 @@ import {
   getClassWiseTimetableApi,
   checkConflictApi,
   bulkAssignSlotApi,
+  exportTimetableExcelApi,
 } from "@/api/timetableService"
 
 export const timetableKeys = {
@@ -360,3 +361,10 @@ export function useDeletePeriod() {
     },
   })
 }
+
+export function useExportTimetableExcel() {
+  return useMutation({
+    mutationFn: ({ timetableId, payload }) => exportTimetableExcelApi({ timetableId, payload }),
+  })
+}
+

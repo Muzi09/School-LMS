@@ -19,6 +19,9 @@ import {
 import { TimetableHeader } from "./components/TimetableHeader"
 import { PerspectiveSelector } from "./components/PerspectiveSelector"
 import { ClassWiseGridView } from "./components/ClassWiseGridView"
+import { TeacherWiseGridView } from "./components/TeacherWiseGridView"
+import { ExportTimetableModal } from "./components/ExportTimetableModal"
+import { PrintTimetableModal } from "./components/PrintTimetableModal"
 import { BellScheduleSetupModal } from "./components/BellScheduleSetupModal"
 import { CreateTimetableModal } from "./components/CreateTimetableModal"
 import { parseSearchTokens } from "./searchUtils"
@@ -163,6 +166,8 @@ export function TimeTable() {
   // 7. Modals
   const [isBellSetupOpen, setIsBellSetupOpen] = useState(false)
   const [isCreateTimetableOpen, setIsCreateTimetableOpen] = useState(false)
+  const [isExportOpen, setIsExportOpen] = useState(false)
+  const [isPrintOpen, setIsPrintOpen] = useState(false)
 
   // 8. Class-wise Timetable Data Query
   const {
@@ -176,6 +181,24 @@ export function TimeTable() {
   })
 
   const wingsData = useMemo(() => timetableData?.wings || [], [timetableData?.wings])
+
+  // Flatten sections from wingsData for export and print
+  const allSections = useMemo(() => {
+    const list = []
+    for (const w of wingsData) {
+      for (const cls of w.classes || []) {
+        for (const sec of cls.sections || []) {
+          list.push({
+            ...sec,
+            class_id: cls.id,
+            class_name: cls.name,
+            wing_id: w.id,
+          })
+        }
+      }
+    }
+    return list
+  }, [wingsData])
 
   // Active wing ID: from URL or default to the first wing
   const activeWingId = useMemo(() => {
@@ -301,26 +324,65 @@ export function TimeTable() {
         assignBarProps={assignBarProps}
         zoomLevel={zoomLevel}
         onZoomChange={handleZoomChange}
+        onOpenExport={() => setIsExportOpen(true)}
+        onOpenPrint={() => setIsPrintOpen(true)}
       />
 
       {/* 4. Timetable Body Content */}
-      <ClassWiseGridView
-        timetableData={timetableData}
-        isLoading={isTimetablesLoading || isClassWiseLoading}
-        isError={isClassWiseError}
-        onRetry={refetchClassWise}
-        selectedWingId={activeWingId || "ALL"}
-        searchQuery={searchQuery}
-        searchTokens={searchTokens}
-        isAssignMode={isAssignMode}
-        onToggleAssignMode={handleToggleAssignMode}
-        onAssignBarPropsChange={setAssignBarProps}
-        zoom={zoomLevel}
-        onOpenBellSetup={() => setIsBellSetupOpen(true)}
-        onCreateNewTimetable={() => setIsCreateTimetableOpen(true)}
-      />
+      {perspective === "teacher-wise" ? (
+        <TeacherWiseGridView
+          timetableData={timetableData}
+          isLoading={isTimetablesLoading || isClassWiseLoading}
+          isError={isClassWiseError}
+          searchQuery={searchQuery}
+          zoom={zoomLevel}
+        />
+      ) : (
+        <ClassWiseGridView
+          timetableData={timetableData}
+          isLoading={isTimetablesLoading || isClassWiseLoading}
+          isError={isClassWiseError}
+          onRetry={refetchClassWise}
+          selectedWingId={activeWingId || "ALL"}
+          searchQuery={searchQuery}
+          searchTokens={searchTokens}
+          isAssignMode={isAssignMode}
+          onToggleAssignMode={handleToggleAssignMode}
+          onAssignBarPropsChange={setAssignBarProps}
+          zoom={zoomLevel}
+          onOpenBellSetup={() => setIsBellSetupOpen(true)}
+          onCreateNewTimetable={() => setIsCreateTimetableOpen(true)}
+        />
+      )}
 
       {/* 5. Modals */}
+      {/* Export Timetable Modal */}
+      {isExportOpen && currentTimetable && (
+        <ExportTimetableModal
+          isOpen={isExportOpen}
+          onClose={() => setIsExportOpen(false)}
+          timetable={currentTimetable}
+          wings={wingsData}
+          sections={allSections}
+          teachers={timetableData?.eligible_teachers || []}
+        />
+      )}
+
+      {/* Print Timetable Modal */}
+      {isPrintOpen && currentTimetable && (
+        <PrintTimetableModal
+          isOpen={isPrintOpen}
+          onClose={() => setIsPrintOpen(false)}
+          schoolName={user?.school_name || "School Timetable"}
+          timetable={currentTimetable}
+          wings={wingsData}
+          sections={allSections}
+          teachers={timetableData?.eligible_teachers || []}
+          setups={timetableData?.setups || []}
+          entries={timetableData?.entries || []}
+        />
+      )}
+
       {/* Bell Schedule Setup Modal */}
       {isBellSetupOpen && selectedTimetableId && (
         <BellScheduleSetupModal

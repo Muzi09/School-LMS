@@ -2,6 +2,7 @@ from typing import Annotated, Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -41,8 +42,10 @@ from app.schemas.timetable import (
     TimetableSetupUpdate,
     TimetableTeacherRead,
     TimetableUpdate,
+    TimetableExportRequest,
 )
 from app.services.timetable_service import TimetableService
+from app.services.timetable_export_service import TimetableExportService
 
 router = APIRouter(prefix="/timetable", tags=["Time Table Management"])
 
@@ -784,5 +787,45 @@ def bulk_assign(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     return service.bulk_assign_slot(school_id=school_id, data=data, user_id=current_user.id)
+
+
+@router.post(
+    "/{timetable_id}/export-excel",
+    summary="Export Timetable to Excel",
+    description="Export class-wise, teacher-wise, or both timetables to a styled Excel (.xlsx) workbook with subject color grading.",
+)
+def export_timetable_excel(
+    timetable_id: UUID,
+    data: TimetableExportRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_view_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+
+    export_service = TimetableExportService(db=db)
+    file_stream = export_service.export_timetable_excel(
+        school_id=school_id,
+        timetable_id=timetable_id,
+        scope=data.scope,
+        wing_ids=data.wing_ids,
+        class_ids=data.class_ids,
+        section_ids=data.section_ids,
+        teacher_ids=data.teacher_ids,
+        color_coded=data.color_coded,
+    )
+
+    filename = f"Timetable_Export_{data.scope}.xlsx"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Access-Control-Expose-Headers": "Content-Disposition",
+    }
+    return StreamingResponse(
+        file_stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
 
 

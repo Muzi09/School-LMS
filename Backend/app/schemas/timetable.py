@@ -572,3 +572,13 @@ class TimetableInsightsResponse(BaseModel):
     coverage_summary: CoverageSummary
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TimetableExportRequest(BaseModel):
+    scope: str = Field(default="both", description="'classwise', 'teacherwise', or 'both'")
+    wing_ids: Optional[List[UUID]] = None
+    class_ids: Optional[List[UUID]] = None
+    section_ids: Optional[List[UUID]] = None
+    teacher_ids: Optional[List[UUID]] = None
+    color_coded: bool = True
+
