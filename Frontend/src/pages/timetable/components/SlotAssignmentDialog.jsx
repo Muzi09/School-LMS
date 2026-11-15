@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { getSubjectTheme } from "../subjectTheme"
 import { formatTimingsInText } from "../timetableUtils"
+import { sortDays } from "../bellTiming/validators"
 import { useCheckConflict } from "@/hooks/useTimetable"
 import { cn } from "@/lib/utils"
 
@@ -76,6 +77,7 @@ export function SlotAssignmentDialog({
   availableSubjects = [],
   eligibleTeachers = [],
   existingEntries = [],
+  periodMap = null,
   onAssign, // (payload) => void
   onUnassign, // (entryId) => void
   isSubmitting = false,
@@ -97,7 +99,7 @@ export function SlotAssignmentDialog({
       const filtered = cellData.scheduleDays
         .map((d) => String(d).toUpperCase())
         .filter((d) => d !== "SATURDAY" && d !== "SUNDAY")
-      if (filtered.length > 0) return filtered
+      if (filtered.length > 0) return sortDays(filtered)
     }
     return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
   }, [cellData?.scheduleDays])
@@ -105,14 +107,14 @@ export function SlotAssignmentDialog({
   // All days list (Mon-Sat or full applicable days)
   const allScheduleDays = useMemo(() => {
     if (cellData?.allDays && Array.isArray(cellData.allDays) && cellData.allDays.length > 0) {
-      return cellData.allDays.map((d) => String(d).toUpperCase())
+      return sortDays(cellData.allDays.map((d) => String(d).toUpperCase()))
     }
     if (cellData?.scheduleDays && Array.isArray(cellData.scheduleDays) && cellData.scheduleDays.length > 0) {
       const days = cellData.scheduleDays.map((d) => String(d).toUpperCase())
       if (!days.includes("SATURDAY")) {
-        return [...days, "SATURDAY"]
+        return sortDays([...days, "SATURDAY"])
       }
-      return days
+      return sortDays(days)
     }
     return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
   }, [cellData?.allDays, cellData?.scheduleDays])
@@ -223,20 +225,30 @@ export function SlotAssignmentDialog({
   }, [filteredSubjects])
 
   // Synchronous in-memory conflict check helper
-  const checkInstantConflict = (teacher, cell, allEntries, allTeachers) => {
-    if (!teacher?.id || !cell?.period || !cell?.day) return null
+  const checkInstantConflict = (teacher, cell, allEntries, allTeachers, pMap) => {
+    const tId = String(teacher?.id || teacher?.user_id || "")
+    if (!tId || !cell?.period || !cell?.day) return null
 
     // 1. Check if non-academic
-    const fullTeacher = allTeachers.find((t) => String(t.id) === String(teacher.id)) || teacher
+    const fullTeacher = allTeachers.find((t) => String(t.id || t.user_id) === tId) || teacher
     if (fullTeacher.is_academic === false) {
       return `${fullTeacher.name || "Teacher"} is registered as Non-Academic staff and cannot be assigned teaching periods.`
     }
 
+    // Resolve cell start and end time
+    let pStart = cell.period.start_time
+    let pEnd = cell.period.end_time
+    if ((!pStart || !pEnd) && pMap && cell.period.id) {
+      const mapped = pMap.get(cell.period.id) || pMap.get(String(cell.period.id))
+      if (mapped) {
+        pStart = mapped.start_time
+        pEnd = mapped.end_time
+      }
+    }
+
     // 2. Check working shifts if configured
     const shifts = fullTeacher.working_shifts || fullTeacher.staff_profile?.working_shifts || []
-    if (shifts.length > 0 && cell.period.start_time && cell.period.end_time) {
-      const pStart = cell.period.start_time
-      const pEnd = cell.period.end_time
+    if (shifts.length > 0 && pStart && pEnd) {
       const fitsShift = shifts.some((s) => {
         const sStart = s.start_time
         const sEnd = s.end_time
@@ -252,22 +264,38 @@ export function SlotAssignmentDialog({
     }
 
     // 3. Check double-booking against existingEntries
-    if (allEntries && allEntries.length > 0 && cell.period.start_time && cell.period.end_time) {
-      const pStart = cell.period.start_time
-      const pEnd = cell.period.end_time
+    if (allEntries && allEntries.length > 0 && pStart && pEnd) {
       const currentEntryId = cell.currentEntry?.id
+      const targetDay = String(cell.day).toUpperCase()
 
       for (const e of allEntries) {
         if (currentEntryId && String(e.id) === String(currentEntryId)) continue
-        if (String(e.teacher_user_id || e.teacher?.id) !== String(teacher.id)) continue
-        if (e.day_of_week !== cell.day) continue
+        const entryTeacherId = String(e.teacher_user_id || e.teacher?.id || e.teacher?.user_id || "")
+        if (!entryTeacherId || entryTeacherId !== tId) continue
+        if (String(e.day_of_week).toUpperCase() !== targetDay) continue
 
-        const ep = e.period
+        let ep = e.period
+        if ((!ep || !ep.start_time || !ep.end_time) && pMap && e.period_id) {
+          ep = pMap.get(e.period_id) || pMap.get(String(e.period_id))
+        }
+
         if (ep && ep.start_time && ep.end_time) {
-          if (ep.start_time < pEnd && pStart < ep.end_time) {
-            const clsSec = e.section ? `${e.section.class_name || ""} ${e.section.name || ""}`.trim() : "another section"
-            const subName = e.subject?.name || "a subject"
-            return `${fullTeacher.name || "Teacher"} is already teaching ${subName} in ${clsSec} at this time (${formatTime12h(ep.start_time)} – ${formatTime12h(ep.end_time)}).`
+          const toMin = (t) => {
+            if (!t) return null
+            const [h, m] = String(t).split(":").map(Number)
+            return (h || 0) * 60 + (m || 0)
+          }
+          const epStart = toMin(ep.start_time)
+          const epEnd = toMin(ep.end_time)
+          const curStart = toMin(pStart)
+          const curEnd = toMin(pEnd)
+
+          if (epStart != null && epEnd != null && curStart != null && curEnd != null) {
+            if (epStart < curEnd && curStart < epEnd) {
+              const clsSec = e.section ? `${e.section.class_name || ""} ${e.section.name || ""}`.trim() : "another section"
+              const subName = e.subject?.name || "a subject"
+              return `${fullTeacher.name || "Teacher"} is already teaching ${subName} in ${clsSec} at this time (${formatTime12h(ep.start_time)} – ${formatTime12h(ep.end_time)}).`
+            }
           }
         }
       }
@@ -278,16 +306,18 @@ export function SlotAssignmentDialog({
 
   // Check teacher conflict whenever assigned teacher or time changes
   useEffect(() => {
-    const teacherId = assignedTeacher?.id
+    const teacherId = assignedTeacher?.id || assignedTeacher?.user_id
     if (!teacherId || !cellData?.period || !cellData?.day || !cellData?.timetableId) {
       setConflictWarning(null)
+      setIsCheckingConflict(false)
       return
     }
 
     // Immediate 0 ms synchronous pre-check
-    const localConflict = checkInstantConflict(assignedTeacher, cellData, existingEntries, eligibleTeachers)
+    const localConflict = checkInstantConflict(assignedTeacher, cellData, existingEntries, eligibleTeachers, periodMap)
     if (localConflict) {
       setConflictWarning(localConflict)
+      setIsCheckingConflict(false)
       return
     }
 
@@ -325,7 +355,7 @@ export function SlotAssignmentDialog({
     return () => {
       isMounted = false
     }
-  }, [assignedTeacher?.id, cellData, existingEntries, eligibleTeachers])
+  }, [assignedTeacher?.id, assignedTeacher?.user_id, cellData, existingEntries, eligibleTeachers, periodMap])
 
   // Scroll to selected item when dialog opens
   useEffect(() => {
@@ -339,7 +369,19 @@ export function SlotAssignmentDialog({
 
   if (!isOpen || !cellData) return null
 
-  const { section, day, period, currentEntry } = cellData
+  const section = cellData?.section || cellData?.currentEntry?.section || {}
+  const day = cellData?.day || cellData?.currentEntry?.day_of_week || ""
+  const period = cellData?.period || cellData?.currentEntry?.period || {}
+  const currentEntry = cellData?.currentEntry || null
+
+  const className =
+    section?.className ||
+    section?.class_name ||
+    section?.school_class?.name ||
+    currentEntry?.section?.school_class?.name ||
+    currentEntry?.section?.class_name ||
+    "Class"
+  const sectionName = section?.name || currentEntry?.section?.name || ""
 
   const handleSelectSubject = (sub) => {
     setSelectedSubjectId(sub.id)
@@ -348,10 +390,10 @@ export function SlotAssignmentDialog({
 
   // Redirect to Manage School to assign teacher for this specific subject
   const handleAssignNow = async () => {
-    const classId = section.class_id || section.classId || ""
-    const sectionId = section.id || ""
+    const classId = section?.class_id || section?.classId || ""
+    const sectionId = section?.id || ""
     const subjectId = selectedSubjectId || ""
-    const slotKey = `${section.id}_${day}_${period.id || period.period_number}`
+    const slotKey = `${sectionId}_${day}_${period?.id || period?.period_number || ""}`
 
     const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
     const scrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft || 0
@@ -366,8 +408,8 @@ export function SlotAssignmentDialog({
         sectionId,
         classId,
         day,
-        periodId: period.id,
-        periodNumber: period.period_number,
+        periodId: period?.id,
+        periodNumber: period?.period_number,
         subjectId,
         timetableId: cellData?.timetableId,
       })
@@ -383,10 +425,10 @@ export function SlotAssignmentDialog({
     if (selectedSubjectId && onAssign) {
       try {
         await onAssign({
-          timetable_id: cellData.timetableId,
-          section_id: section.id,
+          timetable_id: cellData?.timetableId,
+          section_id: section?.id,
           day_of_week: day,
-          period_id: period.id,
+          period_id: period?.id,
           subject_id: selectedSubjectId,
           teacher_user_id: null,
           scope: selectedScope || "SLOT",
@@ -412,6 +454,11 @@ export function SlotAssignmentDialog({
       return
     }
 
+    if (isCheckingConflict) {
+      toast.info("Checking teacher availability, please wait...")
+      return
+    }
+
     if (conflictWarning) {
       toast.error("Teacher has a schedule conflict with this time slot.")
       return
@@ -427,16 +474,16 @@ export function SlotAssignmentDialog({
     }
 
     onAssign({
-      timetable_id: cellData.timetableId,
-      section_id: section.id,
+      timetable_id: cellData?.timetableId,
+      section_id: section?.id,
       day_of_week: day,
-      period_id: period.id,
+      period_id: period?.id,
       subject_id: selectedSubjectId,
       teacher_user_id: assignedTeacher?.id || null,
       scope: selectedScope,
       apply_days: applyDays,
       overwrite: true,
-      subject: matchedSubject || cellData.currentEntry?.subject || null,
+      subject: matchedSubject || cellData?.currentEntry?.subject || null,
       teacher: assignedTeacher || null,
     })
     onClose()
@@ -450,14 +497,14 @@ export function SlotAssignmentDialog({
       applyDays = weekdayDays
     }
 
-    if (currentEntry && selectedScope === "SLOT") {
-      onUnassign(currentEntry.id)
+    if (currentEntry?.id && selectedScope === "SLOT") {
+      onUnassign(currentEntry.id, section?.id)
     } else {
       onAssign({
-        timetable_id: cellData.timetableId,
-        section_id: section.id,
+        timetable_id: cellData?.timetableId,
+        section_id: section?.id,
         day_of_week: day,
-        period_id: period.id,
+        period_id: period?.id,
         subject_id: null,
         scope: selectedScope,
         apply_days: applyDays,
@@ -527,6 +574,19 @@ export function SlotAssignmentDialog({
                 <span className="truncate font-medium text-foreground/85 max-w-[110px]">
                   {teacher.name}
                 </span>
+                {(() => {
+                  const tLoad = (existingEntries || []).filter(
+                    (e) => String(e.teacher_user_id || e.teacher?.id) === String(teacher.id) && e.day_of_week === cellData?.day
+                  ).length
+                  return tLoad >= 5 ? (
+                    <span
+                      className="ml-1 text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1 py-0.2 rounded border border-amber-500/30 shrink-0"
+                      title={`${teacher.name} has ${tLoad} periods scheduled on ${cellData?.day} (Heavy Load)`}
+                    >
+                      {tLoad}P
+                    </span>
+                  ) : null
+                })()}
               </span>
             ) : (
               <span className="text-[10px] text-amber-600/90 dark:text-amber-400/90 font-medium italic shrink-0">
@@ -543,14 +603,19 @@ export function SlotAssignmentDialog({
               "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 transition-colors",
               theme.chip,
               isUnder && "ring-1 ring-amber-500/40",
-              isOver && "ring-1 ring-blue-500/40"
+              isOver && "ring-1 ring-amber-500/60 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-500/40"
             )}
-            title={`${sub.name}: ${assignedCount} assigned / ${targetCount} target weekly periods`}
+            title={`${sub.name}: ${assignedCount} assigned / ${targetCount} target weekly periods${isOver ? " (Over Target)" : ""}`}
           >
-            <span className={cn("size-1 rounded-full", theme.dot)} />
+            <span className={cn("size-1 rounded-full", isOver ? "bg-amber-500" : theme.dot)} />
             <span>
               {assignedCount}/{targetCount}
             </span>
+            {isOver && (
+              <span className="text-[9px] font-bold text-amber-700 dark:text-amber-300 uppercase">
+                Over
+              </span>
+            )}
           </span>
 
           <div
@@ -577,22 +642,28 @@ export function SlotAssignmentDialog({
       {/* 1. FIXED HEADER: Never moves with body scroll */}
       <DialogHeader className="px-5 py-3 border-b border-border/60 bg-muted/15 shrink-0 pr-12">
         <DialogTitle className="text-base sm:text-lg font-bold tracking-tight text-foreground">
-          {section.className || section.class_name} - {section.name}
+          {className}{sectionName ? ` - ${sectionName}` : ""}
         </DialogTitle>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-          <span className="font-semibold text-foreground capitalize">
-            {day?.toLowerCase()}
-          </span>
+          {day && (
+            <span className="font-semibold text-foreground capitalize">
+              {day.toLowerCase()}
+            </span>
+          )}
           <span>•</span>
           <span className="font-semibold text-foreground">
             {formatPeriodDisplayLabel(period)}
           </span>
-          <span>•</span>
-          <span className="inline-flex items-center gap-1 font-medium text-foreground">
-            <Clock className="size-3 text-muted-foreground" />
-            {formatTime12h(period.start_time)} – {formatTime12h(period.end_time)}
-          </span>
+          {period?.start_time && period?.end_time && (
+            <>
+              <span>•</span>
+              <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                <Clock className="size-3 text-muted-foreground" />
+                {formatTime12h(period.start_time)} – {formatTime12h(period.end_time)}
+              </span>
+            </>
+          )}
         </div>
       </DialogHeader>
 
@@ -660,6 +731,20 @@ export function SlotAssignmentDialog({
                   >
                     Configured
                   </Badge>
+                  {(() => {
+                    const tLoad = (existingEntries || []).filter(
+                      (e) => String(e.teacher_user_id || e.teacher?.id) === String(assignedTeacher.id) && e.day_of_week === cellData?.day
+                    ).length
+                    return tLoad >= 5 ? (
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 border-amber-500/40 py-0 px-1 h-4 shrink-0"
+                        title={`${tLoad} periods scheduled on ${cellData?.day} (Heavy Load)`}
+                      >
+                        Heavy Load ({tLoad}P)
+                      </Badge>
+                    ) : null
+                  })()}
                 </div>
               ) : (
                 <div className="flex items-center gap-1 min-w-0 truncate">
@@ -862,14 +947,20 @@ export function SlotAssignmentDialog({
             type="button"
             onClick={handleApply}
             size="default"
-            disabled={isSubmitting || Boolean(conflictWarning) || !selectedSubjectId}
+            disabled={isSubmitting || isCheckingConflict || Boolean(conflictWarning) || !selectedSubjectId}
             className={cn(
               "h-8 px-4 text-xs font-bold gap-1.5 shadow-xs cursor-pointer",
-              (conflictWarning || !selectedSubjectId) && "opacity-50 cursor-not-allowed"
+              (conflictWarning || isCheckingConflict || !selectedSubjectId) && "opacity-50 cursor-not-allowed"
             )}
           >
-            {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
-            <span>Assign Slot</span>
+            {(isSubmitting || isCheckingConflict) && <Loader2 className="size-3.5 animate-spin" />}
+            <span>
+              {isSubmitting
+                ? "Assigning..."
+                : isCheckingConflict
+                ? "Checking..."
+                : "Assign Slot"}
+            </span>
           </Button>
         </div>
       </DialogFooter>

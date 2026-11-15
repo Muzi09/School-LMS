@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
-import { formatPeriodShortLabel, isNonTeachingPeriod } from "../bellTiming/validators"
+import { formatPeriodShortLabel, isNonTeachingPeriod, DAY_ORDER, sortDays } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
 
 const WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
@@ -53,6 +53,8 @@ export const ClassWiseCard = memo(function ClassWiseCard({
   onSelectSlot,
   onOpenAssignDialog,
   onMoveSlot,
+  onClearSlot,
+  onQuickUnassign,
   density = "comfortable",
   zoom = 100,
   searchQuery = "",
@@ -100,21 +102,47 @@ export const ClassWiseCard = memo(function ClassWiseCard({
       } catch {}
     }
 
+    const orderedAppDays = DAY_ORDER.filter((d) => appDays.includes(d))
+
     let groups = []
     if (rawSchedules && Array.isArray(rawSchedules) && rawSchedules.length > 0) {
-      groups = rawSchedules.map((sch) => {
-        const daysInSched = (sch.days || [])
-          .map((d) => String(d).toUpperCase())
-          .filter((d) => appDays.length === 0 || appDays.includes(d))
-        const periods = [...(sch.periods || [])].sort((a, b) => a.period_number - b.period_number)
-        const isAmber = sch.id === "saturday" || (sch.days || []).some((d) => String(d).toUpperCase() === "SATURDAY") || sch.days?.length === 1
-        return {
-          id: sch.id,
-          days: daysInSched,
-          periods,
-          isAmber,
+      const dayScheduleMap = new Map()
+      for (const day of orderedAppDays) {
+        const matchingSched = rawSchedules.find((s) =>
+          (s.days || []).map((d) => String(d).toUpperCase()).includes(day)
+        )
+        if (matchingSched) {
+          dayScheduleMap.set(day, matchingSched)
+        } else {
+          dayScheduleMap.set(day, rawSchedules[0])
         }
-      }).filter((g) => g.days.length > 0)
+      }
+
+      let currentGroup = null
+      for (const day of orderedAppDays) {
+        const sched = dayScheduleMap.get(day)
+        const schedId = sched?.id || "sched"
+
+        if (currentGroup && currentGroup.scheduleId === schedId) {
+          currentGroup.days.push(day)
+        } else {
+          const periods = [...(sched?.periods || [])].sort((a, b) => a.period_number - b.period_number)
+          const isAmber =
+            schedId === "saturday" ||
+            day === "SATURDAY" ||
+            (sched?.days || []).length === 1 ||
+            (sched?.days || []).some((d) => String(d).toUpperCase() === "SATURDAY")
+
+          currentGroup = {
+            id: `${schedId}_${day}`,
+            scheduleId: schedId,
+            days: [day],
+            periods,
+            isAmber,
+          }
+          groups.push(currentGroup)
+        }
+      }
     }
 
     if (groups.length === 0) {
@@ -129,7 +157,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
       groups = [
         {
           id: "weekdays",
-          days: appDays.filter((d) => d !== "SATURDAY"),
+          days: orderedAppDays.filter((d) => d !== "SATURDAY"),
           periods: sortedWeekday,
           isAmber: false,
         },
@@ -171,6 +199,19 @@ export const ClassWiseCard = memo(function ClassWiseCard({
       }
       if (e.period_number) {
         map.set(`${e.day_of_week}_p${e.period_number}`, e)
+      }
+    }
+    return map
+  }, [entries])
+
+  // Map same-day subject frequency for soft pedagogical indicators
+  const daySubjectCounts = useMemo(() => {
+    const map = {}
+    for (const e of entries) {
+      if (e.day_of_week && (e.subject_id || e.subject?.id)) {
+        const subId = String(e.subject_id || e.subject?.id)
+        const k = `${e.day_of_week}_${subId}`
+        map[k] = (map[k] || 0) + 1
       }
     }
     return map
@@ -308,6 +349,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
             const theme = getSubjectTheme(stat.name, stat.category)
             const isUnder = stat.assigned < stat.target
             const isOver = stat.assigned > stat.target
+            const isMet = stat.assigned === stat.target
 
             return (
               <span
@@ -316,15 +358,21 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                   "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border shrink-0 transition-colors",
                   theme.chip,
                   isUnder && "ring-1 ring-amber-500/40",
-                  isOver && "ring-1 ring-blue-500/40"
+                  isOver && "ring-1 ring-amber-500/60 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-500/40",
+                  isMet && "ring-1 ring-emerald-500/40"
                 )}
-                title={`${stat.name}: ${stat.assigned} assigned / ${stat.target} target weekly periods`}
+                title={`${stat.name}: ${stat.assigned} assigned / ${stat.target} target weekly periods${isOver ? " (Over Target)" : isMet ? " (Target Met)" : ""}`}
               >
-                <span className={cn("size-1.5 rounded-full", theme.dot)} />
+                <span className={cn("size-1.5 rounded-full", isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot)} />
                 <span className="font-semibold">{(stat?.name || "Subject").split(" ")[0]}</span>
-                <span className="opacity-80">
+                <span className={cn("text-[10px] font-mono", isOver && "font-bold text-amber-700 dark:text-amber-300")}>
                   {stat?.assigned || 0}/{stat?.target || 0}
                 </span>
+                {isOver && (
+                  <span className="text-[9px] font-bold px-1 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 uppercase">
+                    Over
+                  </span>
+                )}
               </span>
             )
           })}
@@ -490,7 +538,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                           null
 
                         const isBreak = Boolean(period.is_break)
-                        const conflictInfo = entry ? conflictMap[entry.id] : null
+                        const conflictInfo = entry ? (conflictMap[entry.id] || conflictMap[String(entry.id)]) : null
                         const slotKey = `${section.id}_${day}_${period.id || period.period_number}`
                         const isSelected = selectedSlot === slotKey
                         const isCopied = copiedSlot?.entry?.id === entry?.id
@@ -522,6 +570,9 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                           else isDimmed = true
                         }
 
+                        const subId = entry ? String(entry.subject_id || entry.subject?.id || "") : ""
+                        const sameDayRepeatCount = subId ? (daySubjectCounts[`${day}_${subId}`] || 1) : 1
+
                         return (
                           <div
                             key={period.id || period.period_number || index}
@@ -540,6 +591,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                               isSelected={isSelected}
                               isCopied={isCopied}
                               conflictInfo={conflictInfo}
+                              sameDayRepeatCount={sameDayRepeatCount}
                               isHighlighted={isHighlighted}
                               isDimmed={isDimmed}
                               density={density}
@@ -571,6 +623,13 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                                   entry,
                                   scheduleDays: group.days,
                                 })
+                              }}
+                              onQuickUnassign={(ent, sec) => {
+                                if (onQuickUnassign) {
+                                  onQuickUnassign(ent, sec || section, { day, period })
+                                } else if (onClearSlot) {
+                                  onClearSlot(ent?.id)
+                                }
                               }}
                               draggable={Boolean(entry)}
                               onDragStart={(e) =>

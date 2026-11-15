@@ -22,6 +22,7 @@ import { ClassWiseGridView } from "./components/ClassWiseGridView"
 import { TeacherWiseGridView } from "./components/TeacherWiseGridView"
 import { ExportTimetableModal } from "./components/ExportTimetableModal"
 import { PrintTimetableModal } from "./components/PrintTimetableModal"
+import { PublishTimetableModal } from "./components/PublishTimetableModal"
 import { BellScheduleSetupModal } from "./components/BellScheduleSetupModal"
 import { CreateTimetableModal } from "./components/CreateTimetableModal"
 import { parseSearchTokens } from "./searchUtils"
@@ -86,11 +87,17 @@ export function TimeTable() {
 
   const handleQuickActivate = async () => {
     if (!selectedTimetableId) return
+    const conflicts = assignBarProps?.conflictsCount || 0
+    if (conflicts > 0) {
+      toast.error(`Cannot activate timetable: ${conflicts} active schedule conflict(s) detected. Please resolve them first.`)
+      return
+    }
     try {
       await activateTimetableMutation.mutateAsync(selectedTimetableId)
       toast.success("Timetable activated successfully.")
-    } catch {
-      toast.error("Failed to activate timetable.")
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || "Failed to activate timetable."
+      toast.error(msg)
     }
   }
 
@@ -166,6 +173,7 @@ export function TimeTable() {
   // 7. Modals
   const [isBellSetupOpen, setIsBellSetupOpen] = useState(false)
   const [isCreateTimetableOpen, setIsCreateTimetableOpen] = useState(false)
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false)
   const [isExportOpen, setIsExportOpen] = useState(false)
   const [isPrintOpen, setIsPrintOpen] = useState(false)
 
@@ -310,9 +318,11 @@ export function TimeTable() {
       {/* 3. Sticky Contextual Timetable Controls Header */}
       <TimetableHeader
         timetables={timetables}
+        selectedTimetable={currentTimetable}
         selectedTimetableId={selectedTimetableId}
         onSelectTimetable={handleSelectTimetable}
         onCreateNewTimetable={() => setIsCreateTimetableOpen(true)}
+        conflictsCount={assignBarProps?.conflictsCount || 0}
         wings={wingsData}
         selectedWingIds={activeWingId ? [activeWingId] : []}
         onSelectWingIds={handleSelectWingIds}
@@ -324,6 +334,7 @@ export function TimeTable() {
         assignBarProps={assignBarProps}
         zoomLevel={zoomLevel}
         onZoomChange={handleZoomChange}
+        onOpenPublish={() => setIsPublishModalOpen(true)}
         onOpenExport={() => setIsExportOpen(true)}
         onOpenPrint={() => setIsPrintOpen(true)}
       />
@@ -356,6 +367,21 @@ export function TimeTable() {
       )}
 
       {/* 5. Modals */}
+      {/* Publish Timetable Modal */}
+      {isPublishModalOpen && currentTimetable && (
+        <PublishTimetableModal
+          isOpen={isPublishModalOpen}
+          onClose={() => setIsPublishModalOpen(false)}
+          timetable={currentTimetable}
+          conflictsCount={assignBarProps?.conflictsCount || 0}
+          onPublished={() => {
+            refetchTimetables()
+            refetchActiveTimetable()
+            refetchClassWise()
+          }}
+        />
+      )}
+
       {/* Export Timetable Modal */}
       {isExportOpen && currentTimetable && (
         <ExportTimetableModal
@@ -365,6 +391,7 @@ export function TimeTable() {
           wings={wingsData}
           sections={allSections}
           teachers={timetableData?.eligible_teachers || []}
+          conflictsCount={assignBarProps?.conflictsCount || 0}
         />
       )}
 
@@ -390,6 +417,7 @@ export function TimeTable() {
           onClose={() => setIsBellSetupOpen(false)}
           timetableId={selectedTimetableId}
           wings={wingsData}
+          initialSetups={timetableData?.setups}
           onSaved={() => {
             refetchClassWise()
             toast.success("Bell schedule setups saved successfully.")

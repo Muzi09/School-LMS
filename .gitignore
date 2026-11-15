@@ -1,0 +1,6 @@
+node_modules/
+.idea/
+.agents/
+uploads/
+*.log
+.DS_Store

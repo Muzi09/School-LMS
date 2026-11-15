@@ -10,6 +10,139 @@ export const MAX_PERIOD_DURATION_MINUTES = 180
 export const MAX_PERIODS_PER_SCHEDULE = 20
 
 export const ALL_WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+export const DAY_ORDER = [
+  "MONDAY",
+  "TUESDAY",
+  "WEDNESDAY",
+  "THURSDAY",
+  "FRIDAY",
+  "SATURDAY",
+  "SUNDAY",
+]
+
+/**
+ * Sorts an array of day strings in sequential weekday order:
+ * MONDAY -> TUESDAY -> WEDNESDAY -> THURSDAY -> FRIDAY -> SATURDAY -> SUNDAY
+ */
+export function sortDays(days = []) {
+  if (!Array.isArray(days)) return []
+  return [...days].sort((a, b) => {
+    const idxA = DAY_ORDER.indexOf(String(a).toUpperCase())
+    const idxB = DAY_ORDER.indexOf(String(b).toUpperCase())
+    return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB)
+  })
+}
+
+/**
+ * Returns the index of the earliest day in the schedule according to DAY_ORDER.
+ */
+export function getScheduleMinDayIndex(schedule) {
+  if (!schedule || !schedule.days || !Array.isArray(schedule.days) || schedule.days.length === 0) {
+    return 999
+  }
+  const indices = schedule.days
+    .map((d) => DAY_ORDER.indexOf(String(d).toUpperCase()))
+    .filter((idx) => idx !== -1)
+  return indices.length > 0 ? Math.min(...indices) : 999
+}
+
+/**
+ * Sorts schedules by the earliest day they contain, following DAY_ORDER.
+ */
+export function sortSchedules(schedules = []) {
+  if (!Array.isArray(schedules)) return []
+  return [...schedules].sort((a, b) => {
+    const minA = getScheduleMinDayIndex(a)
+    const minB = getScheduleMinDayIndex(b)
+    if (minA !== minB) return minA - minB
+    // If min day is the same, sort by number of days descending
+    return (b.days?.length || 0) - (a.days?.length || 0)
+  })
+}
+
+/**
+ * Compares two schedules to check if all period start/end times and break types are identical.
+ */
+export function areSchedulesTimingEqual(schedA, schedB) {
+  if (!schedA || !schedB) return false
+  const pA = schedA.periods || []
+  const pB = schedB.periods || []
+  if (pA.length !== pB.length) return false
+  if (pA.length === 0) return true
+
+  const sortedA = [...pA].sort(
+    (x, y) => (parseInt(x.period_number, 10) || 0) - (parseInt(y.period_number, 10) || 0)
+  )
+  const sortedB = [...pB].sort(
+    (x, y) => (parseInt(x.period_number, 10) || 0) - (parseInt(y.period_number, 10) || 0)
+  )
+
+  for (let i = 0; i < sortedA.length; i++) {
+    const itemA = sortedA[i]
+    const itemB = sortedB[i]
+    if (!itemA || !itemB) return false
+
+    // Compare start time in minutes
+    const startA = parseTime(itemA.start_time)?.totalMinutes
+    const startB = parseTime(itemB.start_time)?.totalMinutes
+    if (startA == null || startB == null || startA !== startB) return false
+
+    // Compare end time in minutes
+    const endA = parseTime(itemA.end_time)?.totalMinutes
+    const endB = parseTime(itemB.end_time)?.totalMinutes
+    if (endA == null || endB == null || endA !== endB) return false
+
+    // Compare period type (class vs break) case-insensitively
+    const typeA = String(itemA.type || (itemA.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)).toUpperCase()
+    const typeB = String(itemB.type || (itemB.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)).toUpperCase()
+    if (typeA !== typeB) return false
+  }
+
+  return true
+}
+
+/**
+ * Scans all setups to find any schedules that have identical bell timings.
+ * Returns an array of detected duplicate pairs.
+ */
+export function findIdenticalSchedulesInSetups(setups = []) {
+  const matches = []
+
+  for (const setup of setups) {
+    const schedules = setup.schedules || []
+    if (schedules.length <= 1) continue
+
+    const visitedSourceIds = new Set()
+
+    for (let i = 0; i < schedules.length; i++) {
+      if (visitedSourceIds.has(schedules[i].id)) continue
+
+      for (let j = i + 1; j < schedules.length; j++) {
+        if (visitedSourceIds.has(schedules[j].id)) continue
+
+        if (areSchedulesTimingEqual(schedules[i], schedules[j])) {
+          // Identify source (separated day) and target (remaining days)
+          const [targetSched, sourceSched] =
+            schedules[i].days.length >= schedules[j].days.length
+              ? [schedules[i], schedules[j]]
+              : [schedules[j], schedules[i]]
+
+          matches.push({
+            setupId: setup.id,
+            setupName: setup.name,
+            sourceScheduleId: sourceSched.id,
+            sourceDays: sortDays(sourceSched.days),
+            targetScheduleId: targetSched.id,
+            targetDays: sortDays(targetSched.days),
+          })
+          visitedSourceIds.add(sourceSched.id)
+        }
+      }
+    }
+  }
+
+  return matches
+}
 
 export const PERIOD_TYPES = {
   CLASS: "CLASS",

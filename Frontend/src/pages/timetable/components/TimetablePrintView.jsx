@@ -1,5 +1,6 @@
 import React from "react"
 import { getSubjectTheme } from "../subjectTheme"
+import { sortDays } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
 
 function formatTime12h(timeStr) {
@@ -112,7 +113,7 @@ export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
         }
       }
       if (Array.isArray(rawDays) && rawDays.length > 0) {
-        secDays = rawDays.map((d) => String(d).toUpperCase())
+        secDays = sortDays(rawDays.map((d) => String(d).toUpperCase()))
       }
       if (setup.periods && setup.periods.length > 0) {
         secPeriods = [...setup.periods].sort((a, b) => a.period_number - b.period_number)

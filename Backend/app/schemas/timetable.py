@@ -155,11 +155,65 @@ class TimetableRead(BaseModel):
     description: Optional[str] = None
     academic_year: Optional[str] = None
     is_active: bool
+    status: Optional[str] = "DRAFT"
+    version: Optional[int] = 1
+    published_at: Optional[datetime] = None
+    published_by: Optional[UUID] = None
     completion_percentage: Optional[float] = 0.0
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Timetable Publishing & Targeted Notification Schemas
+# ---------------------------------------------------------------------------
+
+
+class TeacherSlotDiff(BaseModel):
+    day_of_week: str
+    period_number: Optional[int] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    class_name: Optional[str] = None
+    section_name: Optional[str] = None
+    subject_name: Optional[str] = None
+
+
+class AffectedTeacherDiff(BaseModel):
+    teacher_id: UUID
+    teacher_name: str
+    teacher_email: Optional[str] = None
+    department: Optional[str] = None
+    added_slots: List[TeacherSlotDiff] = Field(default_factory=list)
+    removed_slots: List[TeacherSlotDiff] = Field(default_factory=list)
+    modified_slots: List[TeacherSlotDiff] = Field(default_factory=list)
+    total_changes: int = 0
+
+
+class TimetablePublishDiffResponse(BaseModel):
+    timetable_id: UUID
+    current_version: int
+    next_version: int
+    status: str
+    can_publish: bool
+    conflict_count: int
+    conflicts_summary: List[str] = Field(default_factory=list)
+    is_first_publish: bool
+    affected_teachers_count: int
+    affected_teachers: List[AffectedTeacherDiff] = Field(default_factory=list)
+    total_entries: int
+
+
+class TimetablePublishResponse(BaseModel):
+    message: str
+    timetable_id: UUID
+    version: int
+    status: str
+    published_at: datetime
+    affected_teachers_count: int
+    affected_teachers: List[AffectedTeacherDiff] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

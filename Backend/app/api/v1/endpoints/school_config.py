@@ -19,7 +19,7 @@ from app.models.section import Section
 from app.models.staff import StaffProfile
 from app.models.student import StudentProfile
 from app.models.subject import ClassSubject, Subject
-from app.models.timetable import TimetableEntry
+from app.models.timetable import TimetableEntry, TimetablePeriod
 from app.models.user import User
 from app.models.wing import Wing, WingClass
 from app.schemas.school_config import (
@@ -1671,6 +1671,10 @@ def assign_section_subject_teacher(
     # Synchronize existing timetable entries for this section and subject(s):
     tt_entries = (
         db.query(TimetableEntry)
+        .options(
+            joinedload(TimetableEntry.period),
+            joinedload(TimetableEntry.section).joinedload(Section.school_class),
+        )
         .filter(
             TimetableEntry.school_id == current_user.school_id,
             TimetableEntry.section_id == sec.id,
@@ -1684,13 +1688,88 @@ def assign_section_subject_teacher(
         entry.teacher_user_id = teacher_user.id if teacher_user else None
         entry.updated_by = current_user.id
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update teacher assignment: {str(exc)}",
+        )
+
+    # Detect any timetable schedule conflicts introduced by this assignment (Non-blocking)
+    warning_payload = None
+    if teacher_user and tt_entries:
+        try:
+            entry_ids = [e.id for e in tt_entries]
+            other_entries = (
+                db.query(TimetableEntry)
+                .options(
+                    joinedload(TimetableEntry.period),
+                    joinedload(TimetableEntry.section).joinedload(Section.school_class),
+                    joinedload(TimetableEntry.subject),
+                )
+                .filter(
+                    TimetableEntry.school_id == current_user.school_id,
+                    TimetableEntry.teacher_user_id == teacher_user.id,
+                    TimetableEntry.deleted_at.is_(None),
+                    TimetableEntry.id.notin_(entry_ids),
+                )
+                .all()
+            )
+
+            conflict_summaries = []
+            seen_pairs = set()
+
+            for entry in tt_entries:
+                p1 = entry.period
+                if not p1 or not p1.start_time or not p1.end_time:
+                    continue
+
+                for other in other_entries:
+                    if entry.timetable_id and other.timetable_id and entry.timetable_id != other.timetable_id:
+                        continue
+                    if entry.day_of_week != other.day_of_week:
+                        continue
+
+                    p2 = other.period
+                    if not p2 or not p2.start_time or not p2.end_time:
+                        continue
+
+                    # Check overlapping time interval: max(start1, start2) < min(end1, end2)
+                    if max(p1.start_time, p2.start_time) < min(p1.end_time, p2.end_time):
+                        pair_key = tuple(sorted([str(entry.id), str(other.id)]))
+                        if pair_key not in seen_pairs:
+                            seen_pairs.add(pair_key)
+                            sec1_name = f"{sec.school_class.name}-{sec.name}" if (sec and sec.school_class) else sec.name
+                            other_sec = other.section
+                            sec2_name = f"{other_sec.school_class.name}-{other_sec.name}" if (other_sec and other_sec.school_class) else (other_sec.name if other_sec else "another section")
+                            day_label = entry.day_of_week.capitalize()
+                            p_label = f"Period {p1.period_number}" if p1.period_number else ""
+                            conflict_summaries.append(f"{sec1_name} & {sec2_name} on {day_label} {p_label}".strip())
+
+            if conflict_summaries:
+                count = len(conflict_summaries)
+                examples_str = "; ".join(conflict_summaries[:2])
+                if count > 2:
+                    examples_str += f" (+{count - 2} more)"
+                t_name = f"{teacher_user.first_name} {teacher_user.last_name}".strip()
+                warning_payload = {
+                    "has_conflict": True,
+                    "conflict_count": count,
+                    "details": f"{t_name} is double-booked: {examples_str}. Please review and resolve on the Timetable page.",
+                }
+        except Exception:
+            # Non-blocking: warning detection failure should never fail teacher assignment
+            pass
+
     return {
         "success": True,
         "section_id": str(sec.id),
         "subject_id": str(sub.id),
         "teacher_id": str(teacher_user.id) if teacher_user else None,
         "teacher": _format_teacher(teacher_user).model_dump() if teacher_user else None,
+        "warning": warning_payload,
         "message": f"Teacher {'assigned' if teacher_user else 'unassigned'} for subject '{sub.name}'.",
     }
 

@@ -10,6 +10,9 @@ from app.core.security import generate_onboarding_token, hash_password, hash_pin
 from app.models.enums import UserRole
 from app.models.principal import PrincipalProfile
 from app.models.staff import StaffProfile, StaffWing
+from app.models.section import Section
+from app.models.subject import ClassSubject
+from app.models.timetable import TimetableEntry
 from app.models.wing import Wing
 from app.models.staff_onboarding_token import StaffOnboardingToken
 from app.models.student import StudentProfile
@@ -738,5 +741,16 @@ class UserService:
 
         if is_student and class_name and section:
             self.reassign_class_section_roll_numbers(class_name, section)
+        elif not is_student:
+            # Nullify any assignments referring to this deleted teacher/staff member
+            self.db.query(ClassSubject).filter(ClassSubject.teacher_id == user_id).update(
+                {"teacher_id": None}, synchronize_session=False
+            )
+            self.db.query(Section).filter(Section.class_teacher_id == user_id).update(
+                {"class_teacher_id": None}, synchronize_session=False
+            )
+            self.db.query(TimetableEntry).filter(TimetableEntry.teacher_user_id == user_id).update(
+                {"teacher_user_id": None}, synchronize_session=False
+            )
 
         self.db.commit()

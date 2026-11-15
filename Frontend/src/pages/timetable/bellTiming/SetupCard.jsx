@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useMemo } from "react"
 import {
   CheckCircle2,
   Copy,
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { DayTabs } from "./DayTabs"
 import { BellTimeline } from "./BellTimeline"
 import { WingCard } from "./WingCard"
+import { sortSchedules } from "./validators"
 import { cn } from "@/lib/utils"
 
 export function SetupCard({
@@ -49,7 +50,7 @@ export function SetupCard({
     .map(([secId]) => secId)
 
   const assignedCount = assignedSectionIds.length
-  const schedules = setup.schedules || []
+  const schedules = useMemo(() => sortSchedules(setup.schedules || []), [setup.schedules])
   const activeSchedule = schedules.find((s) => s.id === activeScheduleId) || schedules[0]
 
   const handleSaveName = () => {

@@ -20,6 +20,8 @@ import {
   createTimetableApi,
   updateTimetableApi,
   activateTimetableApi,
+  getTimetablePublishDiffApi,
+  publishTimetableApi,
   duplicateTimetableApi,
   deleteTimetableApi,
   listSetupsApi,
@@ -198,6 +200,28 @@ export function useActivateTimetable() {
   })
 }
 
+export function useTimetablePublishDiff(timetableId, options = {}) {
+  return useQuery({
+    queryKey: ["timetable", "publish-diff", timetableId],
+    queryFn: () => getTimetablePublishDiffApi(timetableId),
+    enabled: Boolean(timetableId) && (options.enabled !== undefined ? options.enabled : true),
+    staleTime: 0,
+  })
+}
+
+export function usePublishTimetable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (timetableId) => publishTimetableApi(timetableId),
+    onSuccess: (_, timetableId) => {
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
+      queryClient.invalidateQueries({ queryKey: ["timetable", "publish-diff", timetableId] })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+    },
+  })
+}
+
 export function useDuplicateTimetable() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -225,12 +249,13 @@ export function useDeleteTimetable() {
 // Setups & Bell Schedule Hooks
 // =========================================================================
 
-export function useSetups(timetableId) {
+export function useSetups(timetableId, options = {}) {
   return useQuery({
     queryKey: timetableKeys.setups(timetableId),
     queryFn: () => listSetupsApi(timetableId),
     enabled: Boolean(timetableId),
     staleTime: 30 * 1000,
+    ...options,
   })
 }
 
@@ -240,7 +265,10 @@ export function useBatchSaveSetups() {
     mutationFn: (payload) => batchSaveSetupsApi(payload),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.setups(variables.timetable_id) })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.all })
+      queryClient.invalidateQueries({ queryKey: ["timetable", "class-wise"] })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.insights(), refetchType: "none" })
     },
   })
 }
@@ -431,6 +459,7 @@ function applyOptimisticDelete(oldData, { entryId, sectionId }) {
 export function useBulkAssignSlot() {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ["bulk-assign-slot"],
     mutationFn: (payload) => bulkAssignSlotApi(payload),
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey: ["timetable", "class-wise"] })
@@ -450,6 +479,12 @@ export function useBulkAssignSlot() {
       }
     },
     onSuccess: () => {
+      // Coalescing: Only trigger active refetch of class-wise timetable when the last mutation settles
+      // This prevents earlier intermediate mutations from overwriting newer optimistic states
+      const activeMutations = queryClient.isMutating({ mutationKey: ["bulk-assign-slot"] })
+      if (activeMutations <= 1) {
+        queryClient.invalidateQueries({ queryKey: ["timetable", "class-wise"] })
+      }
       queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
       queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
       queryClient.invalidateQueries({ queryKey: timetableKeys.insights(), refetchType: "none" })
@@ -521,7 +556,6 @@ export function useDeleteTimetableEntry() {
       queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
       queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
       queryClient.invalidateQueries({ queryKey: timetableKeys.insights(), refetchType: "none" })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.all, refetchType: "none" })
     },
   })
 }

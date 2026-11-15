@@ -12,6 +12,7 @@ import {
   Square,
   Palette,
   X,
+  AlertTriangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +28,7 @@ export function ExportTimetableModal({
   wings = [],
   sections = [],
   teachers = [],
+  conflictsCount = 0,
 }) {
   const [scope, setScope] = useState("both") // "classwise" | "teacherwise" | "both"
   const [selectedWingId, setSelectedWingId] = useState("ALL")
@@ -139,6 +141,11 @@ export function ExportTimetableModal({
       return
     }
 
+    if (conflictsCount > 0) {
+      toast.error(`Cannot export timetable while ${conflictsCount} conflict(s) exist. Please resolve them first.`)
+      return
+    }
+
     const exportSectionIds = scope === "teacherwise" ? null : Array.from(selectedSectionIds)
     const exportTeacherIds = scope === "classwise" ? null : Array.from(selectedTeacherIds)
 
@@ -222,6 +229,19 @@ export function ExportTimetableModal({
 
         {/* Scrollable Body */}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4 scrollbar-thin">
+          {/* Conflict Block Banner */}
+          {conflictsCount > 0 && (
+            <div className="p-3.5 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive text-xs space-y-1">
+              <div className="flex items-center gap-2 font-bold">
+                <AlertTriangle className="size-4 shrink-0" />
+                <span>Export Blocked: {conflictsCount} {conflictsCount === 1 ? "Conflict" : "Conflicts"} Detected</span>
+              </div>
+              <p className="text-[11px] text-destructive/90 leading-snug pl-6">
+                This timetable contains overlapping teacher assignments. Please resolve or clear conflicting slots on the Timetable page before exporting.
+              </p>
+            </div>
+          )}
+
           {/* 1. Scope Selection (Radio Cards without descriptive subtext) */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
@@ -504,13 +524,23 @@ export function ExportTimetableModal({
             variant="default"
             size="default"
             onClick={handleExport}
-            disabled={exportMutation.isPending}
-            className="h-9 px-5 text-xs font-bold gap-2 cursor-pointer shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+            disabled={exportMutation.isPending || conflictsCount > 0}
+            className={cn(
+              "h-9 px-5 text-xs font-bold gap-2 cursor-pointer shadow-xs",
+              conflictsCount > 0
+                ? "bg-muted text-muted-foreground opacity-60 cursor-not-allowed hover:bg-muted"
+                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+            )}
           >
             {exportMutation.isPending ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
                 <span>Generating Excel...</span>
+              </>
+            ) : conflictsCount > 0 ? (
+              <>
+                <AlertTriangle className="size-4" />
+                <span>Resolve Conflicts First</span>
               </>
             ) : (
               <>

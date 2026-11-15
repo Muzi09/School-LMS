@@ -3,6 +3,7 @@ import { Calendar, Split, CheckSquare, Square, Layers, Info, Clock } from "lucid
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { format12h } from "./timeUtils"
+import { sortDays } from "./validators"
 import { cn } from "@/lib/utils"
 
 const DAY_LABELS = {
@@ -150,7 +151,7 @@ export function DayTabs({
               >
                 {/* Day Tabs */}
                 <div className="flex items-center gap-0.5">
-                  {schedule.days.map((day) => {
+                  {sortDays(schedule.days).map((day) => {
                     const dayInfo = DAY_LABELS[day.toUpperCase()] || { short: day, full: day }
                     const isDaySelected = selectedDays.includes(day) && selectedScheduleId === schedule.id
                     const canSplit = schedule.days.length > 1

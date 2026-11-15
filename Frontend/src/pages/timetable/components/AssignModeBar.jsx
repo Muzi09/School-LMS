@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ArrowRight,
   ShieldAlert,
+  Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -36,8 +37,9 @@ export function AssignModeBar({
   onUndo,
   onRedo,
   onExitMode,
-  issuesList = [], // [{ id, type: 'conflict'|'unassigned', title, sectionName, day, period, onJump, onResolve }]
+  issuesList = [], // [{ id, type: 'conflict'|'unassigned', title, sectionName, day, period, onJump, onResolve, onClear }]
   onResolveConflict,
+  onClearAllConflicts,
   className,
 }) {
   const [isIssuesOpen, setIsIssuesOpen] = useState(false)
@@ -350,9 +352,26 @@ export function AssignModeBar({
               <AlertTriangle className="size-3.5" />
               <span>{conflictsCount} {conflictsCount === 1 ? "Conflict" : "Conflicts"}</span>
             </div>
-            {conflictsList.length > 0 && (
-              <span className="text-[10px] text-muted-foreground font-normal">Click to resolve</span>
-            )}
+            <div className="flex items-center gap-2">
+              {conflictsList.length > 0 && onClearAllConflicts && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowConflictsPopover(false)
+                    onClearAllConflicts()
+                  }}
+                  className="text-[11px] font-bold text-destructive hover:underline flex items-center gap-1 cursor-pointer"
+                  title="Unassign all conflicting slots"
+                >
+                  <Trash2 className="size-3" />
+                  <span>Clear All</span>
+                </button>
+              )}
+              {conflictsList.length > 0 && (
+                <span className="text-[10px] text-muted-foreground font-normal">Click to resolve</span>
+              )}
+            </div>
           </div>
 
           {/* List or Empty State */}
@@ -412,12 +431,27 @@ export function AssignModeBar({
 
           <div className="mt-4 space-y-4 max-h-[calc(100vh-140px)] overflow-y-auto pr-1">
             {/* Summary */}
-            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-muted/40 border border-border/60 text-xs">
+            <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-muted/40 border border-border/60 text-xs">
               <div className="flex-1">
                 <span className="font-semibold text-destructive">{conflictsCount} Conflicts</span>
                 <span className="text-muted-foreground"> • </span>
                 <span className="font-semibold text-amber-600">{unassignedCount} Unassigned</span>
               </div>
+              {conflictsCount > 0 && onClearAllConflicts && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="xs"
+                  onClick={() => {
+                    setIsIssuesOpen(false)
+                    onClearAllConflicts()
+                  }}
+                  className="h-6 text-[11px] font-bold px-2 gap-1 cursor-pointer"
+                >
+                  <Trash2 className="size-3" />
+                  <span>Clear All Conflicts</span>
+                </Button>
+              )}
             </div>
 
             {/* List */}
@@ -452,25 +486,43 @@ export function AssignModeBar({
                         </span>
                       </div>
 
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => {
-                          setIsIssuesOpen(false)
-                          if (issue.type === "conflict" && issue.onResolve) {
-                            issue.onResolve()
-                          } else if (issue.type === "conflict" && onResolveConflict) {
-                            onResolveConflict(issue)
-                          } else {
-                            issue.onJump?.()
-                          }
-                        }}
-                        className="h-6 text-[11px] font-semibold text-primary hover:bg-primary/10 gap-1 px-1.5"
-                      >
-                        {issue.type === "conflict" ? "Resolve" : "Jump"}
-                        <ArrowRight className="size-3" />
-                      </Button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {issue.type === "conflict" && issue.onClear && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              issue.onClear()
+                            }}
+                            className="h-6 text-[11px] font-semibold text-destructive hover:bg-destructive/10 gap-1 px-1.5 cursor-pointer"
+                            title="Unassign slots in this conflict"
+                          >
+                            <Trash2 className="size-3" />
+                            <span>Clear</span>
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => {
+                            setIsIssuesOpen(false)
+                            if (issue.type === "conflict" && issue.onResolve) {
+                              issue.onResolve()
+                            } else if (issue.type === "conflict" && onResolveConflict) {
+                              onResolveConflict(issue)
+                            } else {
+                              issue.onJump?.()
+                            }
+                          }}
+                          className="h-6 text-[11px] font-semibold text-primary hover:bg-primary/10 gap-1 px-1.5"
+                        >
+                          {issue.type === "conflict" ? "Resolve" : "Jump"}
+                          <ArrowRight className="size-3" />
+                        </Button>
+                      </div>
                     </div>
 
                     <p className="text-muted-foreground leading-snug">

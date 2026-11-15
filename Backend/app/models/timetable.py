@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -75,10 +76,45 @@ class Timetable(Base, AuditMixin):
         server_default="false",
     )
 
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="DRAFT",
+        server_default="DRAFT",
+    )
+
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    published_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    last_published_entries_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     # Relationships
     school: Mapped["School"] = relationship(
         "School",
         foreign_keys=[school_id],
+    )
+
+    publisher: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[published_by],
     )
 
     setups: Mapped[List["TimetableSetup"]] = relationship(
@@ -511,12 +547,12 @@ class TimetableEntry(Base, AuditMixin):
                 postgresql_where=(cls.deleted_at.is_(None) & cls.timetable_id.is_not(None)),
             ),
             Index(
-                "uq_timetable_entries_teacher_with_tt",
+                "idx_timetable_entries_teacher_tt_slot",
                 cls.timetable_id,
                 cls.teacher_user_id,
                 cls.day_of_week,
                 cls.period_id,
-                unique=True,
+                unique=False,
                 postgresql_where=(cls.deleted_at.is_(None) & cls.teacher_user_id.is_not(None) & cls.timetable_id.is_not(None)),
             ),
         )

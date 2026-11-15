@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import {
   Clock,
   Trash2,
@@ -8,6 +8,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { TimePicker } from "@/components/ui/time-picker"
+import { toast } from "sonner"
 import {
   parseTime,
   format12h,
@@ -36,42 +37,65 @@ export function PeriodModal({
   onSave,
   onDelete,
 }) {
-  const isEdit = mode === "edit"
+  const [activeMode, setActiveMode] = useState(mode)
+  const [activePeriodIndex, setActivePeriodIndex] = useState(periodIndex)
 
   // Form states
   const [type, setType] = useState(PERIOD_TYPES.CLASS)
   const [startTime, setStartTime] = useState("08:30")
   const [endTime, setEndTime] = useState("09:15")
 
-  // Initialize data on open
+  const isInitializedRef = useRef(false)
+
+  // Sync state when modal opens or initial props change
   useEffect(() => {
-    if (!isOpen) return
-
-    if (isEdit && periodData) {
-      const pType = periodData.type || (periodData.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
-      setType(pType)
-      setStartTime(periodData.start_time || "08:30")
-      setEndTime(periodData.end_time || "09:15")
-    } else {
-      // Add mode: derive sensible defaults from neighbors
-      const prevPeriod = insertAfterIndex >= 0 && schedule?.periods?.[insertAfterIndex] ? schedule.periods[insertAfterIndex] : null
-      const nextPeriod = schedule?.periods?.[insertAfterIndex + 1] || null
-
-      let defaultStart = "08:30"
-      if (prevPeriod) {
-        defaultStart = prevPeriod.end_time
-      } else if (nextPeriod) {
-        defaultStart = "08:00"
-      }
-
-      const defaultDur = prevPeriod ? calculateDuration(prevPeriod.start_time, prevPeriod.end_time) : 45
-      const defaultEnd = addMinutesToTime(defaultStart, defaultDur > 0 ? defaultDur : 45)
-
-      setType(PERIOD_TYPES.CLASS)
-      setStartTime(defaultStart)
-      setEndTime(defaultEnd)
+    if (!isOpen) {
+      isInitializedRef.current = false
+      return
     }
-  }, [isOpen, isEdit, periodData, periodIndex, insertAfterIndex, schedule])
+
+    if (!isInitializedRef.current) {
+      isInitializedRef.current = true
+      setActiveMode(mode)
+      setActivePeriodIndex(periodIndex)
+
+      if (mode === "edit" && (periodData || schedule?.periods?.[periodIndex])) {
+        const targetP = schedule?.periods?.[periodIndex] || periodData
+        const pType = targetP.type || (targetP.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
+        setType(pType)
+        setStartTime(targetP.start_time || "08:30")
+        setEndTime(targetP.end_time || "09:15")
+      } else {
+        // Add mode: derive sensible defaults from neighbors
+        const prevPeriod = insertAfterIndex >= 0 && schedule?.periods?.[insertAfterIndex] ? schedule.periods[insertAfterIndex] : null
+        const nextPeriod = schedule?.periods?.[insertAfterIndex + 1] || null
+
+        let defaultStart = "08:30"
+        if (prevPeriod) {
+          defaultStart = prevPeriod.end_time
+        } else if (nextPeriod) {
+          defaultStart = "08:00"
+        }
+
+        const defaultDur = prevPeriod ? calculateDuration(prevPeriod.start_time, prevPeriod.end_time) : 45
+        const defaultEnd = addMinutesToTime(defaultStart, defaultDur > 0 ? defaultDur : 45)
+
+        setType(PERIOD_TYPES.CLASS)
+        setStartTime(defaultStart)
+        setEndTime(defaultEnd)
+      }
+    }
+  }, [isOpen, mode, periodData, periodIndex, insertAfterIndex])
+
+  const isEdit = activeMode === "edit"
+  const currentTargetPeriod = isEdit && schedule?.periods?.[activePeriodIndex] ? schedule.periods[activePeriodIndex] : periodData
+
+  // Check if current form inputs differ from original period
+  const isFormModified = useMemo(() => {
+    if (!currentTargetPeriod) return true
+    const origType = currentTargetPeriod.type || (currentTargetPeriod.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
+    return type !== origType || startTime !== currentTargetPeriod.start_time || endTime !== currentTargetPeriod.end_time
+  }, [currentTargetPeriod, type, startTime, endTime])
 
   // Handle Type Change
   const handleTypeChange = (newType) => {
@@ -107,23 +131,27 @@ export function PeriodModal({
   const maxAllowedStartTime = useMemo(() => {
     const endMinutes = parseTime(endTime)?.totalMinutes
     if (endMinutes == null) return null
-    // TimePicker checkTimeDisabled checks totalM >= maxM. Setting maxM = end - 10 disables end - 10, end - 5, end
     return format24h(endMinutes - (MIN_PERIOD_DURATION_MINUTES - 5))
   }, [endTime])
 
   const minAllowedEndTime = useMemo(() => {
     const startMinutes = parseTime(startTime)?.totalMinutes
     if (startMinutes == null) return null
-    // TimePicker checkTimeDisabled checks totalM <= minM. Setting minM = start + 10 disables start, start + 5, start + 10
     return format24h(startMinutes + (MIN_PERIOD_DURATION_MINUTES - 5))
   }, [startTime])
 
   // Live timeline preview generator (always follows shift behavior)
   const previewPeriods = useMemo(() => {
-    if (!schedule || validationError) return []
+    if (!schedule) return []
     let periods = [...(schedule.periods || [])].map((p) => ({ ...p }))
+    if (periods.length === 0) return []
 
-    let defaultLabel = `P${isEdit ? periodIndex + 1 : insertAfterIndex + 2}`
+    if (validationError) {
+      // If validation error, return current schedule periods so the list of periods is always visible and clickable
+      return renumberPeriods(periods)
+    }
+
+    let defaultLabel = `P${isEdit ? activePeriodIndex + 1 : insertAfterIndex + 2}`
     if (type === PERIOD_TYPES.RECESS) defaultLabel = "R1"
     else if (type === PERIOD_TYPES.ASSEMBLY) defaultLabel = "A1"
     else if (type === PERIOD_TYPES.ACTIVITY) defaultLabel = "E1"
@@ -136,15 +164,17 @@ export function PeriodModal({
     }
 
     if (isEdit) {
-      periods[periodIndex] = newP
-      let lastEnd = parseTime(endTime)?.totalMinutes || 0
-      for (let i = periodIndex + 1; i < periods.length; i++) {
-        const p = { ...periods[i] }
-        const dur = calculateDuration(p.start_time, p.end_time)
-        p.start_time = format24h(lastEnd)
-        lastEnd += Math.max(MIN_PERIOD_DURATION_MINUTES, dur)
-        p.end_time = format24h(lastEnd)
-        periods[i] = p
+      if (activePeriodIndex >= 0 && activePeriodIndex < periods.length) {
+        periods[activePeriodIndex] = { ...periods[activePeriodIndex], ...newP }
+        let lastEnd = parseTime(endTime)?.totalMinutes || 0
+        for (let i = activePeriodIndex + 1; i < periods.length; i++) {
+          const p = { ...periods[i] }
+          const dur = calculateDuration(p.start_time, p.end_time)
+          p.start_time = format24h(lastEnd)
+          lastEnd += Math.max(MIN_PERIOD_DURATION_MINUTES, dur)
+          p.end_time = format24h(lastEnd)
+          periods[i] = p
+        }
       }
     } else {
       const insertIdx = insertAfterIndex === -1 ? 0 : insertAfterIndex + 1
@@ -161,16 +191,68 @@ export function PeriodModal({
     }
 
     return renumberPeriods(periods)
-  }, [schedule, validationError, isEdit, periodIndex, insertAfterIndex, type, startTime, endTime])
+  }, [schedule, validationError, isEdit, activePeriodIndex, insertAfterIndex, type, startTime, endTime])
 
   if (!isOpen) return null
+
+  // Switch to another period when clicked in the list
+  const handleSelectOtherPeriod = (targetIdx) => {
+    if (isEdit && targetIdx === activePeriodIndex) return
+
+    // If current period had edits, validate and save them first
+    if (isFormModified) {
+      if (validationError) {
+        toast.error(`Please fix invalid times for ${currentTargetPeriod?.label || `P${activePeriodIndex + 1}`} before switching.`)
+        return
+      }
+
+      const parsedStart = parseTime(startTime)?.normalized || startTime
+      const parsedEnd = parseTime(endTime)?.normalized || endTime
+      let computedLabel = `P${isEdit ? activePeriodIndex + 1 : insertAfterIndex + 2}`
+      if (type === PERIOD_TYPES.RECESS) computedLabel = "R1"
+      else if (type === PERIOD_TYPES.ASSEMBLY) computedLabel = "A1"
+      else if (type === PERIOD_TYPES.ACTIVITY) computedLabel = "E1"
+
+      onSave(
+        {
+          periodData: {
+            type,
+            label: currentTargetPeriod?.hasCustomLabel ? currentTargetPeriod.label : computedLabel,
+            hasCustomLabel: currentTargetPeriod?.hasCustomLabel,
+            start_time: parsedStart,
+            end_time: parsedEnd,
+          },
+          cascadeMode: "shift",
+          shiftEntireDay: false,
+          periodIndex: activePeriodIndex,
+          mode: activeMode,
+          insertAfterIndex,
+          nextPeriodIndex: targetIdx,
+        },
+        { stayOpen: true }
+      )
+    }
+
+    // Switch active editing period to targetIdx
+    setActiveMode("edit")
+    setActivePeriodIndex(targetIdx)
+
+    // Load target period's data
+    const targetPeriod = previewPeriods[targetIdx] || schedule?.periods?.[targetIdx]
+    if (targetPeriod) {
+      const pType = targetPeriod.type || (targetPeriod.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
+      setType(pType)
+      setStartTime(targetPeriod.start_time || "08:30")
+      setEndTime(targetPeriod.end_time || "09:15")
+    }
+  }
 
   const handleSave = () => {
     if (validationError) return
     const parsedStart = parseTime(startTime)?.normalized || startTime
     const parsedEnd = parseTime(endTime)?.normalized || endTime
 
-    let computedLabel = `P${isEdit ? periodIndex + 1 : insertAfterIndex + 2}`
+    let computedLabel = `P${isEdit ? activePeriodIndex + 1 : insertAfterIndex + 2}`
     if (type === PERIOD_TYPES.RECESS) computedLabel = "R1"
     else if (type === PERIOD_TYPES.ASSEMBLY) computedLabel = "A1"
     else if (type === PERIOD_TYPES.ACTIVITY) computedLabel = "E1"
@@ -178,20 +260,32 @@ export function PeriodModal({
     onSave({
       periodData: {
         type,
-        label: computedLabel,
+        label: currentTargetPeriod?.hasCustomLabel ? currentTargetPeriod.label : computedLabel,
+        hasCustomLabel: currentTargetPeriod?.hasCustomLabel,
         start_time: parsedStart,
         end_time: parsedEnd,
       },
       cascadeMode: "shift",
       shiftEntireDay: false,
+      periodIndex: activePeriodIndex,
+      mode: activeMode,
+      insertAfterIndex,
     })
     onClose()
+  }
+
+  const handleClose = () => {
+    if (isFormModified && !validationError) {
+      handleSave()
+    } else {
+      onClose()
+    }
   }
 
   // Dynamic modal title
   let modalTitle = "Edit Period"
   if (isEdit) {
-    modalTitle = `Edit ${periodData?.label || `P${periodIndex + 1}`}`
+    modalTitle = `Edit ${currentTargetPeriod?.label || `P${activePeriodIndex + 1}`}`
   } else {
     const prevP = insertAfterIndex >= 0 ? schedule?.periods?.[insertAfterIndex] : null
     const nextP = schedule?.periods?.[insertAfterIndex + 1]
@@ -216,7 +310,7 @@ export function PeriodModal({
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       {/* Modal Dialog */}
@@ -238,7 +332,7 @@ export function PeriodModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer"
             aria-label="Close modal"
           >
@@ -310,34 +404,41 @@ export function PeriodModal({
             </div>
           )}
 
-          {/* Live Preview Bar */}
-          {previewPeriods.length > 0 && !validationError && (
+          {/* Live Preview Bar / Period Switcher */}
+          {previewPeriods.length > 0 && (
             <div className="space-y-1.5 pt-1">
-              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                Resulting Timeline Preview
-              </span>
-              <div className="flex h-8 bg-muted/40 rounded-lg border border-border/80 overflow-hidden divide-x divide-border/60">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Timeline Periods
+                </span>
+                <span className="text-[10px] text-primary font-medium">
+                  Click period to set timing
+                </span>
+              </div>
+              <div className="flex h-9 bg-muted/40 rounded-xl border border-border/80 overflow-hidden divide-x divide-border/60 p-0.5 gap-0.5">
                 {previewPeriods.map((p, pIdx) => {
-                  const isCur = isEdit ? pIdx === periodIndex : pIdx === insertAfterIndex + 1
+                  const isCur = isEdit ? pIdx === activePeriodIndex : pIdx === insertAfterIndex + 1
                   const shortLabel = formatPeriodShortLabel(p, previewPeriods)
                   const isRecess = p.type === PERIOD_TYPES.RECESS || p.is_break
 
                   return (
-                    <div
-                      key={pIdx}
-                      style={{ flexGrow: 1}}
+                    <button
+                      key={p.id || pIdx}
+                      type="button"
+                      onClick={() => handleSelectOtherPeriod(pIdx)}
+                      style={{ flexGrow: 1 }}
                       className={cn(
-                        "flex items-center justify-center text-[10px] font-bold px-1 truncate transition-colors",
+                        "flex items-center justify-center text-[10px] sm:text-[11px] font-bold px-1 rounded-lg truncate transition-all cursor-pointer select-none",
                         isCur
-                          ? "bg-primary text-primary-foreground"
+                          ? "bg-primary text-primary-foreground font-extrabold shadow-xs ring-2 ring-primary ring-offset-1"
                           : isRecess
-                          ? "bg-primary/20 text-foreground font-bold"
-                          : "text-muted-foreground"
+                          ? "bg-primary/20 text-foreground font-bold hover:bg-primary/30"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/80"
                       )}
-                      title={`${p.label || shortLabel}: ${format12h(p.start_time)} – ${format12h(p.end_time)} (${calculateDuration(p.start_time, p.end_time)}m)`}
+                      title={`${p.label || shortLabel}: ${format12h(p.start_time)} – ${format12h(p.end_time)} (${calculateDuration(p.start_time, p.end_time)}m) • Click to edit timing`}
                     >
-                      {shortLabel}
-                    </div>
+                      <span>{shortLabel}</span>
+                    </button>
                   )
                 })}
               </div>
@@ -354,7 +455,7 @@ export function PeriodModal({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  onDelete(periodIndex)
+                  onDelete(activePeriodIndex)
                   onClose()
                 }}
                 className="text-destructive hover:bg-destructive/10 text-xs gap-1.5 cursor-pointer"

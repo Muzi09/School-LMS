@@ -1,5 +1,5 @@
 import React, { memo } from "react"
-import { AlertTriangle, Plus, CircleDashed } from "lucide-react"
+import { AlertTriangle, Plus, CircleDashed, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format12h } from "../bellTiming/timeUtils"
 import { getTimetablePeriodLabel, isNonTeachingPeriod } from "../bellTiming/validators"
@@ -14,6 +14,7 @@ export const ClassWiseCell = memo(function ClassWiseCell({
   isSelected = false,
   isCopied = false,
   conflictInfo = null,
+  sameDayRepeatCount = 1,
   isHighlighted = false,
   isDimmed = false,
   density = "comfortable", // 'comfortable' | 'compact'
@@ -23,6 +24,7 @@ export const ClassWiseCell = memo(function ClassWiseCell({
   onAssignClick,
   onDoubleClick,
   onContextMenu,
+  onQuickUnassign,
   draggable = false,
   onDragStart,
   onDragEnd,
@@ -41,38 +43,50 @@ export const ClassWiseCell = memo(function ClassWiseCell({
   const rawLabel = typeof period?.label === "string" ? period.label.trim() : ""
   const pType = (period?.type || period?.period_type || (period?.is_break ? "RECESS" : "CLASS")).toUpperCase()
 
-  const isRecessType =
-    pType === "RECESS" ||
-    pType === "BREAK" ||
-    pType.includes("RECESS") ||
-    pType.includes("BREAK") ||
-    isBreak ||
-    /^recess/i.test(rawLabel) ||
-    /^break/i.test(rawLabel) ||
-    /^r\d*$/i.test(rawLabel)
+  // Fast-path: Skip heavy regex checks for standard teaching class periods (95%+ of grid cells)
+  const isFastClass =
+    !isBreak &&
+    (pType === "CLASS" || pType === "TEACHING") &&
+    (!rawLabel || !/^(recess|break|assembly|activity|extra|[RAE]\d)/i.test(rawLabel))
 
-  const isActivityType =
-    pType === "ACTIVITY" ||
-    pType === "EXTRA_CURRICULAR" ||
-    pType === "EXTRA-CURRICULAR" ||
-    pType.includes("ACTIV") ||
-    pType.includes("EXTRA") ||
-    pType.includes("CURRICUL") ||
-    /^(activity|extra-curricular|extracurricular)/i.test(rawLabel) ||
-    /^e\d*$/i.test(rawLabel)
+  let isNonTeachingSlot = false
+  let isRecessType = false
+  let isActivityType = false
+  let isAssemblyType = false
+  let fullBodyLabel = ""
 
-  const isAssemblyType =
-    pType === "ASSEMBLY" ||
-    pType.includes("ASSEMBL") ||
-    /^assembly/i.test(rawLabel) ||
-    /^a\d*$/i.test(rawLabel)
+  if (!isFastClass) {
+    isRecessType =
+      pType === "RECESS" ||
+      pType === "BREAK" ||
+      pType.includes("RECESS") ||
+      pType.includes("BREAK") ||
+      isBreak ||
+      /^recess/i.test(rawLabel) ||
+      /^break/i.test(rawLabel) ||
+      /^r\d*$/i.test(rawLabel)
 
-  // Full label for non-class periods in the body cells
-  const fullBodyLabel = getTimetablePeriodLabel(period)
+    isActivityType =
+      pType === "ACTIVITY" ||
+      pType === "EXTRA_CURRICULAR" ||
+      pType === "EXTRA-CURRICULAR" ||
+      pType.includes("ACTIV") ||
+      pType.includes("EXTRA") ||
+      pType.includes("CURRICUL") ||
+      /^(activity|extra-curricular|extracurricular)/i.test(rawLabel) ||
+      /^e\d*$/i.test(rawLabel)
+
+    isAssemblyType =
+      pType === "ASSEMBLY" ||
+      pType.includes("ASSEMBL") ||
+      /^assembly/i.test(rawLabel) ||
+      /^a\d*$/i.test(rawLabel)
+
+    fullBodyLabel = getTimetablePeriodLabel(period)
+    isNonTeachingSlot = isBreak || isRecessType || isActivityType || isAssemblyType || isNonTeachingPeriod(period)
+  }
+
   const periodLabel = fullBodyLabel || (period?.period_number != null ? `P${period.period_number}` : "Period")
-
-  // Non-teaching slots (Recess, Assembly, Extra-curricular) are not assignable; show them like RECESS in body cells
-  const isNonTeachingSlot = isBreak || isNonTeachingPeriod(period) || isRecessType || isActivityType || isAssemblyType
 
   if (isNonTeachingSlot) {
     const slotLabel = isRecessType
@@ -112,7 +126,8 @@ export const ClassWiseCell = memo(function ClassWiseCell({
     const teacherName = entry?.teacher?.name || fallbackTeacherName || "Unassigned"
     const hasTeacher = Boolean(entry?.teacher?.name || fallbackTeacherName)
 
-    const tooltipText = `${subjectName}${subjectCode ? ` (${subjectCode})` : ""} • ${teacherName} • ${day} ${periodLabel}${timePart}${conflictInfo ? ` • ${conflictInfo}` : ""}${isAssignMode ? " • Click to edit" : ""}`
+    const repeatInfo = sameDayRepeatCount >= 2 ? ` • Scheduled ${sameDayRepeatCount}x today` : ""
+    const tooltipText = `${subjectName}${subjectCode ? ` (${subjectCode})` : ""} • ${teacherName} • ${day} ${periodLabel}${timePart}${repeatInfo}${conflictInfo ? ` • ${conflictInfo}` : ""}${isAssignMode ? " • Click to edit" : ""}`
 
     return (
       <div
@@ -166,14 +181,40 @@ export const ClassWiseCell = memo(function ClassWiseCell({
             <span className="font-semibold text-foreground truncate">
               {subjectName}
             </span>
-            {conflictInfo && (
-              <AlertTriangle className="size-3.5 text-destructive shrink-0 ml-1" title={conflictInfo} />
-            )}
+            <div className="flex items-center gap-1 shrink-0 ml-1">
+              {sameDayRepeatCount >= 2 && !conflictInfo && (
+                <span
+                  className="px-1 py-0.2 rounded text-[9px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 shrink-0"
+                  title={`${subjectName} is scheduled ${sameDayRepeatCount} times today for this class`}
+                >
+                  {sameDayRepeatCount}x Today
+                </span>
+              )}
+              {conflictInfo && (
+                <AlertTriangle className="size-3.5 text-destructive shrink-0" title={conflictInfo} />
+              )}
+            </div>
           </div>
           <span className={cn("text-muted-foreground font-normal truncate w-full mt-0.5", !hasTeacher && "italic opacity-60")}>
             {teacherName}
           </span>
         </div>
+
+        {/* Quick Unassign 'X' button on hover (in Edit/Assign mode) */}
+        {isAssignMode && (
+          <button
+            type="button"
+            title="Unassign slot"
+            onClick={(e) => {
+              e.stopPropagation()
+              hideTimetableTooltip()
+              onQuickUnassign?.(entry, section)
+            }}
+            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-all p-0.5 rounded-full bg-background/95 hover:bg-destructive text-muted-foreground hover:text-destructive-foreground border border-border/80 hover:border-destructive shadow-xs size-4 flex items-center justify-center cursor-pointer z-10"
+          >
+            <X className="size-2.5" />
+          </button>
+        )}
       </div>
     )
   }

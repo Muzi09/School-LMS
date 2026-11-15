@@ -13,6 +13,9 @@ import {
   MIN_PERIOD_DURATION_MINUTES,
   PERIOD_TYPES,
   ALL_WEEKDAYS,
+  DAY_ORDER,
+  sortDays,
+  sortSchedules,
 } from "./validators"
 
 /**
@@ -197,12 +200,21 @@ export function bellTimingReducer(state, action) {
   switch (action.type) {
     case "SET_INITIAL_STATE": {
       const { setups, sectionAssignments, activeSetupId } = action.payload
-      const firstSetupId = setups[0]?.id
+      const sortedSetups = (setups || []).map((s) => ({
+        ...s,
+        schedules: sortSchedules(
+          (s.schedules || []).map((sch) => ({
+            ...sch,
+            days: sortDays(sch.days || []),
+          }))
+        ),
+      }))
+      const firstSetupId = sortedSetups[0]?.id
       const initialActiveSetup = activeSetupId || firstSetupId
-      const initialActiveSched = setups[0]?.schedules[0]?.id || null
+      const initialActiveSched = sortedSetups[0]?.schedules[0]?.id || null
 
       return {
-        setups,
+        setups: sortedSetups,
         sectionAssignments: sectionAssignments || {},
         activeSetupId: initialActiveSetup,
         activeScheduleId: initialActiveSched,
@@ -615,12 +627,12 @@ export function bellTimingReducer(state, action) {
         const sourceSchedule = setup.schedules.find((s) => s.id === scheduleId)
         if (!sourceSchedule || sourceSchedule.days.length <= daysToSplit.length) return setup
 
-        const remainingDays = sourceSchedule.days.filter((d) => !daysToSplit.includes(d))
+        const remainingDays = sortDays(sourceSchedule.days.filter((d) => !daysToSplit.includes(d)))
         const newSchedId = `sched-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
 
         const newSchedule = {
           id: newSchedId,
-          days: [...daysToSplit],
+          days: sortDays(daysToSplit),
           periods: JSON.parse(JSON.stringify(sourceSchedule.periods)).map((p) => ({
             ...p,
             id: generateUUID(),
@@ -632,7 +644,7 @@ export function bellTimingReducer(state, action) {
         )
         nextSchedules.push(newSchedule)
 
-        return { ...setup, schedules: nextSchedules }
+        return { ...setup, schedules: sortSchedules(nextSchedules) }
       })
 
       return pushHistory({
@@ -651,13 +663,13 @@ export function bellTimingReducer(state, action) {
         const targetSchedule = setup.schedules.find((s) => s.id === targetScheduleId)
         if (!sourceSchedule || !targetSchedule) return setup
 
-        const mergedDays = [...new Set([...targetSchedule.days, ...sourceSchedule.days])]
+        const mergedDays = sortDays([...new Set([...targetSchedule.days, ...sourceSchedule.days])])
 
         const nextSchedules = setup.schedules
           .filter((s) => s.id !== sourceScheduleId)
           .map((s) => (s.id === targetScheduleId ? { ...s, days: mergedDays } : s))
 
-        return { ...setup, schedules: nextSchedules }
+        return { ...setup, schedules: sortSchedules(nextSchedules) }
       })
 
       return pushHistory({

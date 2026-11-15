@@ -39,6 +39,16 @@ describe("timeUtils", () => {
       })
     })
 
+    it("parses 3-part HH:MM:SS strings e.g. 08:30:00 from backend", () => {
+      expect(parseTime("08:30:00")).toEqual({
+        hours: 8,
+        minutes: 30,
+        totalMinutes: 510,
+        normalized: "08:30",
+      })
+      expect(parseTime("14:45:00")?.normalized).toBe("14:45")
+    })
+
     it("parses 12h strings with AM/PM e.g. 9:30 am, 12 AM, 12 PM", () => {
       expect(parseTime("9:30 am")?.normalized).toBe("09:30")
       expect(parseTime("9:30 pm")?.normalized).toBe("21:30")

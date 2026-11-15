@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react"
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   CalendarDays,
   Layers,
@@ -11,10 +11,20 @@ import {
   FilterX,
   BookOpen,
   CheckCircle2,
+  Loader2,
+  Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 import { ClassWiseCard } from "./ClassWiseCard"
 import { JumpToRail } from "./JumpToRail"
 import { AssignModeBar } from "./AssignModeBar"
@@ -26,7 +36,7 @@ import {
   useDeleteTimetableEntry,
 } from "@/hooks/useTimetable"
 import { parseTimetableQuery, sectionMatchesQuery } from "../searchUtils"
-import { isNonTeachingPeriod } from "../bellTiming/validators"
+import { isNonTeachingPeriod, sortDays } from "../bellTiming/validators"
 import { getIsMac, formatTime12 } from "../timetableUtils"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -75,6 +85,12 @@ export function ClassWiseGridView({
   const deleteEntryMutation = useDeleteTimetableEntry()
   const createEntryMutation = useCreateTimetableEntry()
 
+  // In-memory per-slot mutation queue to ensure causal sequential execution and eliminate race conditions
+  const inFlightSlotMutationsRef = useRef(new Map())
+  const makeSlotMutationKey = useCallback((secId, day, periodId) => {
+    return `${secId || ""}_${String(day || "").toUpperCase()}_${periodId || ""}`
+  }, [])
+
   const {
     timetable,
     wings = [],
@@ -95,7 +111,7 @@ export function ClassWiseGridView({
     return map
   }, [setups])
 
-  // Map periods by ID across all setups
+  // Map periods by ID across all setups, schedules, and entries
   const periodMap = useMemo(() => {
     const map = new Map()
     for (const s of setups) {
@@ -105,9 +121,23 @@ export function ClassWiseGridView({
           map.set(String(p.id), p)
         }
       }
+      for (const sch of s.schedules || []) {
+        for (const p of sch.periods || []) {
+          if (p.id) {
+            map.set(p.id, p)
+            map.set(String(p.id), p)
+          }
+        }
+      }
+    }
+    for (const e of entries) {
+      if (e.period?.id && !map.has(e.period.id)) {
+        map.set(e.period.id, e.period)
+        map.set(String(e.period.id), e.period)
+      }
     }
     return map
-  }, [setups])
+  }, [setups, entries])
 
   // Helper to determine the split days group for a specific section and day
   const getSplitDaysForSectionAndDay = useCallback(
@@ -169,12 +199,12 @@ export function ClassWiseGridView({
         if (matchingSched && matchingSched.days && matchingSched.days.length > 0) {
           const matched = matchingSched.days.map((d) => String(d).toUpperCase())
           const filtered = matched.filter((d) => appDays.length === 0 || appDays.includes(d))
-          return filtered.length > 0 ? filtered : matched
+          return sortDays(filtered.length > 0 ? filtered : matched)
         }
       }
 
       if (dayUpper === "SATURDAY") return ["SATURDAY"]
-      return appDays.filter((d) => d !== "SATURDAY")
+      return sortDays(appDays.filter((d) => d !== "SATURDAY"))
     },
     [setupMap, setups]
   )
@@ -201,22 +231,24 @@ export function ClassWiseGridView({
         "FRIDAY",
         "SATURDAY",
       ]
-      return (
-        Array.isArray(rawAppDays)
-          ? rawAppDays
-          : typeof rawAppDays === "string"
-          ? (() => {
-              try {
-                const p = JSON.parse(rawAppDays)
-                return Array.isArray(p)
-                  ? p
-                  : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-              } catch {
-                return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-              }
-            })()
-          : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-      ).map((d) => String(d).toUpperCase())
+      return sortDays(
+        (
+          Array.isArray(rawAppDays)
+            ? rawAppDays
+            : typeof rawAppDays === "string"
+            ? (() => {
+                try {
+                  const p = JSON.parse(rawAppDays)
+                  return Array.isArray(p)
+                    ? p
+                    : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+                } catch {
+                  return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+                }
+              })()
+            : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+        ).map((d) => String(d).toUpperCase())
+      )
     },
     [setupMap, setups]
   )
@@ -266,52 +298,196 @@ export function ClassWiseGridView({
   }, [entries])
 
   // Real-time teacher conflict detection
-  const conflictMap = useMemo(() => {
+  const { conflictMap, conflictIncidents } = useMemo(() => {
     const conflicts = {}
+    const incidents = []
     const teacherDayMap = new Map() // key: `${teacher_user_id}_${day_of_week}` -> array of entries
 
+    // Section-Subject fallback teacher lookup map
+    const secSubTeacherLookup = new Map()
+    for (const sec of allFlattenedSections) {
+      for (const st of sec.subject_stats || []) {
+        const tid = st.teacher_id || st.teacher?.id
+        if (tid) {
+          secSubTeacherLookup.set(`${sec.id}_${st.subject_id || st.id}`, String(tid))
+        }
+      }
+    }
+
     for (const e of entries) {
-      if (!e.teacher?.id) continue
-      const key = `${e.teacher.id}_${e.day_of_week}`
+      const fallbackTid = secSubTeacherLookup.get(`${e.section_id}_${e.subject_id}`)
+      const teacherId = e.teacher?.id ? String(e.teacher.id) : (e.teacher_user_id ? String(e.teacher_user_id) : fallbackTid)
+      if (!teacherId) continue
+      const key = `${teacherId}_${e.day_of_week}`
       if (!teacherDayMap.has(key)) {
         teacherDayMap.set(key, [])
       }
-      teacherDayMap.get(key).push(e)
+      const teacherObj = e.teacher || eligible_teachers.find((t) => String(t.id) === String(teacherId)) || { id: teacherId, name: "Teacher" }
+      teacherDayMap.get(key).push({
+        ...e,
+        teacher: teacherObj,
+      })
     }
 
     const secLookup = new Map()
+    const secObjMap = new Map()
     for (const s of allFlattenedSections) {
       secLookup.set(s.id, `${s.class_name || ""} ${s.name || ""}`.trim())
+      secLookup.set(String(s.id), `${s.class_name || ""} ${s.name || ""}`.trim())
+      secObjMap.set(s.id, s)
+      secObjMap.set(String(s.id), s)
+    }
+
+    const getEffectivePeriod = (e) => {
+      if (!e) return null
+
+      // Fast-path: O(1) hash map lookup
+      const direct = periodMap.get(e.period_id) || periodMap.get(String(e.period_id)) || e.period
+      if (direct?.start_time && direct?.end_time) {
+        return direct
+      }
+
+      const sec = secObjMap.get(e.section_id) || secObjMap.get(String(e.section_id)) || e.section
+      const secSetup =
+        (sec?.setup_id && (setupMap.get(sec.setup_id) || setupMap.get(String(sec.setup_id)))) ||
+        setups.find((s) => (s.assigned_section_ids || []).some((id) => String(id) === String(sec?.id || e.section_id))) ||
+        setups[0]
+
+      if (secSetup) {
+        let rawSchedules = secSetup.schedules
+        if (!rawSchedules && secSetup.schedules_json) {
+          try {
+            rawSchedules = JSON.parse(secSetup.schedules_json)
+          } catch {}
+        }
+        const dayUpper = (e.day_of_week || "").toUpperCase()
+        const targetPNum = e.period_number ?? e.period?.period_number
+
+        if (Array.isArray(rawSchedules) && rawSchedules.length > 0) {
+          const matchingSched = rawSchedules.find((s) =>
+            (s.days || []).map((d) => String(d).toUpperCase()).includes(dayUpper)
+          ) || rawSchedules[0]
+
+          if (matchingSched?.periods) {
+            const foundInSched = matchingSched.periods.find(
+              (p) =>
+                (p.id && (p.id === e.period_id || String(p.id) === String(e.period_id))) ||
+                (targetPNum != null && p.period_number === targetPNum)
+            )
+            if (foundInSched && foundInSched.start_time && foundInSched.end_time) {
+              return foundInSched
+            }
+          }
+        }
+
+        if (secSetup.periods) {
+          const foundInSetup = secSetup.periods.find(
+            (p) =>
+              (p.id && (p.id === e.period_id || String(p.id) === String(e.period_id))) ||
+              (targetPNum != null && p.period_number === targetPNum)
+          )
+          if (foundInSetup && foundInSetup.start_time && foundInSetup.end_time) {
+            return foundInSetup
+          }
+        }
+      }
+
+      return direct
     }
 
     for (const [key, tEntries] of teacherDayMap.entries()) {
       if (tEntries.length < 2) continue
 
+      // Build adjacency graph of overlapping entries
+      const adj = new Map()
+      for (const e of tEntries) {
+        adj.set(e.id, [])
+      }
+
       for (let i = 0; i < tEntries.length; i++) {
         for (let j = i + 1; j < tEntries.length; j++) {
           const e1 = tEntries[i]
           const e2 = tEntries[j]
-          const p1 = periodMap.get(e1.period_id)
-          const p2 = periodMap.get(e2.period_id)
+          const p1 = getEffectivePeriod(e1)
+          const p2 = getEffectivePeriod(e2)
 
           if (p1 && p2 && p1.start_time && p1.end_time && p2.start_time && p2.end_time) {
+            const parseMin = (t) => {
+              if (!t) return null
+              const [h, m] = String(t).split(":").map(Number)
+              return (h || 0) * 60 + (m || 0)
+            }
+            const s1 = parseMin(p1.start_time)
+            const end1 = parseMin(p1.end_time)
+            const s2 = parseMin(p2.start_time)
+            const end2 = parseMin(p2.end_time)
+
             // Overlapping time interval condition: max(start1, start2) < min(end1, end2)
-            if (p1.start_time < p2.end_time && p2.start_time < p1.end_time) {
+            if (s1 != null && end1 != null && s2 != null && end2 != null && s1 < end2 && s2 < end1) {
+              adj.get(e1.id).push(e2)
+              adj.get(e2.id).push(e1)
+
               const sec1Name = secLookup.get(e1.section_id) || `Section ${e1.section_id?.slice?.(0, 4) || ""}`
               const sec2Name = secLookup.get(e2.section_id) || `Section ${e2.section_id?.slice?.(0, 4) || ""}`
               const t1Fmt = `${formatTime12(p1.start_time)} - ${formatTime12(p1.end_time)}`
               const t2Fmt = `${formatTime12(p2.start_time)} - ${formatTime12(p2.end_time)}`
 
-              conflicts[e1.id] = `Conflict: Double-booked with ${sec2Name} (${t2Fmt})`
-              conflicts[e2.id] = `Conflict: Double-booked with ${sec1Name} (${t1Fmt})`
+              const msg1 = `Conflict: Double-booked with ${sec2Name} (${t2Fmt})`
+              const msg2 = `Conflict: Double-booked with ${sec1Name} (${t1Fmt})`
+              conflicts[e1.id] = msg1
+              conflicts[String(e1.id)] = msg1
+              conflicts[e2.id] = msg2
+              conflicts[String(e2.id)] = msg2
             }
+          }
+        }
+      }
+
+      // Group overlapping entries into unique conflict incident clusters
+      const visited = new Set()
+      for (const e of tEntries) {
+        if (!visited.has(e.id) && (adj.get(e.id) || []).length > 0) {
+          const cluster = []
+          const queue = [e]
+          visited.add(e.id)
+
+          while (queue.length > 0) {
+            const current = queue.shift()
+            cluster.push(current)
+            for (const neighbor of adj.get(current.id) || []) {
+              if (!visited.has(neighbor.id)) {
+                visited.add(neighbor.id)
+                queue.push(neighbor)
+              }
+            }
+          }
+
+          if (cluster.length > 1) {
+            const secNames = cluster.map((ce) => secLookup.get(ce.section_id) || `Section ${ce.section_id?.slice?.(0, 4) || ""}`)
+            const teacherName = cluster[0]?.teacher?.name || "Teacher"
+            const firstPeriod = getEffectivePeriod(cluster[0])
+            const timeRange = firstPeriod?.start_time && firstPeriod?.end_time
+              ? `${formatTime12(firstPeriod.start_time)} - ${formatTime12(firstPeriod.end_time)}`
+              : ""
+
+            incidents.push({
+              id: `conflict_cluster_${cluster.map((c) => c.id).sort().join("_")}`,
+              entries: cluster,
+              teacherName,
+              sectionNames: secNames,
+              sectionNamesLabel: secNames.join(" & "),
+              day: cluster[0].day_of_week,
+              period: firstPeriod,
+              timeRange,
+              title: `${teacherName} is double-booked: ${secNames.join(" & ")}${timeRange ? ` (${timeRange})` : ""}`,
+            })
           }
         }
       }
     }
 
-    return conflicts
-  }, [entries, periodMap, allFlattenedSections])
+    return { conflictMap: conflicts, conflictIncidents: incidents }
+  }, [entries, periodMap, allFlattenedSections, setupMap, setups])
 
   // Filter classes & sections based on search query
   const filteredWings = useMemo(() => {
@@ -391,60 +567,127 @@ export function ClassWiseGridView({
     return list
   }, [activeWings, filteredWings, searchQuery, unassignedOnly, conflictsOnly])
 
+  // Modern in-app dialog state for clearing conflict incidents / all conflicts
+  const [confirmClearDialog, setConfirmClearDialog] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    entries: [],
+  })
+  const [isClearingConflicts, setIsClearingConflicts] = useState(false)
+
+  // 1-Click Clear Handlers for single incident or all conflicts
+  const handleClearConflictIncident = useCallback((incident) => {
+    if (!incident?.entries || incident.entries.length === 0) return
+    setConfirmClearDialog({
+      isOpen: true,
+      title: "Clear Conflict Incident",
+      message: `Are you sure you want to unassign all ${incident.entries.length} slots involved in this conflict incident? These slots will be freed up for reassignment.`,
+      entries: incident.entries,
+    })
+  }, [])
+
+  const handleClearAllConflicts = useCallback(() => {
+    const allConflictedEntries = []
+    for (const inc of conflictIncidents) {
+      for (const e of inc.entries) {
+        if (e?.id && !allConflictedEntries.some((x) => String(x.id) === String(e.id))) {
+          allConflictedEntries.push(e)
+        }
+      }
+    }
+    if (allConflictedEntries.length === 0) return
+
+    setConfirmClearDialog({
+      isOpen: true,
+      title: "Clear All Conflicts",
+      message: `Are you sure you want to unassign all ${allConflictedEntries.length} conflicting slots? This will free up these periods across the affected classes so you can reassign them cleanly.`,
+      entries: allConflictedEntries,
+    })
+  }, [conflictIncidents])
+
+  const handleExecuteClearConflicts = useCallback(async () => {
+    const entriesToClear = confirmClearDialog.entries || []
+    if (entriesToClear.length === 0) {
+      setConfirmClearDialog((prev) => ({ ...prev, isOpen: false }))
+      return
+    }
+
+    setIsClearingConflicts(true)
+    try {
+      for (const entry of entriesToClear) {
+        await deleteEntryMutation.mutateAsync({
+          entryId: entry.id,
+          sectionId: entry.section_id,
+        })
+      }
+      toast.success(`Cleared ${entriesToClear.length} conflicting slot(s).`)
+      setConfirmClearDialog((prev) => ({ ...prev, isOpen: false, entries: [] }))
+    } catch (err) {
+      toast.error("Failed to clear conflicting slots.")
+    } finally {
+      setIsClearingConflicts(false)
+    }
+  }, [confirmClearDialog.entries, deleteEntryMutation])
+
   // Issues list for AssignModeBar & Drawer
   const issuesList = useMemo(() => {
     const list = []
 
-    // 1. Conflicts
-    for (const [entryId, msg] of Object.entries(conflictMap)) {
-      const entry = entries.find((e) => e.id === entryId)
-      if (entry) {
-        const sec = allFlattenedSections.find((s) => s.id === entry.section_id)
-        const periodObj = periodMap.get(entry.period_id) || {
-          id: entry.period_id,
-          period_number: entry.period_number,
-          start_time: entry.period?.start_time,
-          end_time: entry.period?.end_time,
+    // 1. Conflicts (1 issue per conflict incident)
+    for (const incident of conflictIncidents) {
+      const targetEntry = incident.entries[1] || incident.entries[0]
+      const targetSec =
+        allFlattenedSections.find((s) => String(s.id) === String(targetEntry.section_id)) ||
+        targetEntry.section ||
+        {}
+      const periodObj =
+        targetEntry.period ||
+        periodMap.get(targetEntry.period_id) || {
+          id: targetEntry.period_id,
+          period_number: targetEntry.period_number,
+          start_time: targetEntry.period?.start_time,
+          end_time: targetEntry.period?.end_time,
         }
 
-        const resolveConflict = () => {
-          const el = document.getElementById(`class-section-${entry.section_id}`)
-          el?.scrollIntoView({ behavior: "smooth", block: "center" })
+      const resolveConflict = () => {
+        const el = document.getElementById(`class-section-${targetEntry.section_id}`)
+        el?.scrollIntoView({ behavior: "smooth", block: "center" })
 
-          const slotKey = `${entry.section_id}_${entry.day_of_week}_${entry.period_id || entry.period_number}`
-          setSelectedSlot(slotKey)
+        const slotKey = `${targetEntry.section_id}_${targetEntry.day_of_week}_${targetEntry.period_id || targetEntry.period_number}`
+        setSelectedSlotKey(slotKey)
 
-          setDialogState({
-            isOpen: true,
-            cellData: {
-              section: sec,
-              day: entry.day_of_week,
-              period: periodObj,
-              currentEntry: entry,
-              scheduleDays: getSplitDaysForSectionAndDay(sec, entry.day_of_week),
-              allDays: getAllDaysForSection(sec),
-              timetableId: timetable?.id,
-            },
-          })
-        }
-
-        list.push({
-          id: `conflict_${entryId}`,
-          type: "conflict",
-          title: msg,
-          sectionName: `${sec?.class_name || ""} ${sec?.name || ""}`.trim(),
-          day: entry.day_of_week,
-          periodLabel: entry.period_number ? `P${entry.period_number}` : "Period",
-          period: periodObj,
-          section: sec,
-          entry,
-          onJump: () => {
-            const el = document.getElementById(`class-section-${entry.section_id}`)
-            el?.scrollIntoView({ behavior: "smooth", block: "center" })
+        setDialogState({
+          isOpen: true,
+          cellData: {
+            section: targetSec,
+            day: targetEntry.day_of_week,
+            period: periodObj,
+            currentEntry: targetEntry,
+            scheduleDays: getSplitDaysForSectionAndDay(targetSec, targetEntry.day_of_week),
+            allDays: getAllDaysForSection(targetSec),
+            timetableId: timetable?.id,
           },
-          onResolve: resolveConflict,
         })
       }
+
+      list.push({
+        id: incident.id,
+        type: "conflict",
+        title: incident.title,
+        sectionName: incident.sectionNamesLabel,
+        day: incident.day,
+        periodLabel: periodObj.period_number ? `P${periodObj.period_number}` : "Period",
+        period: periodObj,
+        section: targetSec,
+        entry: targetEntry,
+        onJump: () => {
+          const el = document.getElementById(`class-section-${targetEntry.section_id}`)
+          el?.scrollIntoView({ behavior: "smooth", block: "center" })
+        },
+        onResolve: resolveConflict,
+        onClear: () => handleClearConflictIncident(incident),
+      })
     }
 
     // 2. Unassigned
@@ -466,7 +709,7 @@ export function ClassWiseGridView({
     }
 
     return list
-  }, [conflictMap, entries, allFlattenedSections, periodMap, timetable?.id])
+  }, [conflictIncidents, allFlattenedSections, periodMap, timetable?.id])
 
   // Total expected slots across all active sections
   const totalSlotsCount = useMemo(() => {
@@ -519,7 +762,7 @@ export function ClassWiseGridView({
     return total > 0 ? Math.min(100, Math.round((totalAssignedSlotsCount / total) * 100)) : 0
   }, [totalSlotsCount, totalAssignedSlotsCount, totalUnassignedCount])
 
-  const totalConflictsCount = Object.keys(conflictMap).length
+  const totalConflictsCount = conflictIncidents.length
 
   // Conflict resolution handler to open SlotAssignmentDialog directly from popover or list
   const handleResolveConflict = useCallback(
@@ -529,8 +772,19 @@ export function ClassWiseGridView({
         return
       }
       if (conflict?.entry) {
-        const sec = conflict.section || allFlattenedSections.find((s) => s.id === conflict.entry.section_id)
-        const periodObj = conflict.period || periodMap.get(conflict.entry.period_id)
+        const sec =
+          conflict.section ||
+          allFlattenedSections.find((s) => String(s.id) === String(conflict.entry.section_id)) ||
+          conflict.entry.section ||
+          {}
+        const periodObj =
+          conflict.period ||
+          periodMap.get(conflict.entry.period_id) || {
+            id: conflict.entry.period_id,
+            period_number: conflict.entry.period_number,
+            start_time: conflict.entry.period?.start_time,
+            end_time: conflict.entry.period?.end_time,
+          }
         const el = document.getElementById(`class-section-${conflict.entry.section_id}`)
         el?.scrollIntoView({ behavior: "smooth", block: "center" })
         setDialogState({
@@ -547,7 +801,7 @@ export function ClassWiseGridView({
         })
       }
     },
-    [allFlattenedSections, periodMap, timetable?.id, getSplitDaysForSectionAndDay]
+    [allFlattenedSections, periodMap, timetable?.id, getSplitDaysForSectionAndDay, getAllDaysForSection]
   )
 
   // Available subjects for the currently opened slot dialog
@@ -623,8 +877,22 @@ export function ClassWiseGridView({
       // Close dialog immediately for instant 0 ms feedback
       setDialogState({ isOpen: false, cellData: null })
 
+      const slotKey = makeSlotMutationKey(cell.section.id, cell.day, cell.period.id)
+      const previousPromise = inFlightSlotMutationsRef.current.get(slotKey) || Promise.resolve()
+
+      const mutationPromise = previousPromise
+        .catch(() => {})
+        .then(() => bulkAssignMutation.mutateAsync(requestPayload))
+        .finally(() => {
+          if (inFlightSlotMutationsRef.current.get(slotKey) === mutationPromise) {
+            inFlightSlotMutationsRef.current.delete(slotKey)
+          }
+        })
+
+      inFlightSlotMutationsRef.current.set(slotKey, mutationPromise)
+
       try {
-        await bulkAssignMutation.mutateAsync(requestPayload)
+        await mutationPromise
         if (!payload.silent) {
           toast.success("Timetable slot assigned successfully")
         }
@@ -634,7 +902,7 @@ export function ClassWiseGridView({
         }
       }
     },
-    [timetable, dialogState.cellData, bulkAssignMutation, getSplitDaysForSectionAndDay]
+    [timetable, dialogState.cellData, bulkAssignMutation, getSplitDaysForSectionAndDay, makeSlotMutationKey]
   )
 
   // Handle any pending assign now slot assignment when returning from Manage School
@@ -675,35 +943,103 @@ export function ClassWiseGridView({
 
   // Handle slot unassign
   const handleUnassignSlot = useCallback(
-    async (entryId) => {
-      if (!entryId) return
-      const entryToDelete = entries.find((e) => e.id === entryId)
-      if (!entryToDelete) return
+    async (entryId, sectionIdOpt, slotContext) => {
+      const entryToDelete =
+        entries.find((e) => String(e.id) === String(entryId)) ||
+        (String(dialogState.cellData?.currentEntry?.id) === String(entryId)
+          ? dialogState.cellData.currentEntry
+          : null)
+
+      const secId =
+        entryToDelete?.section_id ||
+        sectionIdOpt ||
+        dialogState.cellData?.section?.id ||
+        null
+
+      const targetDay =
+        slotContext?.day ||
+        entryToDelete?.day_of_week ||
+        dialogState.cellData?.day
+
+      const targetPeriodId =
+        slotContext?.period?.id ||
+        slotContext?.periodId ||
+        entryToDelete?.period_id ||
+        entryToDelete?.period?.id ||
+        dialogState.cellData?.period?.id
 
       // Record for undo
-      setHistoryStack((prev) => [
-        ...prev,
-        {
-          type: "UNASSIGN",
-          entry: entryToDelete,
-        },
-      ])
-      setFutureStack([])
+      if (entryToDelete) {
+        setHistoryStack((prev) => [
+          ...prev,
+          {
+            type: "UNASSIGN",
+            entry: entryToDelete,
+          },
+        ])
+        setFutureStack([])
+      }
 
       // Close dialog immediately if open
       setDialogState({ isOpen: false, cellData: null })
 
-      try {
-        await deleteEntryMutation.mutateAsync({
-          entryId,
-          sectionId: entryToDelete.section_id,
+      const slotKey = makeSlotMutationKey(secId, targetDay, targetPeriodId)
+      const previousPromise = inFlightSlotMutationsRef.current.get(slotKey) || Promise.resolve()
+
+      const unassignPromise = previousPromise
+        .catch(() => {})
+        .then(async () => {
+          // Send coordinate-based unassign to server so it cleans up the slot regardless of temporary or optimistic entry IDs
+          if (timetable?.id && secId && targetDay && targetPeriodId) {
+            return bulkAssignMutation.mutateAsync({
+              timetable_id: timetable.id,
+              section_id: secId,
+              day_of_week: targetDay,
+              period_id: targetPeriodId,
+              subject_id: null,
+              scope: "SLOT",
+            })
+          } else if (entryId && !String(entryId).startsWith("opt_")) {
+            return deleteEntryMutation.mutateAsync({
+              entryId,
+              sectionId: secId,
+            })
+          }
         })
+        .finally(() => {
+          if (inFlightSlotMutationsRef.current.get(slotKey) === unassignPromise) {
+            inFlightSlotMutationsRef.current.delete(slotKey)
+          }
+        })
+
+      inFlightSlotMutationsRef.current.set(slotKey, unassignPromise)
+
+      try {
+        await unassignPromise
         toast.success("Slot unassigned")
       } catch (err) {
+        console.error("Failed to unassign slot with primary handler:", err)
+        // Fallback: If delete by ID failed (e.g. invalid UUID or stale reference), unassign by slot coordinates
+        if (timetable?.id && secId && targetDay && targetPeriodId) {
+          try {
+            await bulkAssignMutation.mutateAsync({
+              timetable_id: timetable.id,
+              section_id: secId,
+              day_of_week: targetDay,
+              period_id: targetPeriodId,
+              subject_id: null,
+              scope: "SLOT",
+            })
+            toast.success("Slot unassigned")
+            return
+          } catch (fallbackErr) {
+            console.error("Fallback unassign by slot failed:", fallbackErr)
+          }
+        }
         toast.error("Failed to unassign slot")
       }
     },
-    [entries, deleteEntryMutation]
+    [entries, dialogState.cellData, timetable?.id, deleteEntryMutation, bulkAssignMutation, makeSlotMutationKey]
   )
 
   // Handle moving / swapping slots via drag and drop
@@ -861,6 +1197,7 @@ export function ClassWiseGridView({
       onRedo: handleRedo,
       issuesList,
       onResolveConflict: handleResolveConflict,
+      onClearAllConflicts: handleClearAllConflicts,
     })
   }, [
     totalUnassignedCount,
@@ -872,6 +1209,7 @@ export function ClassWiseGridView({
     handleRedo,
     issuesList,
     handleResolveConflict,
+    handleClearAllConflicts,
     onAssignBarPropsChange,
   ])
 
@@ -1424,6 +1762,9 @@ export function ClassWiseGridView({
                             })
                           }}
                           onClearSlot={(entryId) => handleUnassignSlot(entryId)}
+                          onQuickUnassign={(entry, sec, context) =>
+                            handleUnassignSlot(entry?.id, sec?.id || entry?.section_id, context)
+                          }
                           onMoveSlot={(src, tgt, isCopy) => handleMoveSlot(src, tgt, isCopy)}
                           density={density}
                           zoom={zoom}
@@ -1447,18 +1788,83 @@ export function ClassWiseGridView({
 
       {/* SLOT ASSIGNMENT DIALOG */}
       {dialogState.isOpen && (
-        <SlotAssignmentDialog
-          isOpen={dialogState.isOpen}
-          onClose={() => setDialogState({ isOpen: false, cellData: null })}
-          cellData={dialogState.cellData}
-          availableSubjects={availableSubjectsForDialog}
-          eligibleTeachers={eligible_teachers}
-          existingEntries={entries}
-          onAssign={handleAssignSlot}
-          onUnassign={handleUnassignSlot}
-          isSubmitting={bulkAssignMutation.isPending || deleteEntryMutation.isPending}
-        />
+        <ErrorBoundary>
+          <SlotAssignmentDialog
+            isOpen={dialogState.isOpen}
+            onClose={() => setDialogState({ isOpen: false, cellData: null })}
+            cellData={dialogState.cellData}
+            availableSubjects={availableSubjectsForDialog}
+            eligibleTeachers={eligible_teachers}
+            existingEntries={entries}
+            periodMap={periodMap}
+            onAssign={handleAssignSlot}
+            onUnassign={(entryId, secId) =>
+              handleUnassignSlot(entryId, secId, {
+                day: dialogState.cellData?.day,
+                period: dialogState.cellData?.period,
+              })
+            }
+            isSubmitting={bulkAssignMutation.isPending || deleteEntryMutation.isPending}
+          />
+        </ErrorBoundary>
       )}
+
+      {/* In-app Clear Conflicts Confirmation Dialog */}
+      <Dialog
+        isOpen={confirmClearDialog.isOpen}
+        onOpenChange={(open) => {
+          if (!open && !isClearingConflicts) {
+            setConfirmClearDialog((prev) => ({ ...prev, isOpen: false }))
+          }
+        }}
+        className="sm:max-w-md p-6"
+      >
+        <DialogHeader className="space-y-2">
+          <div className="flex items-center gap-2 text-destructive">
+            <div className="size-8 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+              <AlertTriangle className="size-4 text-destructive" />
+            </div>
+            <DialogTitle className="text-base font-semibold text-foreground">
+              {confirmClearDialog.title}
+            </DialogTitle>
+          </div>
+          <DialogDescription className="text-xs text-muted-foreground leading-relaxed pt-1">
+            {confirmClearDialog.message}
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogFooter className="mt-5 flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setConfirmClearDialog((prev) => ({ ...prev, isOpen: false }))}
+            disabled={isClearingConflicts}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={handleExecuteClearConflicts}
+            disabled={isClearingConflicts}
+            className="gap-1.5"
+          >
+            {isClearingConflicts ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                <span>Clearing...</span>
+              </>
+            ) : (
+              <>
+                <Trash2 className="size-3.5" />
+                <span>Clear Slots</span>
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </Dialog>
 
       {/* FLOATING TIMETABLE TOOLTIP */}
       <TimetableTooltip />

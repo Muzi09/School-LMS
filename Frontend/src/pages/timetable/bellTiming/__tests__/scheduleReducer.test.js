@@ -365,6 +365,79 @@ describe("scheduleReducer", () => {
       expect(savedState.isDirty).toBe(true)
       expect(savedState.setups[0].version).toBe(2)
     })
+
+    it("ensures days and schedules strictly follow order sequencing when days are split", () => {
+      const setupId = initialSetup.id
+      const schedId = initialSetup.schedules[0].id
+
+      // 1. Split Friday first
+      const stateWithFriday = bellTimingReducer(initialState, {
+        type: "SPLIT_DAYS",
+        payload: {
+          setupId,
+          scheduleId: schedId,
+          daysToSplit: ["FRIDAY"],
+        },
+      })
+
+      const setup1 = stateWithFriday.setups[0]
+      expect(setup1.schedules.length).toBe(2)
+      // Main schedule starts at Monday, Friday schedule starts at Friday
+      expect(setup1.schedules[0].days).toEqual(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "SATURDAY"])
+      expect(setup1.schedules[1].days).toEqual(["FRIDAY"])
+
+      // 2. Now split Tuesday from the main schedule
+      const mainSchedId = setup1.schedules[0].id
+      const stateWithTuesday = bellTimingReducer(stateWithFriday, {
+        type: "SPLIT_DAYS",
+        payload: {
+          setupId,
+          scheduleId: mainSchedId,
+          daysToSplit: ["TUESDAY"],
+        },
+      })
+
+      const setup2 = stateWithTuesday.setups[0]
+      expect(setup2.schedules.length).toBe(3)
+      // Schedules must be sorted by earliest day: Monday (0), Tuesday (1), Friday (4)
+      expect(setup2.schedules[0].days[0]).toBe("MONDAY")
+      expect(setup2.schedules[1].days).toEqual(["TUESDAY"])
+      expect(setup2.schedules[2].days).toEqual(["FRIDAY"])
+
+      // Inside schedule 0, remaining days are sorted
+      expect(setup2.schedules[0].days).toEqual(["MONDAY", "WEDNESDAY", "THURSDAY", "SATURDAY"])
+    })
+
+    it("ensures merging days preserves day and schedule order sequencing", () => {
+      const setupId = initialSetup.id
+      const schedId = initialSetup.schedules[0].id
+
+      // Split Saturday and Friday
+      const split1 = bellTimingReducer(initialState, {
+        type: "SPLIT_DAYS",
+        payload: { setupId, scheduleId: schedId, daysToSplit: ["FRIDAY", "SATURDAY"] },
+      })
+
+      const mainSchedId = split1.setups[0].schedules[0].id
+      const splitSchedId = split1.setups[0].schedules[1].id
+
+      // Merge back in reverse order
+      const merged = bellTimingReducer(split1, {
+        type: "MERGE_DAYS",
+        payload: { setupId, sourceScheduleId: splitSchedId, targetScheduleId: mainSchedId },
+      })
+
+      const setup = merged.setups[0]
+      expect(setup.schedules.length).toBe(1)
+      expect(setup.schedules[0].days).toEqual([
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+        "SATURDAY",
+      ])
+    })
   })
 })
 

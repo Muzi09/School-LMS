@@ -351,15 +351,16 @@ function SingleClassCard({
                           const dotColor = SUBJECT_COLORS[sIdx % SUBJECT_COLORS.length]
                           const isActivity = !sub.is_academic || sub.category === "non_academic"
                           const isSplit = Boolean(sub.is_split && sub.child_subjects && sub.child_subjects.length > 0)
-                          const assignedTeacherId = sub.teacher_id || sub.teacher?.id || ""
+                          const rawTeacherId = sub.teacher_id || sub.teacher?.id || ""
+                          const hasTeacherInList = teacherComboboxOptions.some((o) => o.value === String(rawTeacherId))
+                          const validAssignedTeacher = (hasTeacherInList || sub.teacher?.name) ? rawTeacherId : ""
                           const subjectTeacherOptions =
-                            assignedTeacherId &&
-                              !teacherComboboxOptions.some((o) => o.value === String(assignedTeacherId))
+                            validAssignedTeacher && !hasTeacherInList && sub.teacher?.name
                               ? [
                                 ...teacherComboboxOptions,
                                 {
-                                  value: String(assignedTeacherId),
-                                  label: sub.teacher?.name || "Assigned Teacher",
+                                  value: String(validAssignedTeacher),
+                                  label: sub.teacher.name,
                                   description: sub.teacher?.tag || sub.teacher?.designation || null,
                                 },
                               ]
@@ -388,15 +389,16 @@ function SingleClassCard({
                                 {/* Child Subjects */}
                                 <div className="p-1.5 space-y-1.5 bg-muted/10">
                                   {sub.child_subjects.map((childSub) => {
-                                    const childTeacherId = childSub.teacher_id || childSub.teacher?.id || ""
+                                    const rawChildTeacherId = childSub.teacher_id || childSub.teacher?.id || ""
+                                    const hasChildTeacherInList = teacherComboboxOptions.some((o) => o.value === String(rawChildTeacherId))
+                                    const validChildTeacher = (hasChildTeacherInList || childSub.teacher?.name) ? rawChildTeacherId : ""
                                     const childTeacherOptions =
-                                      childTeacherId &&
-                                        !teacherComboboxOptions.some((o) => o.value === String(childTeacherId))
+                                      validChildTeacher && !hasChildTeacherInList && childSub.teacher?.name
                                         ? [
                                           ...teacherComboboxOptions,
                                           {
-                                            value: String(childTeacherId),
-                                            label: childSub.teacher?.name || "Assigned Teacher",
+                                            value: String(validChildTeacher),
+                                            label: childSub.teacher.name,
                                             description: childSub.teacher?.tag || childSub.teacher?.designation || null,
                                           },
                                         ]
@@ -433,7 +435,7 @@ function SingleClassCard({
 
                                         <div className="shrink-0 max-w-[130px]">
                                           <Combobox
-                                            value={childTeacherId ? String(childTeacherId) : ""}
+                                            value={validChildTeacher ? String(validChildTeacher) : ""}
                                             onValueChange={(newVal) => {
                                               onAssignSubjectTeacher?.(sec.id, childSub.id, newVal ? newVal : null)
                                               if (isChildTarget) {
@@ -493,7 +495,7 @@ function SingleClassCard({
 
                               <div className="shrink-0 max-w-[130px]">
                                 <Combobox
-                                  value={assignedTeacherId ? String(assignedTeacherId) : ""}
+                                  value={validAssignedTeacher ? String(validAssignedTeacher) : ""}
                                   onValueChange={(newVal) => {
                                     onAssignSubjectTeacher?.(sec.id, sub.id, newVal ? newVal : null)
                                     if (isTarget) {

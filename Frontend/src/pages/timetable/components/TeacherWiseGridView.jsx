@@ -9,6 +9,7 @@ import {
   Clock,
   Layers,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getSubjectTheme } from "../subjectTheme"
@@ -73,8 +74,20 @@ export function TeacherWiseGridView({
 
       const p = e.period
       const pNum = p?.period_number || 0
-      tMap[tId][`${e.day_of_week}_${e.period_id}`] = e
-      tMap[tId][`${e.day_of_week}_${pNum}`] = e
+      const keyId = `${e.day_of_week}_${e.period_id}`
+      const keyNum = `${e.day_of_week}_${pNum}`
+
+      if (!tMap[tId][keyId]) tMap[tId][keyId] = []
+      if (!tMap[tId][keyId].some((x) => x.id === e.id)) {
+        tMap[tId][keyId].push(e)
+      }
+
+      if (keyNum !== keyId) {
+        if (!tMap[tId][keyNum]) tMap[tId][keyNum] = []
+        if (!tMap[tId][keyNum].some((x) => x.id === e.id)) {
+          tMap[tId][keyNum].push(e)
+        }
+      }
 
       if (!p?.is_break) {
         sMap[tId].assigned += 1
@@ -246,6 +259,12 @@ export function TeacherWiseGridView({
 
                 {/* Day Rows */}
                 {defaultDays.map((day) => {
+                  const dayPeriodCount = masterPeriods.filter((p) => {
+                    if (p.is_break) return false
+                    const raw = tMap[`${day}_${p.id}`] || tMap[`${day}_${p.period_number}`]
+                    return Boolean(raw && (Array.isArray(raw) ? raw.length > 0 : true))
+                  }).length
+
                   return (
                     <div
                       key={day}
@@ -256,8 +275,20 @@ export function TeacherWiseGridView({
                       }}
                     >
                       {/* Day Label Cell */}
-                      <div className="h-16 border-r border-border/70 bg-muted/20 flex items-center justify-center font-bold text-xs text-muted-foreground font-mono uppercase tracking-wider">
-                        {day.slice(0, 3)}
+                      <div className="h-16 border-r border-border/70 bg-muted/20 flex flex-col items-center justify-center gap-1 font-bold text-xs text-muted-foreground font-mono uppercase tracking-wider p-1">
+                        <span>{day.slice(0, 3)}</span>
+                        {dayPeriodCount >= 5 ? (
+                          <span
+                            className="px-1 py-0.2 rounded text-[9px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap"
+                            title={`${dayPeriodCount} periods scheduled today (Heavy Load)`}
+                          >
+                            {dayPeriodCount} P (Heavy)
+                          </span>
+                        ) : dayPeriodCount > 0 ? (
+                          <span className="text-[9.5px] font-normal text-muted-foreground/70">
+                            {dayPeriodCount} P
+                          </span>
+                        ) : null}
                       </div>
 
                       {/* Period Cells */}
@@ -273,9 +304,33 @@ export function TeacherWiseGridView({
                           )
                         }
 
-                        const entry = tMap[`${day}_${p.id}`] || tMap[`${day}_${p.period_number}`]
+                        const rawEntries = tMap[`${day}_${p.id}`] || tMap[`${day}_${p.period_number}`] || []
+                        const slotEntries = Array.isArray(rawEntries) ? rawEntries : (rawEntries ? [rawEntries] : [])
 
-                        if (entry && entry.section) {
+                        if (slotEntries.length > 1) {
+                          const conflictDesc = slotEntries
+                            .map((se) => `${se.section?.school_class?.name || ""}-${se.section?.name || ""} (${se.subject?.name || ""})`)
+                            .join(", ")
+
+                          return (
+                            <div
+                              key={p.id || pIdx}
+                              className="h-16 border-r border-destructive/50 bg-destructive/15 text-destructive p-1.5 flex flex-col items-center justify-center text-center ring-1 ring-inset ring-destructive/60 transition-all cursor-pointer"
+                              title={`Schedule Conflict! Double-booked in ${slotEntries.length} classes: ${conflictDesc}. Resolve on Timetable page.`}
+                            >
+                              <div className="flex items-center gap-1 text-[11px] font-black leading-tight text-destructive">
+                                <AlertTriangle className="size-3.5 text-destructive shrink-0" />
+                                <span>Conflict ({slotEntries.length})</span>
+                              </div>
+                              <span className="text-[10px] font-bold text-destructive/90 truncate max-w-full">
+                                {slotEntries.map((se) => `${se.section?.school_class?.name || ""}-${se.section?.name || ""}`).join(" & ")}
+                              </span>
+                            </div>
+                          )
+                        }
+
+                        if (slotEntries.length === 1 && slotEntries[0].section) {
+                          const entry = slotEntries[0]
                           const sec = entry.section
                           const clsName = sec.school_class?.name || ""
                           const secLabel = `${clsName} ${sec.name || ""}`.trim()

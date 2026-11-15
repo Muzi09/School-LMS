@@ -32,9 +32,13 @@ export function parseTime(input) {
 
   if (clean.includes(":")) {
     const parts = clean.split(":")
-    if (parts.length !== 2) return null
+    if (parts.length < 2 || parts.length > 3) return null
     hours = parseInt(parts[0], 10)
     minutes = parseInt(parts[1], 10)
+    if (parts.length === 3) {
+      const seconds = parseInt(parts[2], 10)
+      if (isNaN(seconds) || seconds < 0 || seconds >= 60) return null
+    }
   } else {
     // Digits only
     if (!/^\d+$/.test(clean)) return null

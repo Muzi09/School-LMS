@@ -393,13 +393,20 @@ export function ManageSchool() {
       const msg = err.response?.data?.detail || err.message || "Failed to update subject teacher."
       toast.error(msg)
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["timetable"], refetchType: "none" })
-      toast.success(
-        variables.teacherId
-          ? "Subject teacher assigned successfully."
-          : "Subject teacher unassigned successfully."
-      )
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["timetable"] })
+      if (data?.warning?.has_conflict) {
+        toast.warning("Teacher Assigned with Schedule Conflict", {
+          description: data.warning.details,
+          duration: 7000,
+        })
+      } else {
+        toast.success(
+          variables.teacherId
+            ? "Subject teacher assigned successfully."
+            : "Subject teacher unassigned successfully."
+        )
+      }
     },
   })
 

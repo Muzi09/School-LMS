@@ -43,6 +43,8 @@ from app.schemas.timetable import (
     TimetableTeacherRead,
     TimetableUpdate,
     TimetableExportRequest,
+    TimetablePublishDiffResponse,
+    TimetablePublishResponse,
 )
 from app.services.timetable_service import TimetableService
 from app.services.timetable_export_service import TimetableExportService
@@ -510,6 +512,40 @@ def activate_timetable(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     return service.activate_timetable(school_id=school_id, timetable_id=timetable_id, user_id=current_user.id)
+
+
+@router.get(
+    "/timetables/{timetable_id}/publish-diff",
+    response_model=TimetablePublishDiffResponse,
+    summary="Get Timetable Publish Diff & Impacted Teachers",
+    description="Calculate diff between current draft timetable entries and last published version, identifying all affected teachers.",
+)
+def get_publish_diff(
+    timetable_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.get_publish_diff(school_id=school_id, timetable_id=timetable_id)
+
+
+@router.post(
+    "/timetables/{timetable_id}/publish",
+    response_model=TimetablePublishResponse,
+    summary="Publish Timetable & Prepare Targeted Notifications",
+    description="Validate zero conflicts, bump timetable version, record snapshot, and prepare consolidated notifications only for affected teachers.",
+)
+def publish_timetable(
+    timetable_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    school_id = current_user.school_id
+    if not school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.publish_timetable(school_id=school_id, timetable_id=timetable_id, user_id=current_user.id)
 
 
 @router.post(

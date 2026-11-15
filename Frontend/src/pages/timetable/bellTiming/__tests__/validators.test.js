@@ -7,6 +7,11 @@ import {
   formatPeriodShortLabel,
   getTimetablePeriodLabel,
   isNonTeachingPeriod,
+  sortDays,
+  sortSchedules,
+  getScheduleMinDayIndex,
+  areSchedulesTimingEqual,
+  findIdenticalSchedulesInSetups,
   MIN_PERIOD_DURATION_MINUTES,
   MAX_PERIOD_DURATION_MINUTES,
   PERIOD_TYPES,
@@ -265,6 +270,134 @@ describe("validators", () => {
       expect(isNonTeachingPeriod({ type: "CLASS", label: "Period 1", is_break: false })).toBe(false)
       expect(isNonTeachingPeriod({ period_type: "CLASS", label: "P1", is_break: false })).toBe(false)
       expect(isNonTeachingPeriod(null)).toBe(false)
+    })
+  })
+
+  describe("Day and Schedule Sorting & Invariants", () => {
+    it("sortDays sorts weekdays in standard chronological order", () => {
+      const unsorted = ["FRIDAY", "MONDAY", "SATURDAY", "WEDNESDAY", "TUESDAY", "THURSDAY"]
+      expect(sortDays(unsorted)).toEqual([
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+        "SATURDAY",
+      ])
+    })
+
+    it("sortSchedules sorts schedules by earliest day", () => {
+      const schedules = [
+        { id: "s-sat", days: ["SATURDAY"] },
+        { id: "s-tue", days: ["TUESDAY"] },
+        { id: "s-mon", days: ["MONDAY", "WEDNESDAY", "THURSDAY"] },
+        { id: "s-fri", days: ["FRIDAY"] },
+      ]
+      const sorted = sortSchedules(schedules)
+      expect(sorted.map((s) => s.id)).toEqual(["s-mon", "s-tue", "s-fri", "s-sat"])
+    })
+  })
+
+  describe("Duplicate Bell Timings Detection & Auto-Merge", () => {
+    const basePeriods = [
+      { start_time: "08:30", end_time: "09:15", type: PERIOD_TYPES.CLASS, label: "P1" },
+      { start_time: "09:15", end_time: "10:00", type: PERIOD_TYPES.CLASS, label: "P2" },
+      { start_time: "10:00", end_time: "10:15", type: PERIOD_TYPES.RECESS, is_break: true, label: "R1" },
+      { start_time: "10:15", end_time: "11:00", type: PERIOD_TYPES.CLASS, label: "P3" },
+    ]
+
+    it("areSchedulesTimingEqual returns true when periods and timings match identically", () => {
+      const schedA = { id: "a", periods: basePeriods }
+      const schedB = {
+        id: "b",
+        periods: [
+          { start_time: "08:30", end_time: "09:15", type: PERIOD_TYPES.CLASS, label: "P1" },
+          { start_time: "09:15", end_time: "10:00", type: PERIOD_TYPES.CLASS, label: "P2" },
+          { start_time: "10:00", end_time: "10:15", type: PERIOD_TYPES.RECESS, is_break: true, label: "R1" },
+          { start_time: "10:15", end_time: "11:00", type: PERIOD_TYPES.CLASS, label: "P3" },
+        ],
+      }
+      expect(areSchedulesTimingEqual(schedA, schedB)).toBe(true)
+    })
+
+    it("areSchedulesTimingEqual matches across HH:MM and HH:MM:SS formats", () => {
+      const schedA = {
+        id: "a",
+        periods: [
+          { period_number: 1, start_time: "08:30:00", end_time: "09:15:00", type: PERIOD_TYPES.CLASS },
+          { period_number: 2, start_time: "09:15:00", end_time: "10:00:00", type: PERIOD_TYPES.CLASS },
+        ],
+      }
+      const schedB = {
+        id: "b",
+        periods: [
+          { period_number: 1, start_time: "08:30", end_time: "09:15", type: PERIOD_TYPES.CLASS },
+          { period_number: 2, start_time: "09:15", end_time: "10:00", type: PERIOD_TYPES.CLASS },
+        ],
+      }
+      expect(areSchedulesTimingEqual(schedA, schedB)).toBe(true)
+    })
+
+    it("areSchedulesTimingEqual matches even if periods array order is unsorted", () => {
+      const schedA = {
+        id: "a",
+        periods: [
+          { period_number: 2, start_time: "09:15", end_time: "10:00", type: PERIOD_TYPES.CLASS },
+          { period_number: 1, start_time: "08:30", end_time: "09:15", type: PERIOD_TYPES.CLASS },
+        ],
+      }
+      const schedB = {
+        id: "b",
+        periods: [
+          { period_number: 1, start_time: "08:30", end_time: "09:15", type: PERIOD_TYPES.CLASS },
+          { period_number: 2, start_time: "09:15", end_time: "10:00", type: PERIOD_TYPES.CLASS },
+        ],
+      }
+      expect(areSchedulesTimingEqual(schedA, schedB)).toBe(true)
+    })
+
+    it("areSchedulesTimingEqual returns false when timings or types differ", () => {
+      const schedA = { id: "a", periods: basePeriods }
+      const schedDiffTime = {
+        id: "b",
+        periods: [
+          { start_time: "08:00", end_time: "08:45", type: PERIOD_TYPES.CLASS, label: "P1" },
+          ...basePeriods.slice(1),
+        ],
+      }
+      expect(areSchedulesTimingEqual(schedA, schedDiffTime)).toBe(false)
+
+      const schedDiffCount = { id: "c", periods: basePeriods.slice(0, 2) }
+      expect(areSchedulesTimingEqual(schedA, schedDiffCount)).toBe(false)
+    })
+
+    it("findIdenticalSchedulesInSetups finds split day having same timings as main schedule", () => {
+      const setups = [
+        {
+          id: "setup-1",
+          name: "Primary Wing",
+          schedules: [
+            {
+              id: "sch-main",
+              days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY"],
+              periods: basePeriods,
+            },
+            {
+              id: "sch-friday",
+              days: ["FRIDAY"],
+              periods: JSON.parse(JSON.stringify(basePeriods)),
+            },
+          ],
+        },
+      ]
+
+      const duplicates = findIdenticalSchedulesInSetups(setups)
+      expect(duplicates.length).toBe(1)
+      expect(duplicates[0].setupId).toBe("setup-1")
+      expect(duplicates[0].sourceScheduleId).toBe("sch-friday")
+      expect(duplicates[0].sourceDays).toEqual(["FRIDAY"])
+      expect(duplicates[0].targetScheduleId).toBe("sch-main")
+      expect(duplicates[0].targetDays).toEqual(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY"])
     })
   })
 })

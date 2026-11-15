@@ -89,6 +89,14 @@ export const activateTimetableApi = async (timetableId) => {
   return await apiClient.post(`/timetable/timetables/${timetableId}/activate`)
 }
 
+export const getTimetablePublishDiffApi = async (timetableId) => {
+  return await apiClient.get(`/timetable/timetables/${timetableId}/publish-diff`)
+}
+
+export const publishTimetableApi = async (timetableId) => {
+  return await apiClient.post(`/timetable/timetables/${timetableId}/publish`)
+}
+
 export const duplicateTimetableApi = async (timetableId, name = null) => {
   const query = name ? `?name=${encodeURIComponent(name)}` : ""
   return await apiClient.post(`/timetable/timetables/${timetableId}/duplicate${query}`)
@@ -188,6 +196,8 @@ export const timetableService = {
   getTimetableById: getTimetableByIdApi,
   updateTimetable: updateTimetableApi,
   activateTimetable: activateTimetableApi,
+  getPublishDiff: getTimetablePublishDiffApi,
+  publishTimetable: publishTimetableApi,
   duplicateTimetable: duplicateTimetableApi,
   deleteTimetable: deleteTimetableApi,
 
