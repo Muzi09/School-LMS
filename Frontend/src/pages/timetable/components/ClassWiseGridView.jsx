@@ -729,7 +729,8 @@ export function ClassWiseGridView({
             "FRIDAY",
             "SATURDAY",
           ]).filter((d) => !secSetup.break_days?.includes(d))
-          const teachingCount = (secSetup.periods || []).filter((p) => !isNonTeachingPeriod(p)).length
+          const secPeriods = secSetup.schedules?.[0]?.periods || secSetup.periods || []
+          const teachingCount = secPeriods.filter((p) => !isNonTeachingPeriod(p)).length
           total += teachingCount * appDays.length
         }
       }

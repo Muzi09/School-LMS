@@ -222,14 +222,22 @@ class TimetablePublishResponse(BaseModel):
 
 
 class SetupPeriodItem(BaseModel):
-    id: Optional[str] = None
+    id: Optional[Union[UUID, str]] = None
     period_number: int = Field(..., ge=1)
     start_time: str
     end_time: str
     is_break: bool = False
     label: Optional[str] = None
     type: Optional[str] = "CLASS"
+    period_type: Optional[str] = "CLASS"
     schedule_id: Optional[str] = None
+    school_id: Optional[UUID] = None
+    timetable_id: Optional[UUID] = None
+    setup_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -317,9 +325,23 @@ class MergeDaysRequest(BaseModel):
     target_schedule_id: str
 
 
+class BatchSetupItem(BaseModel):
+    id: Optional[Union[UUID, str]] = None
+    name: str = Field(..., max_length=100)
+    description: Optional[str] = None
+    is_default: Optional[bool] = False
+    order_index: Optional[int] = 0
+    version: Optional[int] = 1
+    applicable_days: Optional[List[str]] = None
+    periods: Optional[List[SetupPeriodItem]] = None
+    schedules: Optional[List[SetupScheduleItem]] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class BatchSetupAssignmentsRequest(BaseModel):
     timetable_id: UUID
-    setups: List[Dict[str, Any]] = Field(..., description="List of setups with day schedules and periods")
+    setups: List[BatchSetupItem] = Field(..., description="List of setups with day schedules and periods")
     assignments: List[SetupAssignmentTarget] = Field(..., description="Mapping of sections/classes/wings to setup IDs")
 
 

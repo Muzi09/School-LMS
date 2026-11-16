@@ -83,6 +83,35 @@ describe("validators", () => {
       expect(validateSchedule(schedContained).isValid).toBe(false)
     })
 
+    it("detects non-adjacent multi-period overlaps using Sweep-Line", () => {
+      // P1 covers 08:30-10:30, P2 is 08:45-09:15, P3 is 09:30-10:00
+      // P1 overlaps with BOTH P2 and non-adjacent P3
+      const sched = {
+        periods: [
+          { start_time: "08:30", end_time: "10:30", type: PERIOD_TYPES.CLASS, label: "Block" },
+          { start_time: "08:45", end_time: "09:15", type: PERIOD_TYPES.CLASS, label: "P1" },
+          { start_time: "09:30", end_time: "10:00", type: PERIOD_TYPES.CLASS, label: "P2" },
+        ],
+      }
+      const res = validateSchedule(sched)
+      expect(res.isValid).toBe(false)
+      expect(res.errors.some((e) => e.includes('Period "Block"') && e.includes('overlaps with "P1"'))).toBe(true)
+      expect(res.errors.some((e) => e.includes('Period "Block"') && e.includes('overlaps with "P2"'))).toBe(true)
+    })
+
+    it("detects overlaps when periods are entered out of order", () => {
+      // Out of order: P2 is entered before P1 in array, but they overlap
+      const sched = {
+        periods: [
+          { start_time: "10:00", end_time: "10:45", type: PERIOD_TYPES.CLASS, label: "P2" },
+          { start_time: "09:30", end_time: "10:15", type: PERIOD_TYPES.CLASS, label: "P1" },
+        ],
+      }
+      const res = validateSchedule(sched)
+      expect(res.isValid).toBe(false)
+      expect(res.errors.some((e) => e.includes("overlaps with"))).toBe(true)
+    })
+
     it("detects gaps and generates warnings with gap details", () => {
       const sched = {
         periods: [

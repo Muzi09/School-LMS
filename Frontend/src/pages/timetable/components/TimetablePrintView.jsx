@@ -85,8 +85,9 @@ export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
 
   // Fallback master periods
   const fallbackPeriods = React.useMemo(() => {
-    if (setups.length > 0 && setups[0]?.periods?.length > 0) {
-      return setups[0].periods
+    const firstPeriods = setups[0]?.schedules?.[0]?.periods || setups[0]?.periods || []
+    if (setups.length > 0 && firstPeriods.length > 0) {
+      return firstPeriods
     }
     // Extract unique periods from entries
     const seen = new Map()
@@ -115,8 +116,9 @@ export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
       if (Array.isArray(rawDays) && rawDays.length > 0) {
         secDays = sortDays(rawDays.map((d) => String(d).toUpperCase()))
       }
-      if (setup.periods && setup.periods.length > 0) {
-        secPeriods = [...setup.periods].sort((a, b) => a.period_number - b.period_number)
+      const targetPeriods = setup.schedules?.[0]?.periods || setup.periods || []
+      if (targetPeriods.length > 0) {
+        secPeriods = [...targetPeriods].sort((a, b) => a.period_number - b.period_number)
       }
     }
 

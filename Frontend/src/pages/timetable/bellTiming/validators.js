@@ -3,7 +3,7 @@
  * Enforced uniformly on client and server.
  */
 
-import { parseTime, calculateDuration } from "./timeUtils"
+import { parseTime, calculateDuration, toMinutes, areTimesEqual } from "./timeUtils"
 
 export const MIN_PERIOD_DURATION_MINUTES = 15
 export const MAX_PERIOD_DURATION_MINUTES = 180
@@ -82,15 +82,15 @@ export function areSchedulesTimingEqual(schedA, schedB) {
     const itemB = sortedB[i]
     if (!itemA || !itemB) return false
 
-    // Compare start time in minutes
-    const startA = parseTime(itemA.start_time)?.totalMinutes
-    const startB = parseTime(itemB.start_time)?.totalMinutes
-    if (startA == null || startB == null || startA !== startB) return false
+    // Compare start time in minutes (pure numbers)
+    const startA = toMinutes(itemA.start_time)
+    const startB = toMinutes(itemB.start_time)
+    if (startA !== startB) return false
 
-    // Compare end time in minutes
-    const endA = parseTime(itemA.end_time)?.totalMinutes
-    const endB = parseTime(itemB.end_time)?.totalMinutes
-    if (endA == null || endB == null || endA !== endB) return false
+    // Compare end time in minutes (pure numbers)
+    const endA = toMinutes(itemA.end_time)
+    const endB = toMinutes(itemB.end_time)
+    if (endA !== endB) return false
 
     // Compare period type (class vs break) case-insensitively
     const typeA = String(itemA.type || (itemA.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)).toUpperCase()
@@ -403,11 +403,14 @@ export function validatePeriodTimes(period) {
     return errors
   }
 
-  if (start.totalMinutes >= end.totalMinutes) {
+  const startMin = start.totalMinutes
+  const endMin = end.totalMinutes
+
+  if (startMin >= endMin) {
     errors.push("End time must be after start time (cannot cross midnight).")
   }
 
-  const duration = end.totalMinutes - start.totalMinutes
+  const duration = endMin - startMin
   if (duration > 0 && duration < MIN_PERIOD_DURATION_MINUTES) {
     errors.push(`Period duration must be at least ${MIN_PERIOD_DURATION_MINUTES} minutes.`)
   }
@@ -460,42 +463,88 @@ export function validateSchedule(schedule) {
     }
   })
 
-  // Sort periods by start time for overlap and gap detection
+  // 1. Validate individual period time formats & durations
+  const validPeriods = []
   for (let i = 0; i < periods.length; i++) {
     const current = periods[i]
     const pErrors = validatePeriodTimes(current)
     if (pErrors.length > 0) {
       errors.push(`${current.label || `Period ${i + 1}`}: ${pErrors.join(", ")}`)
+    } else {
+      validPeriods.push({
+        index: i,
+        period: current,
+        startM: toMinutes(current.start_time),
+        endM: toMinutes(current.end_time),
+        label: current.label || String(i + 1),
+      })
     }
+  }
 
-    if (i < periods.length - 1) {
-      const next = periods[i + 1]
-      const curEnd = parseTime(current.end_time)
-      const nextStart = parseTime(next.start_time)
+  // 2. Sweep-Line Algorithm for Interval Overlap Detection (O(N log N + k))
+  // Creates boundary events: END events (type: 0) and START events (type: 1).
+  // When timestamps tie, END is processed before START so touching boundaries (e.g. 09:15 and 09:15) are valid.
+  const sweepEvents = []
+  validPeriods.forEach((vp) => {
+    sweepEvents.push({ minute: vp.endM, type: 0, item: vp })
+    sweepEvents.push({ minute: vp.startM, type: 1, item: vp })
+  })
 
-      if (curEnd && nextStart) {
-        if (curEnd.totalMinutes > nextStart.totalMinutes) {
+  // Sort events: primary by minute, secondary by type (0 = END before 1 = START)
+  sweepEvents.sort((a, b) => {
+    if (a.minute !== b.minute) return a.minute - b.minute
+    return a.type - b.type
+  })
+
+  const activeIntervals = new Set()
+  const recordedOverlaps = new Set()
+
+  for (const evt of sweepEvents) {
+    if (evt.type === 0) {
+      // Period interval ended: remove from active sweep
+      activeIntervals.delete(evt.item)
+    } else {
+      // Period interval started: check collisions with all currently active intervals
+      for (const active of activeIntervals) {
+        // Create an order-independent collision key to prevent duplicate error messages
+        const overlapKey =
+          active.index < evt.item.index
+            ? `${active.index}_${evt.item.index}`
+            : `${evt.item.index}_${active.index}`
+
+        if (!recordedOverlaps.has(overlapKey)) {
+          recordedOverlaps.add(overlapKey)
           errors.push(
-            `Period "${current.label || i + 1}" (${current.start_time}-${current.end_time}) overlaps with "${
-              next.label || i + 2
-            }" (${next.start_time}-${next.end_time}).`
-          )
-        } else if (nextStart.totalMinutes > curEnd.totalMinutes) {
-          const gapMinutes = nextStart.totalMinutes - curEnd.totalMinutes
-          gaps.push({
-            beforeIndex: i,
-            afterIndex: i + 1,
-            gapStart: current.end_time,
-            gapEnd: next.start_time,
-            gapMinutes,
-          })
-          warnings.push(
-            `Gap of ${gapMinutes}m between "${current.label || i + 1}" (${current.end_time}) and "${
-              next.label || i + 2
-            }" (${next.start_time}).`
+            `Period "${active.label}" (${active.period.start_time}-${active.period.end_time}) overlaps with "${
+              evt.item.label
+            }" (${evt.item.period.start_time}-${evt.item.period.end_time}).`
           )
         }
       }
+      activeIntervals.add(evt.item)
+    }
+  }
+
+  // 3. Gap Detection between Chronologically Sorted Periods
+  const sortedByTime = [...validPeriods].sort((a, b) => a.startM - b.startM || a.endM - b.endM)
+  for (let j = 0; j < sortedByTime.length - 1; j++) {
+    const curr = sortedByTime[j]
+    const next = sortedByTime[j + 1]
+
+    if (next.startM > curr.endM) {
+      const gapMinutes = next.startM - curr.endM
+      gaps.push({
+        beforeIndex: curr.index,
+        afterIndex: next.index,
+        gapStart: curr.period.end_time,
+        gapEnd: next.period.start_time,
+        gapMinutes,
+      })
+      warnings.push(
+        `Gap of ${gapMinutes}m between "${curr.label}" (${curr.period.end_time}) and "${
+          next.label
+        }" (${next.period.start_time}).`
+      )
     }
   }
 

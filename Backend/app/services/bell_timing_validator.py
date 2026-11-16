@@ -41,6 +41,7 @@ def validate_period_sequence(periods: List[Dict[str, Any]], schedule_name: str =
 
     has_class_period = False
     seen_labels = set()
+    valid_periods = []
 
     for idx, p in enumerate(periods):
         p_num = p.get("period_number", idx + 1)
@@ -73,24 +74,50 @@ def validate_period_sequence(periods: List[Dict[str, Any]], schedule_name: str =
         if dur > MAX_PERIOD_DURATION_MINUTES:
             errors.append(f"{schedule_name} period '{label}': Duration ({dur}m) exceeds maximum {MAX_PERIOD_DURATION_MINUTES} minutes.")
 
-        # Overlap and gap check with next period
-        if idx < len(periods) - 1:
-            next_p = periods[idx + 1]
-            next_st_str = next_p.get("start_time", "")
-            try:
-                next_st = parse_time_to_minutes(next_st_str)
-                next_label = next_p.get("label") or f"Period {idx + 2}"
-                if et > next_st:
+        valid_periods.append({
+            "index": idx,
+            "label": label,
+            "st": st,
+            "et": et,
+            "st_str": st_str,
+            "et_str": et_str,
+        })
+
+    # Sweep-Line interval overlap detection O(N log N + k)
+    # END events have type 0, START events have type 1 so touching boundaries (e.g. 09:15 and 09:15) are valid.
+    sweep_events = []
+    for vp in valid_periods:
+        sweep_events.append((vp["et"], 0, vp))
+        sweep_events.append((vp["st"], 1, vp))
+
+    sweep_events.sort(key=lambda x: (x[0], x[1]))
+
+    active_intervals = []
+    recorded_overlaps = set()
+
+    for minute, evt_type, vp in sweep_events:
+        if evt_type == 0:
+            active_intervals = [act for act in active_intervals if act["index"] != vp["index"]]
+        else:
+            for active in active_intervals:
+                overlap_key = (min(active["index"], vp["index"]), max(active["index"], vp["index"]))
+                if overlap_key not in recorded_overlaps:
+                    recorded_overlaps.add(overlap_key)
                     errors.append(
-                        f"{schedule_name}: Period '{label}' ({st_str}-{et_str}) overlaps with '{next_label}' ({next_st_str}-{next_p.get('end_time')})."
+                        f"{schedule_name}: Period '{active['label']}' ({active['st_str']}-{active['et_str']}) overlaps with '{vp['label']}' ({vp['st_str']}-{vp['et_str']})."
                     )
-                elif next_st > et:
-                    gap = next_st - et
-                    warnings.append(
-                        f"{schedule_name}: Gap of {gap}m between '{label}' ({et_str}) and '{next_label}' ({next_st_str})."
-                    )
-            except ValueError:
-                pass
+            active_intervals.append(vp)
+
+    # Gap detection between chronologically sorted periods
+    sorted_by_time = sorted(valid_periods, key=lambda x: (x["st"], x["et"]))
+    for j in range(len(sorted_by_time) - 1):
+        curr = sorted_by_time[j]
+        next_p = sorted_by_time[j + 1]
+        if next_p["st"] > curr["et"]:
+            gap = next_p["st"] - curr["et"]
+            warnings.append(
+                f"{schedule_name}: Gap of {gap}m between '{curr['label']}' ({curr['et_str']}) and '{next_p['label']}' ({next_p['st_str']})."
+            )
 
     if not has_class_period:
         errors.append(f"{schedule_name}: Must have at least 1 Class period.")

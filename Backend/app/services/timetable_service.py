@@ -922,18 +922,25 @@ class TimetableService:
         )
         class_to_wing = {wc.class_id: wc.wing_id for wc in wing_classes}
 
+        sections_by_class: Dict[UUID, List[Section]] = {}
+        sections_by_wing: Dict[UUID, List[Section]] = {}
+        for s in all_sections:
+            sections_by_class.setdefault(s.class_id, []).append(s)
+            w_id = class_to_wing.get(s.class_id)
+            if w_id:
+                sections_by_wing.setdefault(w_id, []).append(s)
+
         sec_to_setup: Dict[UUID, UUID] = {}
         for a in assignments:
             if a.target_type == "SECTION":
                 sec_to_setup[a.target_id] = a.setup_id
             elif a.target_type == "CLASS":
-                for s in all_sections:
-                    if s.class_id == a.target_id and s.id not in sec_to_setup:
+                for s in sections_by_class.get(a.target_id, []):
+                    if s.id not in sec_to_setup:
                         sec_to_setup[s.id] = a.setup_id
             elif a.target_type == "WING":
-                for s in all_sections:
-                    w_id = class_to_wing.get(s.class_id)
-                    if w_id == a.target_id and s.id not in sec_to_setup:
+                for s in sections_by_wing.get(a.target_id, []):
+                    if s.id not in sec_to_setup:
                         sec_to_setup[s.id] = a.setup_id
 
         default_setup = next((s for s in setups if s.is_default), setups[0] if setups else None)
@@ -968,74 +975,98 @@ class TimetableService:
                 if sec_to_setup.get(sec.id, default_setup_id) == s.id
             ]
 
+            # Group canonical DB periods by schedule_id
+            periods_by_sch = {}
+            for p in periods:
+                sch_k = p.schedule_id or "regular"
+                periods_by_sch.setdefault(sch_k, []).append({
+                    "id": str(p.id),
+                    "school_id": p.school_id,
+                    "timetable_id": p.timetable_id,
+                    "setup_id": p.setup_id,
+                    "schedule_id": p.schedule_id,
+                    "period_number": p.period_number,
+                    "start_time": _format_time(p.start_time),
+                    "end_time": _format_time(p.end_time),
+                    "is_break": p.is_break,
+                    "period_type": p.period_type,
+                    "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
+                    "created_at": p.created_at,
+                    "updated_at": p.updated_at,
+                })
+
             schedules = []
             if s.schedules_json:
                 try:
-                    schedules = json.loads(s.schedules_json)
+                    raw_schedules = json.loads(s.schedules_json)
+                    for raw_sch in raw_schedules:
+                        sch_id = raw_sch.get("id") or "regular"
+                        sch_days = raw_sch.get("days") or []
+                        # Canonical periods derived directly from TimetablePeriod DB rows
+                        sch_periods = periods_by_sch.get(sch_id)
+                        if sch_periods is None:
+                            if len(raw_schedules) == 1 and len(periods_by_sch) == 1:
+                                sch_periods = list(periods_by_sch.values())[0]
+                            else:
+                                sch_periods = []
+                        schedules.append({
+                            "id": sch_id,
+                            "days": sch_days,
+                            "periods": sch_periods,
+                        })
                 except Exception:
                     schedules = []
 
-            # Auto-heal any string period IDs in schedules that are not valid active UUIDs
-            if schedules and periods:
-                needs_heal = False
-                active_p_id_strs = {str(p.id) for p in periods}
-                periods_by_sch_num = {(p.schedule_id or "default", p.period_number): p for p in periods}
-                periods_by_num = {p.period_number: p for p in periods}
-                for sch in schedules:
-                    sch_id = sch.get("id") or "default"
-                    for p_item in sch.get("periods", []):
-                        raw_pid = p_item.get("id")
-                        is_valid_active_uuid = False
-                        if raw_pid and str(raw_pid) in active_p_id_strs:
-                            is_valid_active_uuid = True
-                        if not is_valid_active_uuid:
-                            p_num = p_item.get("period_number")
-                            matched_db_p = periods_by_sch_num.get((sch_id, p_num)) or periods_by_num.get(p_num)
-                            if matched_db_p:
-                                p_item["id"] = str(matched_db_p.id)
-                                needs_heal = True
-                if needs_heal:
-                    s.schedules_json = json.dumps(schedules)
-                    self.db.commit()
-
             if not schedules:
-                # Synthesize default schedule from periods
+                # Synthesize default schedule directly from canonical database periods
+                reg_periods = periods_by_sch.get("regular") or [
+                    {
+                        "id": str(p.id),
+                        "school_id": p.school_id,
+                        "timetable_id": p.timetable_id,
+                        "setup_id": p.setup_id,
+                        "schedule_id": p.schedule_id or "regular",
+                        "period_number": p.period_number,
+                        "start_time": _format_time(p.start_time),
+                        "end_time": _format_time(p.end_time),
+                        "is_break": p.is_break,
+                        "period_type": p.period_type,
+                        "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
+                        "created_at": p.created_at,
+                        "updated_at": p.updated_at,
+                    }
+                    for p in periods
+                ]
                 schedules = [
                     {
                         "id": "regular",
                         "days": [d for d in applicable_days if d != "SATURDAY"],
-                        "periods": [
-                            {
-                                "id": str(p.id),
-                                "period_number": p.period_number,
-                                "start_time": _format_time(p.start_time),
-                                "end_time": _format_time(p.end_time),
-                                "is_break": p.is_break,
-                                "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
-                                "type": p.period_type or ("RECESS" if p.is_break else "CLASS"),
-                                "schedule_id": p.schedule_id or "regular",
-                            }
-                            for p in periods
-                        ],
+                        "periods": reg_periods,
                     }
                 ]
                 if "SATURDAY" in applicable_days:
+                    sat_periods = periods_by_sch.get("saturday") or [
+                        {
+                            "id": str(p.id),
+                            "school_id": p.school_id,
+                            "timetable_id": p.timetable_id,
+                            "setup_id": p.setup_id,
+                            "schedule_id": p.schedule_id or "saturday",
+                            "period_number": p.period_number,
+                            "start_time": _format_time(p.start_time),
+                            "end_time": _format_time(p.end_time),
+                            "is_break": p.is_break,
+                            "period_type": p.period_type,
+                            "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
+                            "created_at": p.created_at,
+                            "updated_at": p.updated_at,
+                        }
+                        for p in periods
+                    ]
                     schedules.append({
                         "id": "saturday",
                         "days": ["SATURDAY"],
-                        "periods": [
-                            {
-                                "id": str(p.id),
-                                "period_number": p.period_number,
-                                "start_time": _format_time(p.start_time),
-                                "end_time": _format_time(p.end_time),
-                                "is_break": p.is_break,
-                                "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
-                                "type": p.period_type or ("RECESS" if p.is_break else "CLASS"),
-                                "schedule_id": p.schedule_id or "saturday",
-                            }
-                            for p in periods
-                        ],
+                        "periods": sat_periods,
                     })
 
             result.append({
@@ -1048,24 +1079,6 @@ class TimetableService:
                 "order_index": s.order_index,
                 "version": s.version,
                 "applicable_days": applicable_days,
-                "periods": [
-                    {
-                        "id": p.id,
-                        "school_id": p.school_id,
-                        "timetable_id": p.timetable_id,
-                        "setup_id": p.setup_id,
-                        "schedule_id": p.schedule_id,
-                        "period_number": p.period_number,
-                        "start_time": _format_time(p.start_time),
-                        "end_time": _format_time(p.end_time),
-                        "is_break": p.is_break,
-                        "period_type": p.period_type,
-                        "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
-                        "created_at": p.created_at,
-                        "updated_at": p.updated_at,
-                    }
-                    for p in periods
-                ],
                 "schedules": schedules,
                 "assigned_classes_count": len(assigned_sec_ids),
                 "assigned_section_ids": assigned_sec_ids,
@@ -1073,6 +1086,190 @@ class TimetableService:
                 "updated_at": s.updated_at,
             })
         return result
+
+    def get_setup_read(self, school_id: UUID, setup_id: UUID) -> Dict[str, Any]:
+        """
+        Targeted, high-performance reader for a single setup.
+        Avoids the 6-query full school scan of list_setups.
+        """
+        setup = (
+            self.db.query(TimetableSetup)
+            .filter(
+                TimetableSetup.id == setup_id,
+                TimetableSetup.school_id == school_id,
+                TimetableSetup.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if not setup:
+            raise NotFoundException("Setup not found.")
+
+        # Read periods for this setup
+        periods = (
+            self.db.query(TimetablePeriod)
+            .filter(
+                TimetablePeriod.setup_id == setup_id,
+                TimetablePeriod.deleted_at.is_(None),
+            )
+            .order_by(TimetablePeriod.period_number.asc())
+            .all()
+        )
+
+        # Read assignments for this setup
+        assigned_section_ids = [
+            a[0]
+            for a in self.db.query(TimetableSetupAssignment.target_id)
+            .filter(
+                TimetableSetupAssignment.setup_id == setup_id,
+                TimetableSetupAssignment.target_type == "SECTION",
+                TimetableSetupAssignment.deleted_at.is_(None),
+            )
+            .all()
+        ]
+
+        # Applicable days
+        applicable_days = []
+        if setup.applicable_days:
+            try:
+                applicable_days = json.loads(setup.applicable_days)
+            except Exception:
+                applicable_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+
+        # Build schedules from canonical database periods
+        periods_by_sch = {}
+        for p in periods:
+            sch_k = p.schedule_id or "regular"
+            periods_by_sch.setdefault(sch_k, []).append({
+                "id": str(p.id),
+                "school_id": p.school_id,
+                "timetable_id": p.timetable_id,
+                "setup_id": p.setup_id,
+                "schedule_id": p.schedule_id,
+                "period_number": p.period_number,
+                "start_time": _format_time(p.start_time),
+                "end_time": _format_time(p.end_time),
+                "is_break": p.is_break,
+                "period_type": p.period_type,
+                "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
+                "created_at": p.created_at,
+                "updated_at": p.updated_at,
+            })
+
+        schedules = []
+        if setup.schedules_json:
+            try:
+                raw_schedules = json.loads(setup.schedules_json)
+                for raw_sch in raw_schedules:
+                    sch_id = raw_sch.get("id") or "regular"
+                    sch_days = raw_sch.get("days") or []
+                    sch_periods = periods_by_sch.get(sch_id)
+                    if sch_periods is None:
+                        if len(raw_schedules) == 1 and len(periods_by_sch) == 1:
+                            sch_periods = list(periods_by_sch.values())[0]
+                        else:
+                            sch_periods = []
+                    schedules.append({
+                        "id": sch_id,
+                        "days": sch_days,
+                        "periods": sch_periods,
+                    })
+            except Exception:
+                schedules = []
+
+        if not schedules:
+            schedules = [
+                {
+                    "id": "regular",
+                    "days": [d for d in applicable_days if d != "SATURDAY"],
+                    "periods": periods_by_sch.get("regular") or [
+                        {
+                            "id": str(p.id),
+                            "school_id": p.school_id,
+                            "timetable_id": p.timetable_id,
+                            "setup_id": p.setup_id,
+                            "schedule_id": p.schedule_id or "regular",
+                            "period_number": p.period_number,
+                            "start_time": _format_time(p.start_time),
+                            "end_time": _format_time(p.end_time),
+                            "is_break": p.is_break,
+                            "period_type": p.period_type,
+                            "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
+                            "created_at": p.created_at,
+                            "updated_at": p.updated_at,
+                        }
+                        for p in periods
+                    ],
+                }
+            ]
+            if "SATURDAY" in applicable_days:
+                schedules.append({
+                    "id": "saturday",
+                    "days": ["SATURDAY"],
+                    "periods": periods_by_sch.get("saturday") or [
+                        {
+                            "id": str(p.id),
+                            "school_id": p.school_id,
+                            "timetable_id": p.timetable_id,
+                            "setup_id": p.setup_id,
+                            "schedule_id": p.schedule_id or "saturday",
+                            "period_number": p.period_number,
+                            "start_time": _format_time(p.start_time),
+                            "end_time": _format_time(p.end_time),
+                            "is_break": p.is_break,
+                            "period_type": p.period_type,
+                            "label": p.label or ("RECESS" if p.is_break else f"P{p.period_number}"),
+                            "created_at": p.created_at,
+                            "updated_at": p.updated_at,
+                        }
+                        for p in periods
+                    ],
+                })
+
+        return {
+            "id": setup.id,
+            "school_id": setup.school_id,
+            "timetable_id": setup.timetable_id,
+            "name": setup.name,
+            "description": setup.description,
+            "is_default": setup.is_default,
+            "order_index": setup.order_index,
+            "version": setup.version,
+            "applicable_days": applicable_days,
+            "schedules": schedules,
+            "assigned_classes_count": len(assigned_section_ids),
+            "assigned_section_ids": assigned_section_ids,
+            "created_at": setup.created_at,
+            "updated_at": setup.updated_at,
+        }
+
+    def _touch_timetable(
+        self,
+        school_id: UUID,
+        timetable_id: UUID,
+        user_id: UUID,
+        now: Optional[datetime] = None,
+    ) -> Optional[Timetable]:
+        """
+        Locks the root aggregate Timetable row with FOR UPDATE and atomically increments
+        its version counter and updated_at timestamp. Guarantees aggregate-level consistency
+        across concurrent mutations.
+        """
+        now = now or datetime.now(timezone.utc)
+        tt = (
+            self.db.query(Timetable)
+            .filter(
+                Timetable.id == timetable_id,
+                Timetable.school_id == school_id,
+                Timetable.deleted_at.is_(None),
+            )
+            .with_for_update()
+            .first()
+        )
+        if tt:
+            tt.version = (tt.version or 1) + 1
+            tt.updated_at = now
+            tt.updated_by = user_id
+        return tt
 
     def create_setup(self, school_id: UUID, data: TimetableSetupCreate, user_id: UUID) -> TimetableSetup:
         self.get_timetable_by_id(school_id, data.timetable_id)
@@ -1106,6 +1303,7 @@ class TimetableService:
                 )
                 self.db.add(p)
 
+        self._touch_timetable(school_id, data.timetable_id, user_id)
         self.db.commit()
         self.db.refresh(setup)
         return setup
@@ -1114,13 +1312,14 @@ class TimetableService:
         s = (
             self.db.query(TimetableSetup)
             .filter(TimetableSetup.id == setup_id, TimetableSetup.school_id == school_id, TimetableSetup.deleted_at.is_(None))
+            .with_for_update()
             .first()
         )
         if not s:
             raise NotFoundException("Setup not found.")
 
-        if data.version is not None and s.version != data.version:
-            raise ConflictException("Setup has been modified by another user. Please reload.")
+        if data.version is not None and (s.version or 1) != int(data.version):
+            raise ConflictException(f"Setup '{s.name}' has been modified by another user. Please reload.")
 
         if data.name is not None:
             s.name = data.name
@@ -1136,17 +1335,18 @@ class TimetableService:
         if data.schedules is not None:
             all_errors = []
             for sch in data.schedules:
-                errs, _ = validate_period_sequence([p.model_dump() for p in sch.periods], sch.id or "Schedule")
+                errs, _ = validate_period_sequence([p.model_dump(mode="json") for p in sch.periods], sch.id or "Schedule")
                 all_errors.extend(errs)
-            day_errs = validate_setup_day_invariants({"name": s.name, "schedules": [sch.model_dump() for sch in data.schedules]})
+            day_errs = validate_setup_day_invariants({"name": s.name, "schedules": [sch.model_dump(mode="json") for sch in data.schedules]})
             all_errors.extend(day_errs)
             if all_errors:
                 raise UnprocessableEntityException("Schedule validation failed", errors=all_errors)
-            s.schedules_json = json.dumps([sch.model_dump() for sch in data.schedules])
+            s.schedules_json = json.dumps([sch.model_dump(mode="json") for sch in data.schedules], default=str)
 
-        s.version += 1
+        s.version = (s.version or 1) + 1
         s.updated_by = user_id
         s.updated_at = datetime.now(timezone.utc)
+        self._touch_timetable(school_id, s.timetable_id, user_id)
         self.db.commit()
         self.db.refresh(s)
         return s
@@ -1205,6 +1405,9 @@ class TimetableService:
             )
             self.db.add(cloned_p)
 
+        self._touch_timetable(school_id, s.timetable_id, user_id)
+        self.db.commit()
+        self._touch_timetable(school_id, s.timetable_id, user_id)
         self.db.commit()
         self.db.refresh(dup)
         return dup
@@ -1213,6 +1416,7 @@ class TimetableService:
         s = (
             self.db.query(TimetableSetup)
             .filter(TimetableSetup.id == setup_id, TimetableSetup.school_id == school_id, TimetableSetup.deleted_at.is_(None))
+            .with_for_update()
             .first()
         )
         if not s:
@@ -1261,12 +1465,14 @@ class TimetableService:
                 synchronize_session=False,
             )
 
+        self._touch_timetable(school_id, s.timetable_id, user_id, now)
         self.db.commit()
 
     def split_days(self, school_id: UUID, data: Any, user_id: UUID) -> TimetableSetup:
         s = (
             self.db.query(TimetableSetup)
             .filter(TimetableSetup.id == data.setup_id, TimetableSetup.school_id == school_id, TimetableSetup.deleted_at.is_(None))
+            .with_for_update()
             .first()
         )
         if not s:
@@ -1291,10 +1497,12 @@ class TimetableService:
         }
         schedules.append(new_sched)
 
-        s.schedules_json = json.dumps(schedules)
-        s.version += 1
+        now = datetime.now(timezone.utc)
+        s.schedules_json = json.dumps(schedules, default=str)
+        s.version = (s.version or 1) + 1
         s.updated_by = user_id
-        s.updated_at = datetime.now(timezone.utc)
+        s.updated_at = now
+        self._touch_timetable(school_id, s.timetable_id, user_id, now)
         self.db.commit()
         self.db.refresh(s)
         return s
@@ -1303,6 +1511,7 @@ class TimetableService:
         s = (
             self.db.query(TimetableSetup)
             .filter(TimetableSetup.id == data.setup_id, TimetableSetup.school_id == school_id, TimetableSetup.deleted_at.is_(None))
+            .with_for_update()
             .first()
         )
         if not s:
@@ -1317,10 +1526,12 @@ class TimetableService:
         target_sched["days"] = list(dict.fromkeys(target_sched.get("days", []) + source_sched.get("days", [])))
         schedules = [sch for sch in schedules if sch.get("id") != data.source_schedule_id]
 
-        s.schedules_json = json.dumps(schedules)
-        s.version += 1
+        now = datetime.now(timezone.utc)
+        s.schedules_json = json.dumps(schedules, default=str)
+        s.version = (s.version or 1) + 1
         s.updated_by = user_id
-        s.updated_at = datetime.now(timezone.utc)
+        s.updated_at = now
+        self._touch_timetable(school_id, s.timetable_id, user_id, now)
         self.db.commit()
         self.db.refresh(s)
         return s
@@ -1334,11 +1545,13 @@ class TimetableService:
                 TimetableSetup.timetable_id == data.timetable_id,
                 TimetableSetup.deleted_at.is_(None),
             )
+            .with_for_update()
             .first()
         )
         if not target_setup:
             raise NotFoundException("Target setup not found.")
 
+        now = datetime.now(timezone.utc)
         for sec_id in data.section_ids:
             existing = (
                 self.db.query(TimetableSetupAssignment)
@@ -1352,7 +1565,7 @@ class TimetableService:
             if existing:
                 existing.setup_id = target_setup.id
                 existing.updated_by = user_id
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.updated_at = now
             else:
                 new_assign = TimetableSetupAssignment(
                     school_id=school_id,
@@ -1365,6 +1578,7 @@ class TimetableService:
                 )
                 self.db.add(new_assign)
 
+        self._touch_timetable(school_id, data.timetable_id, user_id, now)
         self.db.commit()
         return {"message": f"Moved {len(data.section_ids)} class(es) to {target_setup.name}"}
 
@@ -1376,7 +1590,11 @@ class TimetableService:
     ) -> Dict[str, Any]:
         """Detect any slot removals or changes that would impact existing assignments."""
         affected_entries = []
-        for setup_dict in data.setups:
+        setups_data = [
+            s.model_dump(mode="json") if hasattr(s, "model_dump") else (dict(s) if isinstance(s, dict) else s)
+            for s in data.setups
+        ]
+        for setup_dict in setups_data:
             s_id_str = setup_dict.get("id")
             if not s_id_str:
                 continue
@@ -1429,12 +1647,46 @@ class TimetableService:
         Save multi-setup bell schedules and applicability tree assignments.
         Enforces zero orphan sections and complete schedule invariants.
         """
-        self.get_timetable_by_id(school_id, timetable_id)
         now = datetime.now(timezone.utc)
+        root_tt = self._touch_timetable(school_id, timetable_id, user_id, now)
+        if not root_tt:
+            raise NotFoundException("Timetable not found.")
 
-        # 1. Validation across all setups and schedules
+        setups_data = [
+            s.model_dump(mode="json") if hasattr(s, "model_dump") else (dict(s) if isinstance(s, dict) else s)
+            for s in data.setups
+        ]
+
+        # 1. Optimistic concurrency check: lock existing setups and verify versions
+        existing_db_setups = (
+            self.db.query(TimetableSetup)
+            .filter(
+                TimetableSetup.timetable_id == timetable_id,
+                TimetableSetup.deleted_at.is_(None),
+            )
+            .with_for_update()
+            .all()
+        )
+        existing_setups_by_id = {s.id: s for s in existing_db_setups}
+
+        for s_data in setups_data:
+            s_id_str = s_data.get("id")
+            s_version = s_data.get("version")
+            if s_id_str:
+                try:
+                    s_id = UUID(str(s_id_str))
+                    existing = existing_setups_by_id.get(s_id)
+                    if existing:
+                        if s_version is not None and (existing.version or 1) != int(s_version):
+                            raise ConflictException(
+                                f"Setup '{existing.name}' has been modified by another user (expected version {s_version}, current {existing.version}). Please reload."
+                            )
+                except ValueError:
+                    pass
+
+        # 2. Validation across all setups and schedules
         all_validation_errors = []
-        for s_data in data.setups:
+        for s_data in setups_data:
             s_name = s_data.get("name") or "Setup"
             schedules = s_data.get("schedules")
             if schedules:
@@ -1451,7 +1703,7 @@ class TimetableService:
         if all_validation_errors:
             raise UnprocessableEntityException("Validation error in bell schedule", errors=all_validation_errors)
 
-        # 2. Check orphan sections
+        # 3. Check orphan sections
         all_sections = (
             self.db.query(Section)
             .filter(Section.school_id == school_id, Section.deleted_at.is_(None))
@@ -1463,29 +1715,6 @@ class TimetableService:
             missing_secs = [s.id for s in all_sections if s.id not in assigned_sec_ids]
             if missing_secs:
                 raise UnprocessableEntityException("Every class section must be assigned to a bell setup.")
-
-        # 3. Optimistic concurrency check and setup/period preloading
-        existing_db_setups = (
-            self.db.query(TimetableSetup)
-            .filter(
-                TimetableSetup.timetable_id == timetable_id,
-                TimetableSetup.deleted_at.is_(None),
-            )
-            .all()
-        )
-        existing_setups_by_id = {s.id: s for s in existing_db_setups}
-
-        for s_data in data.setups:
-            s_id_str = s_data.get("id")
-            s_version = s_data.get("version")
-            if s_id_str and s_version is not None:
-                try:
-                    s_id = UUID(str(s_id_str))
-                    existing = existing_setups_by_id.get(s_id)
-                    if existing and (existing.version or 1) != (s_version or 1):
-                        raise ConflictException("Setup has been modified by another user. Please reload.")
-                except ValueError:
-                    pass
 
         # Preload all active periods for this timetable in a single batched query
         all_existing_periods = (
@@ -1503,15 +1732,15 @@ class TimetableService:
         # 4. Save setups and sync periods
         setup_id_map = {}
 
-        for idx, s_data in enumerate(data.setups):
+        for idx, s_data in enumerate(setups_data):
             s_id_str = s_data.get("id")
             s_name = s_data.get("name") or f"Setup {idx + 1}"
             s_desc = s_data.get("description")
             is_def = bool(s_data.get("is_default", idx == 0))
             app_days = s_data.get("applicable_days") or ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-            app_days_json = json.dumps(app_days) if isinstance(app_days, list) else str(app_days)
+            app_days_json = json.dumps(app_days, default=str) if isinstance(app_days, list) else str(app_days)
             schedules_list = s_data.get("schedules")
-            schedules_json = json.dumps(schedules_list) if schedules_list else None
+            schedules_json = json.dumps(schedules_list, default=str) if schedules_list else None
 
             setup_obj = None
             if s_id_str:
@@ -1682,7 +1911,7 @@ class TimetableService:
                         real_p_id = period_id_by_key.get((sch_id, p_num))
                         if real_p_id:
                             p["id"] = str(real_p_id)
-                setup_obj.schedules_json = json.dumps(schedules_list)
+                setup_obj.schedules_json = json.dumps(schedules_list, default=str)
 
         # Soft-delete removed setups
         saved_setup_ids = set(setup_id_map.values())
@@ -1769,18 +1998,25 @@ class TimetableService:
         )
         class_to_wing = {wc.class_id: wc.wing_id for wc in wing_classes}
 
+        sections_by_class: Dict[UUID, List[Section]] = {}
+        sections_by_wing: Dict[UUID, List[Section]] = {}
+        for s in all_sections:
+            sections_by_class.setdefault(s.class_id, []).append(s)
+            w_id = class_to_wing.get(s.class_id)
+            if w_id:
+                sections_by_wing.setdefault(w_id, []).append(s)
+
         sec_to_setup: Dict[UUID, UUID] = {}
         for a in assignments:
             if a.target_type == "SECTION":
                 sec_to_setup[a.target_id] = a.setup_id
             elif a.target_type == "CLASS":
-                for s in all_sections:
-                    if s.class_id == a.target_id and s.id not in sec_to_setup:
+                for s in sections_by_class.get(a.target_id, []):
+                    if s.id not in sec_to_setup:
                         sec_to_setup[s.id] = a.setup_id
             elif a.target_type == "WING":
-                for s in all_sections:
-                    w_id = class_to_wing.get(s.class_id)
-                    if w_id == a.target_id and s.id not in sec_to_setup:
+                for s in sections_by_wing.get(a.target_id, []):
+                    if s.id not in sec_to_setup:
                         sec_to_setup[s.id] = a.setup_id
 
         # Preload all active periods for all setups in this timetable
@@ -2035,7 +2271,13 @@ class TimetableService:
                     sec_setup_id = sec_to_setup_id.get(s.id)
                     setup_obj = next((st for st in setups_data if st["id"] == sec_setup_id), setups_data[0] if setups_data else None)
 
-                    setup_periods = setup_obj.get("periods", []) if setup_obj else []
+                    setup_periods = []
+                    if setup_obj:
+                        obj_scheds = setup_obj.get("schedules") or []
+                        if obj_scheds and obj_scheds[0].get("periods"):
+                            setup_periods = obj_scheds[0]["periods"]
+                        else:
+                            setup_periods = setup_obj.get("periods", [])
                     teaching_periods = [p for p in setup_periods if not p.get("is_break")]
                     num_days = len(setup_obj.get("applicable_days", ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"])) if setup_obj else 5
                     total_expected_slots = len(teaching_periods) * num_days

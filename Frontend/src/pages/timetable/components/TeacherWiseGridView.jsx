@@ -44,8 +44,9 @@ export function TeacherWiseGridView({
 
   // Master periods across setups or entries
   const masterPeriods = useMemo(() => {
-    if (setups.length > 0 && setups[0]?.periods?.length > 0) {
-      return [...setups[0].periods].sort((a, b) => a.period_number - b.period_number)
+    const firstPeriods = setups[0]?.schedules?.[0]?.periods || setups[0]?.periods || []
+    if (setups.length > 0 && firstPeriods.length > 0) {
+      return [...firstPeriods].sort((a, b) => a.period_number - b.period_number)
     }
     const map = new Map()
     for (const e of entries) {

@@ -8,6 +8,7 @@ import {
   formatMinutes,
   addMinutesToTime,
   calculateDuration,
+  toMinutes,
 } from "./timeUtils"
 import {
   MIN_PERIOD_DURATION_MINUTES,
@@ -168,12 +169,15 @@ export function createDefaultSetup(name = "Setup 1", index = 1, workingDays = AL
 }
 
 /**
- * Deep clones setups and assignments for history.
+ * Captures an immutable structural snapshot of setups and assignments for history.
+ * Leverages structural sharing: because all reducer operations produce new branch references
+ * and never mutate state nodes in-place, storing state references avoids expensive recursive
+ * JSON.parse/stringify serialization and eliminates GC pauses during timeline boundary drags.
  */
 function cloneState(state) {
   return {
-    setups: JSON.parse(JSON.stringify(state.setups)),
-    sectionAssignments: { ...state.sectionAssignments },
+    setups: state.setups,
+    sectionAssignments: state.sectionAssignments,
     activeSetupId: state.activeSetupId,
     activeScheduleId: state.activeScheduleId,
   }
@@ -289,10 +293,11 @@ export function bellTimingReducer(state, action) {
       if (action.payload?.sourceSetupId) {
         const source = state.setups.find((s) => s.id === action.payload.sourceSetupId)
         if (source) {
-          newSetup.schedules = JSON.parse(JSON.stringify(source.schedules)).map((sch, i) => ({
+          newSetup.schedules = (source.schedules || []).map((sch, i) => ({
             ...sch,
             id: `sched-${Date.now()}-${i}`,
-            periods: sch.periods.map((p) => ({
+            days: [...(sch.days || [])],
+            periods: (sch.periods || []).map((p) => ({
               ...p,
               id: generateUUID(),
             })),
@@ -314,10 +319,11 @@ export function bellTimingReducer(state, action) {
       if (action.payload?.sourceSetupId) {
         const source = state.setups.find((s) => s.id === action.payload.sourceSetupId)
         if (source) {
-          newSetup.schedules = JSON.parse(JSON.stringify(source.schedules)).map((sch, i) => ({
+          newSetup.schedules = (source.schedules || []).map((sch, i) => ({
             ...sch,
             id: `sched-${Date.now()}-${i}`,
-            periods: sch.periods.map((p) => ({
+            days: [...(sch.days || [])],
+            periods: (sch.periods || []).map((p) => ({
               ...p,
               id: generateUUID(),
             })),
@@ -357,15 +363,17 @@ export function bellTimingReducer(state, action) {
       const nextIdx = state.setups.length + 1
       const newId = generateUUID()
       const duplicated = {
-        ...JSON.parse(JSON.stringify(source)),
+        ...source,
         id: newId,
         name: `Copy of ${source.name}`,
         order: nextIdx,
         is_default: false,
-        schedules: source.schedules.map((sch, i) => ({
-          ...JSON.parse(JSON.stringify(sch)),
+        applicable_days: [...(source.applicable_days || [])],
+        schedules: (source.schedules || []).map((sch, i) => ({
+          ...sch,
           id: `sched-${Date.now()}-${i}`,
-          periods: sch.periods.map((p) => ({
+          days: [...(sch.days || [])],
+          periods: (sch.periods || []).map((p) => ({
             ...p,
             id: generateUUID(),
           })),
@@ -422,7 +430,7 @@ export function bellTimingReducer(state, action) {
 
           // Handle cascade
           if (cascadeMode === "shift") {
-            let lastEnd = parseTime(newPeriod.end_time).totalMinutes
+            let lastEnd = toMinutes(newPeriod.end_time)
             for (let i = insertIdx + 1; i < periods.length; i++) {
               const p = { ...periods[i] }
               const dur = calculateDuration(p.start_time, p.end_time)
@@ -483,8 +491,8 @@ export function bellTimingReducer(state, action) {
 
           periods[periodIndex] = current
 
-          const startDelta = parseTime(current.start_time).totalMinutes - parseTime(oldStart).totalMinutes
-          const endDelta = parseTime(current.end_time).totalMinutes - parseTime(oldEnd).totalMinutes
+          const startDelta = toMinutes(current.start_time) - toMinutes(oldStart)
+          const endDelta = toMinutes(current.end_time) - toMinutes(oldEnd)
 
           if (periodIndex === 0 && shiftEntireDay && startDelta !== 0) {
             // Shift every following period by startDelta
@@ -496,7 +504,7 @@ export function bellTimingReducer(state, action) {
             }
           } else if (cascadeMode === "shift" && endDelta !== 0) {
             // Shift all downstream periods by endDelta
-            let lastEnd = parseTime(current.end_time).totalMinutes
+            let lastEnd = toMinutes(current.end_time)
             for (let i = periodIndex + 1; i < periods.length; i++) {
               const p = { ...periods[i] }
               const dur = calculateDuration(p.start_time, p.end_time)
@@ -565,8 +573,8 @@ export function bellTimingReducer(state, action) {
           let periods = sch.periods.map((p) => ({ ...p }))
           if (isFirst || boundaryIndex === 0) {
             if (periods[0]) {
-              const endM = parseTime(periods[0].end_time)?.totalMinutes ?? 0
-              let newStartM = parseTime(newTime)?.totalMinutes ?? 0
+              const endM = toMinutes(periods[0].end_time)
+              let newStartM = toMinutes(newTime)
               // Enforce 5m min and 180m max period duration
               if (endM - newStartM < MIN_PERIOD_DURATION_MINUTES) {
                 newStartM = endM - MIN_PERIOD_DURATION_MINUTES
@@ -578,8 +586,8 @@ export function bellTimingReducer(state, action) {
           } else {
             const idx = boundaryIndex > 0 ? boundaryIndex - 1 : 0
             if (periods[idx]) {
-              const startM = parseTime(periods[idx].start_time)?.totalMinutes ?? 0
-              let newEndM = parseTime(newTime)?.totalMinutes ?? 0
+              const startM = toMinutes(periods[idx].start_time)
+              let newEndM = toMinutes(newTime)
               // Enforce 5m min and 180m max period duration
               if (newEndM - startM < MIN_PERIOD_DURATION_MINUTES) {
                 newEndM = startM + MIN_PERIOD_DURATION_MINUTES
@@ -633,7 +641,7 @@ export function bellTimingReducer(state, action) {
         const newSchedule = {
           id: newSchedId,
           days: sortDays(daysToSplit),
-          periods: JSON.parse(JSON.stringify(sourceSchedule.periods)).map((p) => ({
+          periods: (sourceSchedule.periods || []).map((p) => ({
             ...p,
             id: generateUUID(),
           })),

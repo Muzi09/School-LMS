@@ -619,9 +619,7 @@ def create_setup(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     setup = service.create_setup(school_id=school_id, data=data, user_id=current_user.id)
-    setups = service.list_setups(school_id=school_id, timetable_id=data.timetable_id)
-    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
-    return matched or setups[0]
+    return service.get_setup_read(school_id=school_id, setup_id=setup.id)
 
 
 @router.put(
@@ -639,9 +637,7 @@ def update_setup(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     setup = service.update_setup(school_id=school_id, setup_id=setup_id, data=data, user_id=current_user.id)
-    setups = service.list_setups(school_id=school_id, timetable_id=setup.timetable_id)
-    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
-    return matched or setups[0]
+    return service.get_setup_read(school_id=school_id, setup_id=setup.id)
 
 
 @router.post(
@@ -658,9 +654,7 @@ def duplicate_setup(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     setup = service.duplicate_setup(school_id=school_id, setup_id=setup_id, user_id=current_user.id)
-    setups = service.list_setups(school_id=school_id, timetable_id=setup.timetable_id)
-    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
-    return matched or setups[0]
+    return service.get_setup_read(school_id=school_id, setup_id=setup.id)
 
 
 @router.delete(
@@ -728,9 +722,7 @@ def split_days(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     setup = service.split_days(school_id=school_id, data=data, user_id=current_user.id)
-    setups = service.list_setups(school_id=school_id, timetable_id=setup.timetable_id)
-    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
-    return matched or setups[0]
+    return service.get_setup_read(school_id=school_id, setup_id=setup.id)
 
 
 @router.post(
@@ -747,9 +739,7 @@ def merge_days(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     setup = service.merge_days(school_id=school_id, data=data, user_id=current_user.id)
-    setups = service.list_setups(school_id=school_id, timetable_id=setup.timetable_id)
-    matched = next((s for s in setups if str(s["id"]) == str(setup.id)), None)
-    return matched or setups[0]
+    return service.get_setup_read(school_id=school_id, setup_id=setup.id)
 
 
 @router.post(

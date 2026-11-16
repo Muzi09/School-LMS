@@ -618,6 +618,7 @@ export function BellScheduleSetupModal({
           description: s.description,
           is_default: idx === 0,
           order_index: idx,
+          version: s.version ?? 1,
           applicable_days: s.applicable_days,
           schedules: s.schedules,
         })),

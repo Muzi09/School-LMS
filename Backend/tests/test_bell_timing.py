@@ -49,6 +49,24 @@ def test_validate_period_sequence_overlap_and_crossing_midnight():
     errors_ol, _ = validate_period_sequence(periods_overlap)
     assert any("overlaps with" in e for e in errors_ol)
 
+    # Multi-period non-adjacent overlap caught by Sweep-Line
+    periods_multi = [
+        {"period_number": 1, "start_time": "08:30", "end_time": "10:30", "type": "CLASS", "label": "Block"},
+        {"period_number": 2, "start_time": "08:45", "end_time": "09:15", "type": "CLASS", "label": "P1"},
+        {"period_number": 3, "start_time": "09:30", "end_time": "10:00", "type": "CLASS", "label": "P2"},
+    ]
+    errs_multi, _ = validate_period_sequence(periods_multi)
+    assert any("Block" in e and "P1" in e for e in errs_multi)
+    assert any("Block" in e and "P2" in e for e in errs_multi)
+
+    # Out of chronological order periods
+    periods_ooo = [
+        {"period_number": 2, "start_time": "10:00", "end_time": "10:45", "type": "CLASS", "label": "P2"},
+        {"period_number": 1, "start_time": "09:30", "end_time": "10:15", "type": "CLASS", "label": "P1"},
+    ]
+    errs_ooo, _ = validate_period_sequence(periods_ooo)
+    assert any("overlaps with" in e for e in errs_ooo)
+
 
 def test_validate_period_sequence_min_max_duration():
     # Less than 5 min
@@ -210,6 +228,80 @@ def test_concurrency_conflict_raises_409():
             user_id=uuid4(),
         )
     assert exc_info.value.status_code == 409
+    db.rollback()
+    db.close()
+
+
+def test_batch_save_concurrency_conflict_raises_409():
+    from app.core.database import SessionLocal
+    from app.services.timetable_service import TimetableService
+    from app.models.timetable import TimetableSetup, Timetable
+    from app.schemas.timetable import BatchSetupAssignmentsRequest
+
+    db = SessionLocal()
+    service = TimetableService(db=db)
+    setup = (
+        db.query(TimetableSetup)
+        .join(Timetable, Timetable.id == TimetableSetup.timetable_id)
+        .filter(TimetableSetup.deleted_at.is_(None), Timetable.deleted_at.is_(None))
+        .first()
+    )
+    if not setup:
+        db.close()
+        return
+
+    # Pass an outdated version for the setup in batch save
+    stale_version = (setup.version or 1) - 1
+    payload = BatchSetupAssignmentsRequest(
+        timetable_id=setup.timetable_id,
+        setups=[
+            {
+                "id": str(setup.id),
+                "name": setup.name,
+                "version": stale_version,
+                "schedules": [
+                    {
+                        "id": "regular",
+                        "days": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"],
+                        "periods": [
+                            {"period_number": 1, "start_time": "08:30", "end_time": "09:15", "type": "CLASS", "label": "P1"},
+                        ],
+                    }
+                ],
+            }
+        ],
+        assignments=[],
+    )
+    with pytest.raises(ConflictException) as exc_info:
+        service.batch_save_setups(
+            school_id=setup.school_id,
+            timetable_id=setup.timetable_id,
+            data=payload,
+            user_id=uuid4(),
+        )
+    assert exc_info.value.status_code == 409
+    assert "has been modified by another user" in str(exc_info.value.message)
+    db.rollback()
+    db.close()
+
+
+def test_aggregate_timetable_version_bumping():
+    from app.core.database import SessionLocal
+    from app.services.timetable_service import TimetableService
+    from app.models.timetable import Timetable
+
+    db = SessionLocal()
+    service = TimetableService(db=db)
+    tt = db.query(Timetable).filter(Timetable.deleted_at.is_(None)).first()
+    if not tt:
+        db.close()
+        return
+
+    prev_version = tt.version or 1
+    touched = service._touch_timetable(school_id=tt.school_id, timetable_id=tt.id, user_id=uuid4())
+    db.commit()
+    db.refresh(tt)
+    assert tt.version == prev_version + 1
     db.close()
 
 
@@ -324,5 +416,61 @@ def test_string_period_id_in_schemas():
     )
     assert bulk_req.period_id == "p-3-1794130451420"
     assert bulk_req.apply_days == ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY"]
+
+
+def test_setup_period_item_accepts_uuid_and_string():
+    from app.schemas.timetable import SetupPeriodItem
+    from uuid import uuid4
+
+    # Must accept UUID without error
+    uid = uuid4()
+    p1 = SetupPeriodItem(
+        id=uid,
+        period_number=1,
+        start_time="08:00",
+        end_time="08:45",
+        period_type="CLASS",
+    )
+    assert p1.id == uid
+    dump1 = p1.model_dump(mode="json")
+    assert dump1["id"] == str(uid)
+
+    # Must accept string without error
+    p2 = SetupPeriodItem(
+        id="p-temp-1",
+        period_number=2,
+        start_time="08:45",
+        end_time="09:30",
+    )
+    assert p2.id == "p-temp-1"
+
+
+def test_class_wise_and_setups_response_models():
+    from app.core.database import SessionLocal
+    from app.services.timetable_service import TimetableService
+    from app.models.timetable import Timetable
+    from app.schemas.timetable import ClassWiseTimetableResponse, TimetableSetupRead
+    from pydantic import TypeAdapter
+
+    db = SessionLocal()
+    service = TimetableService(db=db)
+    tt = db.query(Timetable).filter(Timetable.deleted_at.is_(None)).first()
+    if not tt:
+        db.close()
+        return
+
+    # Verify get_class_wise_timetable serializes against ClassWiseTimetableResponse
+    res = service.get_class_wise_timetable(school_id=tt.school_id, timetable_id=tt.id)
+    validated = ClassWiseTimetableResponse.model_validate(res)
+    assert validated.timetable.id == tt.id
+
+    # Verify list_setups serializes against List[TimetableSetupRead]
+    setups = service.list_setups(school_id=tt.school_id, timetable_id=tt.id)
+    adapter = TypeAdapter(list[TimetableSetupRead])
+    validated_setups = adapter.validate_python(setups)
+    assert len(validated_setups) == len(setups)
+
+    db.close()
+
 
 

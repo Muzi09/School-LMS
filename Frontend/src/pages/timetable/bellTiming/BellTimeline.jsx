@@ -16,6 +16,7 @@ import {
   formatMinutes,
   calculateDuration,
   formatDurationHuman,
+  toMinutes,
 } from "./timeUtils"
 import { PERIOD_TYPES, formatPeriodShortLabel, MIN_PERIOD_DURATION_MINUTES } from "./validators"
 import { cn } from "@/lib/utils"
@@ -45,8 +46,8 @@ export function BellTimeline({
 
     if (isFirst || boundaryIndex === 0) {
       if (cloned[0]) {
-        const endM = parseTime(cloned[0].end_time)?.totalMinutes ?? 0
-        let newStartM = parseTime(newTime)?.totalMinutes ?? 0
+        const endM = toMinutes(cloned[0].end_time)
+        let newStartM = toMinutes(newTime)
         if (endM - newStartM < MIN_PERIOD_DURATION_MINUTES) newStartM = endM - MIN_PERIOD_DURATION_MINUTES
         else if (endM - newStartM > 180) newStartM = endM - 180
         cloned[0].start_time = formatMinutes(Math.max(0, newStartM))
@@ -54,8 +55,8 @@ export function BellTimeline({
     } else {
       const idx = boundaryIndex > 0 ? boundaryIndex - 1 : 0
       if (cloned[idx]) {
-        const startM = parseTime(cloned[idx].start_time)?.totalMinutes ?? 0
-        let newEndM = parseTime(newTime)?.totalMinutes ?? 0
+        const startM = toMinutes(cloned[idx].start_time)
+        let newEndM = toMinutes(newTime)
         if (newEndM - startM < MIN_PERIOD_DURATION_MINUTES) newEndM = startM + MIN_PERIOD_DURATION_MINUTES
         else if (newEndM - startM > 180) newEndM = startM + 180
         const clampedNewTime = formatMinutes(newEndM)
@@ -83,8 +84,8 @@ export function BellTimeline({
     const now = new Date()
     const nowMin = now.getHours() * 60 + now.getMinutes()
     const active = displayPeriods.find((p) => {
-      const s = parseTime(p.start_time)?.totalMinutes ?? -1
-      const e = parseTime(p.end_time)?.totalMinutes ?? -1
+      const s = toMinutes(p.start_time)
+      const e = toMinutes(p.end_time)
       return nowMin >= s && nowMin < e
     })
     return active ? active.id : null

@@ -149,8 +149,8 @@ export const ClassWiseCard = memo(function ClassWiseCard({
       // Fallback
       const satSched = rawSchedules?.find?.((s) => s.id === "saturday" || (s.days || []).some((d) => String(d).toUpperCase() === "SATURDAY"))
       const wkSched = rawSchedules?.find?.((s) => s.id !== "saturday" && !(s.days || []).every((d) => String(d).toUpperCase() === "SATURDAY"))
-      const rawWeekdayPeriods = wkSched?.periods || setup.periods || []
-      const rawSaturdayPeriods = satSched?.periods || setup.periods || []
+      const rawWeekdayPeriods = wkSched?.periods || setup.schedules?.[0]?.periods || setup.periods || []
+      const rawSaturdayPeriods = satSched?.periods || setup.schedules?.[1]?.periods || setup.periods || []
       const sortedWeekday = [...rawWeekdayPeriods].sort((a, b) => a.period_number - b.period_number)
       const sortedSaturday = [...rawSaturdayPeriods].sort((a, b) => a.period_number - b.period_number)
 

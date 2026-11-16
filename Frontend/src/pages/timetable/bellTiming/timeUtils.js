@@ -92,11 +92,53 @@ export function formatMinutes(totalMinutes) {
 }
 
 /**
- * Returns total minutes from midnight for a "HH:mm" string.
+ * Returns total minutes from midnight for a "HH:mm" string or numeric minutes.
+ * Ultra-fast path for standard "HH:mm" strings avoids regex and object allocation.
  */
-export function toMinutes(timeStr) {
-  const parsed = parseTime(timeStr)
+export function toMinutes(timeInput) {
+  if (typeof timeInput === "number") {
+    return isNaN(timeInput) ? 0 : Math.round(timeInput)
+  }
+  if (!timeInput || typeof timeInput !== "string") return 0
+
+  // Ultra-fast path for standard "HH:mm" or "H:mm"
+  const colIdx = timeInput.indexOf(":")
+  if (colIdx >= 1 && colIdx <= 2) {
+    const h = parseInt(timeInput.slice(0, colIdx), 10)
+    const m = parseInt(timeInput.slice(colIdx + 1, colIdx + 3), 10)
+    if (!isNaN(h) && !isNaN(m) && h >= 0 && h < 24 && m >= 0 && m < 60 && timeInput.length <= 5) {
+      return h * 60 + m
+    }
+  }
+
+  const parsed = parseTime(timeInput)
   return parsed ? parsed.totalMinutes : 0
+}
+
+/**
+ * Fast numeric comparison: checks if two times are identical in minutes.
+ */
+export function areTimesEqual(timeA, timeB) {
+  return toMinutes(timeA) === toMinutes(timeB)
+}
+
+/**
+ * Fast numeric difference: returns (timeB - timeA) in minutes.
+ */
+export function timeDiffMinutes(timeA, timeB) {
+  return toMinutes(timeB) - toMinutes(timeA)
+}
+
+/**
+ * Checks if interval [startA, endA) overlaps with interval [startB, endB).
+ * Intervals touching flush (endA === startB) do NOT overlap.
+ */
+export function doIntervalsOverlap(startA, endA, startB, endB) {
+  const sA = toMinutes(startA)
+  const eA = toMinutes(endA)
+  const sB = toMinutes(startB)
+  const eB = toMinutes(endB)
+  return Math.max(sA, sB) < Math.min(eA, eB)
 }
 
 /**
@@ -124,23 +166,18 @@ export function format24h(timeInput) {
 }
 
 /**
- * Calculates duration in minutes between start and end "HH:mm" strings.
- * Returns negative if end < start.
+ * Calculates duration in minutes between start and end times.
+ * Operates purely on numeric minutes. Returns negative if end < start.
  */
 export function calculateDuration(startTime, endTime) {
-  const s = parseTime(startTime)
-  const e = parseTime(endTime)
-  if (!s || !e) return 0
-  return e.totalMinutes - s.totalMinutes
+  return toMinutes(endTime) - toMinutes(startTime)
 }
 
 /**
- * Adds minutes to a "HH:mm" string, returning "HH:mm".
+ * Adds minutes to a time input, returning formatted "HH:mm".
  */
 export function addMinutesToTime(timeStr, minutesToAdd) {
-  const parsed = parseTime(timeStr)
-  if (!parsed) return timeStr
-  const nextMin = parsed.totalMinutes + minutesToAdd
+  const nextMin = toMinutes(timeStr) + minutesToAdd
   return formatMinutes(nextMin)
 }
 
