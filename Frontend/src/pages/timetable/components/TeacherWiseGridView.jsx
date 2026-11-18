@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
+import React, { useState, useMemo, useCallback, useRef, useEffect, Fragment } from "react"
 import {
   User,
   Coffee,
@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getSubjectTheme } from "../subjectTheme"
-import { getShortSubjectName, isAcademicSubject } from "../subjectShortName"
+import { getShortSubjectName, isAcademicSubject, buildRowGroups } from "../subjectShortName"
 import { cn } from "@/lib/utils"
 import { TeacherWiseCell } from "./TeacherWiseCell"
 import { TeacherSlotAssignmentDialog } from "./TeacherSlotAssignmentDialog"
@@ -528,20 +528,8 @@ export function TeacherWiseGridView({
           .map((s) => s.label || `${s.class_name || ""} ${s.name || ""}`.trim())
           .join(", ")
 
-        // Adaptive 2-Row Micro-Tokens distribution
-        const academicStats = subjectStatsList.filter(isAcademicSubject)
-        const nonAcademicStats = subjectStatsList.filter((s) => !isAcademicSubject(s))
-
-        const tokens = []
-        academicStats.forEach((s) => tokens.push({ ...s, isAcademic: true }))
-        if (academicStats.length > 0 && nonAcademicStats.length > 0) {
-          tokens.push({ isDivider: true, id: "divider" })
-        }
-        nonAcademicStats.forEach((s) => tokens.push({ ...s, isAcademic: false }))
-
-        const mid = Math.ceil(tokens.length / 2)
-        const row1Tokens = tokens.slice(0, mid)
-        const row2Tokens = tokens.slice(mid)
+        // 2-Row Micro-Tokens distribution with "Acad :" and "Non Acad :" headers
+        const { row1Groups, row2Groups } = buildRowGroups(subjectStatsList || [])
 
         return (
           <div
@@ -564,13 +552,20 @@ export function TeacherWiseGridView({
                     </span>
                   </div>
 
-                  {/* Line 2: Class Teacher Info (or Department if not Class Teacher) */}
-                  <div className="flex items-center gap-1 text-[11px] truncate font-medium">
+                  {/* Line 2: Class Teacher Info (Compact CT: <ctLabel>, tooltip gives full Class Teacher) */}
+                  <div
+                    className="flex items-center gap-1 text-[11px] truncate font-medium cursor-default"
+                    title={
+                      isClassTeacher
+                        ? `Class Teacher: ${ctLabel}${dept ? ` • ${dept}` : ""}`
+                        : (dept || teacher.designation || "Faculty")
+                    }
+                  >
                     {isClassTeacher ? (
                       <>
                         <GraduationCap className="size-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span className="text-emerald-700 dark:text-emerald-300 font-semibold truncate">
-                          Class Teacher: {ctLabel}
+                        <span className="text-emerald-700 dark:text-emerald-300 font-medium truncate">
+                          <span className="font-semibold">CT:</span> {ctLabel}
                         </span>
                         {dept && (
                           <>
@@ -588,144 +583,148 @@ export function TeacherWiseGridView({
                 </div>
               </div>
 
-              {/* Center Zone: Adaptive 2-Row Micro-Tokens Matrix (No Badges, No Tooltips) */}
+              {/* Center Zone: 2-Row Micro-Tokens Matrix (Acad : and Non Acad : headers, subtle subject names) */}
               <div className="flex-1 min-w-0 flex flex-col justify-center gap-1 px-3 border-x border-border/50 overflow-x-auto scrollbar-none">
                 {/* Row 1 */}
                 <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none">
-                  {row1Tokens.map((item, idx) => {
-                    if (item.isDivider) {
-                      return (
-                        <span
-                          key={`t-r1-div-${idx}`}
-                          className="text-border/80 select-none text-xs font-light px-0.5"
-                        >
+                  {row1Groups.map((group, gIdx) => (
+                    <Fragment key={`t-r1-group-${gIdx}`}>
+                      {gIdx > 0 && (
+                        <span className="text-border/80 select-none text-xs font-light px-0.5">
                           │
                         </span>
-                      )
-                    }
-                    const theme = getSubjectTheme(item.subject_name, item.category)
-                    const shortName = getShortSubjectName(item.subject_name, item.subject_code)
-                    const isUnder = item.assigned < item.target
-                    const isOver = item.assigned > item.target
-                    const isMet = item.assigned === item.target
-
-                    return (
-                      <span
-                        key={`t-r1-${item.section?.id}_${item.subject_id || idx}`}
-                        className="inline-flex items-center gap-1 text-[11px] font-medium leading-none whitespace-nowrap shrink-0 select-none"
-                      >
-                        {item.isAcademic ? (
-                          <span
-                            className={cn(
-                              "size-1.5 rounded-full shrink-0",
-                              isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
-                            )}
-                          />
-                        ) : (
-                          <span
-                            className={cn(
-                              "text-[9px] leading-none shrink-0 font-bold",
-                              isOver
-                                ? "text-amber-500"
-                                : isMet
-                                ? "text-emerald-500"
-                                : "text-amber-600 dark:text-amber-400"
-                            )}
-                          >
-                            ✦
-                          </span>
-                        )}
-                        <span
-                          className={cn(
-                            "font-semibold text-foreground/90",
-                            isOver && "text-amber-700 dark:text-amber-300 font-bold"
-                          )}
-                        >
-                          {shortName}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground/80 font-normal">
-                          ({item.class_section_label})
-                        </span>
-                        <span
-                          className={cn(
-                            "text-[10px] font-mono text-muted-foreground",
-                            isOver && "font-bold text-amber-700 dark:text-amber-300"
-                          )}
-                        >
-                          {item.assigned || 0}/{item.target || 0}
-                        </span>
+                      )}
+                      <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider shrink-0 select-none pr-0.5">
+                        {group.label}
                       </span>
-                    )
-                  })}
+                      {group.items.map((item, idx) => {
+                        const theme = getSubjectTheme(item.subject_name, item.category)
+                        const shortName = getShortSubjectName(item.subject_name, item.subject_code)
+                        const isUnder = item.assigned < item.target
+                        const isOver = item.assigned > item.target
+                        const isMet = item.assigned === item.target
+
+                        return (
+                          <span
+                            key={`t-r1-${item.section?.id}_${item.subject_id || idx}`}
+                            className="inline-flex items-center gap-1 text-[11px] leading-none whitespace-nowrap shrink-0 select-none"
+                          >
+                            {group.isAcademic ? (
+                              <span
+                                className={cn(
+                                  "size-1.5 rounded-full shrink-0",
+                                  isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
+                                )}
+                              />
+                            ) : (
+                              <span
+                                className={cn(
+                                  "text-[9px] leading-none shrink-0 font-bold",
+                                  isOver
+                                    ? "text-amber-500"
+                                    : isMet
+                                    ? "text-emerald-500"
+                                    : "text-amber-600/90 dark:text-amber-400/90"
+                                )}
+                              >
+                                ✦
+                              </span>
+                            )}
+                            <span
+                              className={cn(
+                                "font-normal text-muted-foreground/90 hover:text-foreground/90 transition-colors",
+                                isOver && "text-amber-700 dark:text-amber-300 font-medium"
+                              )}
+                            >
+                              {shortName}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/60 font-normal">
+                              ({item.class_section_label})
+                            </span>
+                            <span
+                              className={cn(
+                                "text-[10px] font-mono text-muted-foreground/75",
+                                isOver && "font-semibold text-amber-700 dark:text-amber-300"
+                              )}
+                            >
+                              {item.assigned || 0}/{item.target || 0}
+                            </span>
+                          </span>
+                        )
+                      })}
+                    </Fragment>
+                  ))}
                 </div>
 
                 {/* Row 2 */}
                 <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none">
-                  {row2Tokens.map((item, idx) => {
-                    if (item.isDivider) {
-                      return (
-                        <span
-                          key={`t-r2-div-${idx}`}
-                          className="text-border/80 select-none text-xs font-light px-0.5"
-                        >
+                  {row2Groups.map((group, gIdx) => (
+                    <Fragment key={`t-r2-group-${gIdx}`}>
+                      {gIdx > 0 && (
+                        <span className="text-border/80 select-none text-xs font-light px-0.5">
                           │
                         </span>
-                      )
-                    }
-                    const theme = getSubjectTheme(item.subject_name, item.category)
-                    const shortName = getShortSubjectName(item.subject_name, item.subject_code)
-                    const isUnder = item.assigned < item.target
-                    const isOver = item.assigned > item.target
-                    const isMet = item.assigned === item.target
-
-                    return (
-                      <span
-                        key={`t-r2-${item.section?.id}_${item.subject_id || idx}`}
-                        className="inline-flex items-center gap-1 text-[11px] font-medium leading-none whitespace-nowrap shrink-0 select-none"
-                      >
-                        {item.isAcademic ? (
-                          <span
-                            className={cn(
-                              "size-1.5 rounded-full shrink-0",
-                              isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
-                            )}
-                          />
-                        ) : (
-                          <span
-                            className={cn(
-                              "text-[9px] leading-none shrink-0 font-bold",
-                              isOver
-                                ? "text-amber-500"
-                                : isMet
-                                ? "text-emerald-500"
-                                : "text-amber-600 dark:text-amber-400"
-                            )}
-                          >
-                            ✦
-                          </span>
-                        )}
-                        <span
-                          className={cn(
-                            "font-semibold text-foreground/90",
-                            isOver && "text-amber-700 dark:text-amber-300 font-bold"
-                          )}
-                        >
-                          {shortName}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground/80 font-normal">
-                          ({item.class_section_label})
-                        </span>
-                        <span
-                          className={cn(
-                            "text-[10px] font-mono text-muted-foreground",
-                            isOver && "font-bold text-amber-700 dark:text-amber-300"
-                          )}
-                        >
-                          {item.assigned || 0}/{item.target || 0}
-                        </span>
+                      )}
+                      <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider shrink-0 select-none pr-0.5">
+                        {group.label}
                       </span>
-                    )
-                  })}
+                      {group.items.map((item, idx) => {
+                        const theme = getSubjectTheme(item.subject_name, item.category)
+                        const shortName = getShortSubjectName(item.subject_name, item.subject_code)
+                        const isUnder = item.assigned < item.target
+                        const isOver = item.assigned > item.target
+                        const isMet = item.assigned === item.target
+
+                        return (
+                          <span
+                            key={`t-r2-${item.section?.id}_${item.subject_id || idx}`}
+                            className="inline-flex items-center gap-1 text-[11px] leading-none whitespace-nowrap shrink-0 select-none"
+                          >
+                            {group.isAcademic ? (
+                              <span
+                                className={cn(
+                                  "size-1.5 rounded-full shrink-0",
+                                  isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
+                                )}
+                              />
+                            ) : (
+                              <span
+                                className={cn(
+                                  "text-[9px] leading-none shrink-0 font-bold",
+                                  isOver
+                                    ? "text-amber-500"
+                                    : isMet
+                                    ? "text-emerald-500"
+                                    : "text-amber-600/90 dark:text-amber-400/90"
+                                )}
+                              >
+                                ✦
+                              </span>
+                            )}
+                            <span
+                              className={cn(
+                                "font-normal text-muted-foreground/90 hover:text-foreground/90 transition-colors",
+                                isOver && "text-amber-700 dark:text-amber-300 font-medium"
+                              )}
+                            >
+                              {shortName}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/60 font-normal">
+                              ({item.class_section_label})
+                            </span>
+                            <span
+                              className={cn(
+                                "text-[10px] font-mono text-muted-foreground/75",
+                                isOver && "font-semibold text-amber-700 dark:text-amber-300"
+                              )}
+                            >
+                              {item.assigned || 0}/{item.target || 0}
+                            </span>
+                          </span>
+                        )
+                      })}
+                    </Fragment>
+                  ))}
                 </div>
               </div>
 

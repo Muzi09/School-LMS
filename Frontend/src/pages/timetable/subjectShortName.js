@@ -158,3 +158,55 @@ export function isAcademicSubject(subject) {
   return true
 }
 
+/**
+ * Organizes subject stats into Row 1 and Row 2 groups with "Acad :" and "Non Acad :" headers.
+ * When Academic subjects are more, it balances them across rows and shifts Non Acad to follow.
+ */
+export function buildRowGroups(stats = []) {
+  if (!stats || !Array.isArray(stats)) {
+    return { row1Groups: [], row2Groups: [] }
+  }
+
+  const academic = stats.filter(isAcademicSubject)
+  const nonAcademic = stats.filter((s) => !isAcademicSubject(s))
+
+  let row1Groups = []
+  let row2Groups = []
+
+  if (nonAcademic.length === 0) {
+    // Only Academic subjects exist
+    if (academic.length <= 3) {
+      row1Groups = [{ label: "Acad :", items: academic, isAcademic: true }]
+      row2Groups = []
+    } else {
+      const mid = Math.ceil(academic.length / 2)
+      row1Groups = [{ label: "Acad :", items: academic.slice(0, mid), isAcademic: true }]
+      row2Groups = [{ label: "Acad :", items: academic.slice(mid), isAcademic: true }]
+    }
+  } else if (academic.length === 0) {
+    // Only Non-Academic subjects exist
+    if (nonAcademic.length <= 3) {
+      row1Groups = [{ label: "Non Acad :", items: nonAcademic, isAcademic: false }]
+      row2Groups = []
+    } else {
+      const mid = Math.ceil(nonAcademic.length / 2)
+      row1Groups = [{ label: "Non Acad :", items: nonAcademic.slice(0, mid), isAcademic: false }]
+      row2Groups = [{ label: "Non Acad :", items: nonAcademic.slice(mid), isAcademic: false }]
+    }
+  } else if (academic.length > 4 && academic.length > nonAcademic.length) {
+    // Acad are significantly more: split Acad across both rows, shift Non Acad to the end of Row 2
+    const mid = Math.ceil(academic.length / 2)
+    row1Groups = [{ label: "Acad :", items: academic.slice(0, mid), isAcademic: true }]
+    row2Groups = [
+      { label: "Acad :", items: academic.slice(mid), isAcademic: true },
+      { label: "Non Acad :", items: nonAcademic, isAcademic: false },
+    ]
+  } else {
+    // Standard case: Row 1 = Acad, Row 2 = Non Acad
+    row1Groups = [{ label: "Acad :", items: academic, isAcademic: true }]
+    row2Groups = [{ label: "Non Acad :", items: nonAcademic, isAcademic: false }]
+  }
+
+  return { row1Groups, row2Groups }
+}
+
