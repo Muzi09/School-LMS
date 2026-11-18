@@ -171,42 +171,44 @@ export function TeacherSlotAssignmentDialog({
   const teacherName = `${teacher?.first_name || ""} ${teacher?.last_name || ""}`.trim() || teacher?.name || "Teacher"
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs">
-        <div className="relative w-full max-w-xl bg-card border border-border rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-          {/* HEADER */}
-          <DialogHeader className="px-6 py-4 border-b border-border/70 bg-muted/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <DialogTitle className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
-                  <GraduationCap className="size-5 text-primary" />
-                  <span>Assign Faculty Lecture</span>
-                </DialogTitle>
-                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground font-medium">
-                  <span className="font-semibold text-foreground">{teacherName}</span>
+    <Dialog
+      isOpen={isOpen}
+      onOpenChange={(open) => !open && onClose()}
+      className="sm:max-w-xl md:max-w-2xl p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col [&>[data-slot=dialog]]:flex [&>[data-slot=dialog]]:flex-col [&>[data-slot=dialog]]:overflow-hidden [&>[data-slot=dialog]]:h-full [&>[data-slot=dialog]]:max-h-[90vh]"
+    >
+      {/* HEADER */}
+      <DialogHeader className="px-6 py-4 border-b border-border/70 bg-muted/20 shrink-0 pr-12">
+        <div className="flex items-center justify-between">
+          <div>
+            <DialogTitle className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
+              <GraduationCap className="size-5 text-primary" />
+              <span>Assign Faculty Lecture</span>
+            </DialogTitle>
+            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground font-medium">
+              <span className="font-semibold text-foreground">{teacherName}</span>
+              <span>•</span>
+              <span>{day}</span>
+              <span>•</span>
+              <span>{pLabel}</span>
+              {timeStr && (
+                <>
                   <span>•</span>
-                  <span>{day}</span>
-                  <span>•</span>
-                  <span>{pLabel}</span>
-                  {timeStr && (
-                    <>
-                      <span>•</span>
-                      <span className="font-mono">{timeStr}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {currentEntry && (
-                <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-                  Occupied Slot
-                </Badge>
+                  <span className="font-mono">{timeStr}</span>
+                </>
               )}
             </div>
-          </DialogHeader>
+          </div>
 
-          {/* BODY */}
-          <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          {currentEntry && (
+            <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
+              Occupied Slot
+            </Badge>
+          )}
+        </div>
+      </DialogHeader>
+
+      {/* BODY */}
+      <div className="p-6 space-y-4 overflow-y-auto flex-1 scrollbar-thin">
             {/* Search Input */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -362,58 +364,56 @@ export function TeacherSlotAssignmentDialog({
             )}
           </div>
 
-          {/* FOOTER */}
-          <DialogFooter className="px-6 py-3.5 bg-muted/20 border-t border-border/70 flex items-center justify-between gap-2">
-            <div>
-              {currentEntry && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleUnassignClick}
-                  disabled={isSubmitting}
-                  className="text-destructive hover:bg-destructive/10 text-xs gap-1.5"
-                >
-                  <Trash2 className="size-3.5" />
-                  <span>Unassign Slot</span>
-                </Button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleSubmit}
-                disabled={!selectedItem || isSubmitting}
-                className="text-xs font-bold gap-1.5"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="size-3.5 animate-spin" />
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="size-3.5" />
-                    <span>Save Assignment</span>
-                  </>
-                )}
-              </Button>
-            </div>
-          </DialogFooter>
+      {/* FOOTER */}
+      <DialogFooter className="px-6 py-3.5 bg-muted/20 border-t border-border/70 flex items-center justify-between gap-2 shrink-0">
+        <div>
+          {currentEntry && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleUnassignClick}
+              disabled={isSubmitting}
+              className="text-destructive hover:bg-destructive/10 text-xs gap-1.5"
+            >
+              <Trash2 className="size-3.5" />
+              <span>Unassign Slot</span>
+            </Button>
+          )}
         </div>
-      </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleSubmit}
+            disabled={!selectedItem || isSubmitting}
+            className="text-xs font-bold gap-1.5"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Check className="size-3.5" />
+                <span>Save Assignment</span>
+              </>
+            )}
+          </Button>
+        </div>
+      </DialogFooter>
     </Dialog>
   )
 }
