@@ -120,10 +120,10 @@ export const TeacherWiseCell = memo(function TeacherWiseCell({
   }
 
   // Occupied Slot
-  if (isOccupied && activeEntry.section) {
-    const sec = activeEntry.section
-    const clsName = sec.school_class?.name || sec.class_name || ""
-    const secName = sec.name || ""
+  if (isOccupied) {
+    const sec = activeEntry.section || {}
+    const clsName = sec.school_class?.name || sec.class_name || activeEntry.class_name || ""
+    const secName = sec.name || activeEntry.section_name || ""
     const classSectionLabel = `${clsName} ${secName}`.trim() || "Class"
     const subjectName = activeEntry.subject?.name || "Subject"
     const roomLabel = getRoomNumber(activeEntry)
@@ -255,3 +255,4 @@ export const TeacherWiseCell = memo(function TeacherWiseCell({
     </div>
   )
 })
+

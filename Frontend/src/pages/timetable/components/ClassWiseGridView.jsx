@@ -839,13 +839,27 @@ export function ClassWiseGridView({
         cell.scheduleDays ||
         getSplitDaysForSectionAndDay(cell.section, cell.day)
 
+      const liveSec =
+        allFlattenedSections.find((s) => String(s.id) === String(cell.section?.id)) || cell.section
+
+      const allocatedTeacher =
+        payload.teacher ||
+        liveSec?.subject_stats?.find((s) => String(s.subject_id || s.id) === String(payload.subject_id))?.teacher ||
+        null
+
+      const allocatedTeacherId =
+        payload.teacher_user_id ||
+        allocatedTeacher?.id ||
+        liveSec?.subject_stats?.find((s) => String(s.subject_id || s.id) === String(payload.subject_id))?.teacher_id ||
+        null
+
       const requestPayload = {
         timetable_id: timetable.id,
         section_id: cell.section.id,
         day_of_week: cell.day,
         period_id: cell.period.id,
         subject_id: payload.subject_id,
-        teacher_user_id: payload.teacher_user_id || null,
+        teacher_user_id: allocatedTeacherId,
         scope: payload.scope || "SLOT",
         target_count: payload.target_count || null,
         apply_days:
@@ -858,9 +872,9 @@ export function ClassWiseGridView({
             : [cell.day],
         overwrite: payload.overwrite ?? true,
         _optimisticSubject: payload.subject || null,
-        _optimisticTeacher: payload.teacher || null,
+        _optimisticTeacher: allocatedTeacher,
         _optimisticPeriod: cell.period,
-        _section: cell.section,
+        _section: liveSec,
       }
 
       // Record for undo

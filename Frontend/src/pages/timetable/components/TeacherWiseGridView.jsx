@@ -120,6 +120,23 @@ export function TeacherWiseGridView({
     return list
   }, [wings])
 
+  // Section Map & Section-Subject-to-Teacher Fallback Map
+  const { sectionMap, secSubToTeacherMap } = useMemo(() => {
+    const sMap = new Map()
+    const tMap = new Map()
+    for (const sec of allFlattenedSections) {
+      sMap.set(String(sec.id), sec)
+      for (const stat of sec.subject_stats || []) {
+        const tId = stat.teacher_id || stat.teacher?.id
+        if (tId) {
+          const subId = stat.subject_id || stat.id
+          tMap.set(`${sec.id}_${subId}`, String(tId))
+        }
+      }
+    }
+    return { sectionMap: sMap, secSubToTeacherMap: tMap }
+  }, [allFlattenedSections])
+
   // Map teacher subject allocations derived from Manage School (sections' subject_stats)
   const teacherAllocationsMap = useMemo(() => {
     const map = new Map() // teacherId -> Array of allocation objects
@@ -157,8 +174,9 @@ export function TeacherWiseGridView({
 
     // 2. Also incorporate any existing entries where teacher is assigned to a section & subject
     for (const e of entries) {
-      if (e.teacher_user_id && e.section && e.subject) {
-        const tKey = String(e.teacher_user_id)
+      const entryTid = String(e.teacher_user_id || e.teacher_id || e.teacher?.id || secSubToTeacherMap.get(`${e.section_id}_${e.subject_id || e.subject?.id}`) || "")
+      if (entryTid && e.section && e.subject) {
+        const tKey = entryTid
         if (!map.has(tKey)) map.set(tKey, [])
         const list = map.get(tKey)
         const subId = e.subject.id
@@ -184,7 +202,7 @@ export function TeacherWiseGridView({
     }
 
     return map
-  }, [eligible_teachers, allFlattenedSections, entries])
+  }, [eligible_teachers, allFlattenedSections, entries, secSubToTeacherMap])
 
   // Group entries by teacher
   const { teacherEntriesMap, teacherStatsMap, conflictsCount } = useMemo(() => {
@@ -198,33 +216,54 @@ export function TeacherWiseGridView({
     }
 
     for (const e of entries) {
-      if (!e.teacher_user_id) continue
-      const tId = String(e.teacher_user_id)
+      // Resolve teacher: explicit teacher_user_id, nested teacher.id, or fallback from Manage School
+      const directTeacherId = e.teacher_user_id || e.teacher_id || e.teacher?.id
+      const fallbackTeacherId = secSubToTeacherMap.get(`${e.section_id}_${e.subject_id || e.subject?.id}`)
+      const tId = String(directTeacherId || fallbackTeacherId || "")
+
+      if (!tId) continue
       if (!tMap[tId]) tMap[tId] = {}
       if (!sMap[tId]) sMap[tId] = { assigned: 0, classesSet: new Set() }
 
-      const p = e.period
-      const pNum = p?.period_number || 0
-      const keyId = `${e.day_of_week}_${e.period_id}`
-      const keyNum = `${e.day_of_week}_${pNum}`
-
-      if (!tMap[tId][keyId]) tMap[tId][keyId] = []
-      if (!tMap[tId][keyId].some((x) => x.id === e.id)) {
-        tMap[tId][keyId].push(e)
+      // Ensure entry has complete section info
+      const secObj = e.section || sectionMap.get(String(e.section_id)) || {
+        id: e.section_id,
+        name: e.section_name || "",
+        class_name: e.class_name || "Class",
       }
 
-      if (keyNum !== keyId) {
-        if (!tMap[tId][keyNum]) tMap[tId][keyNum] = []
-        if (!tMap[tId][keyNum].some((x) => x.id === e.id)) {
-          tMap[tId][keyNum].push(e)
+      const enrichedEntry = {
+        ...e,
+        teacher_user_id: tId,
+        section: secObj,
+      }
+
+      const p = e.period
+      const pNum = p?.period_number || e.period_number || 0
+      const pId = e.period_id || p?.id
+
+      // Register under multiple lookup coordinate keys so lookup NEVER fails:
+      const keys = new Set()
+      if (pId) keys.add(`${e.day_of_week}_${pId}`)
+      if (pNum) {
+        keys.add(`${e.day_of_week}_${pNum}`)
+        keys.add(`${e.day_of_week}_p${pNum}`)
+        keys.add(`${e.day_of_week}_P${pNum}`)
+      }
+
+      for (const k of keys) {
+        if (!tMap[tId][k]) tMap[tId][k] = []
+        if (!tMap[tId][k].some((x) => String(x.id) === String(e.id))) {
+          tMap[tId][k].push(enrichedEntry)
         }
       }
 
       if (!p?.is_break) {
         sMap[tId].assigned += 1
       }
-      if (e.section?.school_class) {
-        sMap[tId].classesSet.add(e.section.school_class.name)
+      const clsName = secObj.school_class?.name || secObj.class_name
+      if (clsName) {
+        sMap[tId].classesSet.add(clsName)
       }
     }
 
@@ -240,7 +279,7 @@ export function TeacherWiseGridView({
     }
 
     return { teacherEntriesMap: tMap, teacherStatsMap: sMap, conflictsCount: totalConflicts }
-  }, [eligible_teachers, entries])
+  }, [eligible_teachers, entries, sectionMap, secSubToTeacherMap])
 
   // Report assign bar metrics to parent Timetable header
   useEffect(() => {
@@ -450,8 +489,15 @@ export function TeacherWiseGridView({
           // Count periods taught by this teacher in this section for this subject
           let currentAssigned = 0
           for (const e of entries) {
+            const entryTid = String(
+              e.teacher_user_id ||
+              e.teacher_id ||
+              e.teacher?.id ||
+              secSubToTeacherMap.get(`${e.section_id}_${e.subject_id || e.subject?.id}`) ||
+              ""
+            )
             if (
-              String(e.teacher_user_id) === tId &&
+              entryTid === tId &&
               String(e.section_id) === secId &&
               String(e.subject_id || e.subject?.id) === subId &&
               !e.period?.is_break
@@ -649,8 +695,40 @@ export function TeacherWiseGridView({
                         const slotKey = `${teacher.id}_${day}_${p.id || p.period_number}`
                         const isSelected = selectedSlotKey === slotKey
 
-                        const rawEntries = tMap[`${day}_${p.id}`] || tMap[`${day}_${p.period_number}`] || []
-                        const slotEntries = Array.isArray(rawEntries) ? rawEntries : (rawEntries ? [rawEntries] : [])
+                        const rawEntries =
+                          tMap[`${day}_${p.id}`] ||
+                          tMap[`${day}_${p.period_number}`] ||
+                          tMap[`${day}_p${p.period_number}`] ||
+                          tMap[`${day}_P${p.period_number}`] ||
+                          []
+                        let slotEntries = Array.isArray(rawEntries) ? rawEntries : (rawEntries ? [rawEntries] : [])
+                        if (slotEntries.length === 0) {
+                          const matched = entries.filter((e) => {
+                            const entryTid = String(
+                              e.teacher_user_id ||
+                              e.teacher_id ||
+                              e.teacher?.id ||
+                              secSubToTeacherMap.get(`${e.section_id}_${e.subject_id || e.subject?.id}`) ||
+                              ""
+                            )
+                            if (entryTid !== tId) return false
+                            if (String(e.day_of_week).toUpperCase() !== String(day).toUpperCase()) return false
+                            const matchId = p.id && (String(e.period_id) === String(p.id) || String(e.period?.id) === String(p.id))
+                            const matchNum = p.period_number != null && ((e.period?.period_number || e.period_number) === p.period_number)
+                            return Boolean(matchId || matchNum)
+                          })
+                          if (matched.length > 0) {
+                            slotEntries = matched.map((e) => ({
+                              ...e,
+                              teacher_user_id: tId,
+                              section: e.section || sectionMap.get(String(e.section_id)) || {
+                                id: e.section_id,
+                                name: e.section_name || "",
+                                class_name: e.class_name || "Class",
+                              },
+                            }))
+                          }
+                        }
                         const activeEntry = slotEntries.length === 1 ? slotEntries[0] : null
 
                         return (
