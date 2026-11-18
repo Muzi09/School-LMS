@@ -1,4 +1,3 @@
-import * as React from "react"
 import {
   Breadcrumb as BreadcrumbPrimitive,
   Breadcrumbs as BreadcrumbsPrimitive,
@@ -10,7 +9,7 @@ import { cn } from "@/lib/utils"
 import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
 
 function Breadcrumb({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -24,7 +23,7 @@ function Breadcrumb({
 
 function BreadcrumbList(
   {
-    className,
+    className = "",
     ...props
   }
 ) {
@@ -40,9 +39,9 @@ function BreadcrumbList(
 }
 
 function BreadcrumbItem({
-  className,
+  className = "",
   children,
-  separatorClassName,
+  separatorClassName = undefined,
   ...props
 }) {
   return (
@@ -69,7 +68,7 @@ function BreadcrumbItem({
 }
 
 function BreadcrumbLink({
-  className,
+  className = "",
   render,
   ...props
 }) {
@@ -83,7 +82,7 @@ function BreadcrumbLink({
 }
 
 function BreadcrumbPage({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -98,7 +97,7 @@ function BreadcrumbPage({
 }
 
 function BreadcrumbEllipsis({
-  className,
+  className = "",
   ...props
 }) {
   return (

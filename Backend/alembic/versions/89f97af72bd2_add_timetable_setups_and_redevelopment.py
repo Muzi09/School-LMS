@@ -5,8 +5,8 @@ Revises: 58fcf11f76ea
 Create Date: 2026-11-01 19:43:41.587413
 
 """
-from typing import Sequence, Union
 import uuid
+from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
@@ -130,45 +130,44 @@ def upgrade() -> None:
         postgresql_where=sa.text('deleted_at IS NULL AND teacher_user_id IS NOT NULL AND timetable_id IS NOT NULL')
     )
 
-    # Data migration for existing schools
-    conn = op.get_bind()
-    schools = conn.execute(sa.text("SELECT id, name FROM schools WHERE deleted_at IS NULL")).fetchall()
-    for school in schools:
-        sid = school[0]
-        period_count = conn.execute(sa.text("SELECT count(*) FROM timetable_periods WHERE school_id = :sid AND deleted_at IS NULL"), {"sid": sid}).scalar() or 0
-        entry_count = conn.execute(sa.text("SELECT count(*) FROM timetable_entries WHERE school_id = :sid AND deleted_at IS NULL"), {"sid": sid}).scalar() or 0
-
-        tt_id = str(uuid.uuid4())
-        conn.execute(sa.text("""
-            INSERT INTO timetables (id, school_id, name, description, academic_year, is_active, created_at, updated_at)
-            VALUES (:id, :school_id, 'Timetable 2026 - 2027', 'Default migrated school timetable', '2026-2027', true, now(), now())
-        """), {"id": tt_id, "school_id": sid})
-
-        setup_id = str(uuid.uuid4())
-        conn.execute(sa.text("""
-            INSERT INTO timetable_setups (id, school_id, timetable_id, name, description, is_default, applicable_days, created_at, updated_at)
-            VALUES (:id, :school_id, :timetable_id, 'Standard Bell Schedule', 'Default bell schedule for all classes', true, '["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"]', now(), now())
-        """), {"id": setup_id, "school_id": sid, "timetable_id": tt_id})
-
-        if period_count > 0:
-            conn.execute(sa.text("""
-                UPDATE timetable_periods
-                SET timetable_id = :tt_id,
-                    setup_id = :setup_id,
-                    is_break = false,
-                    label = 'Period ' || period_number::text
-                WHERE school_id = :sid AND deleted_at IS NULL
-            """), {"tt_id": tt_id, "setup_id": setup_id, "sid": sid})
-
-        if entry_count > 0:
-            conn.execute(sa.text("""
-                UPDATE timetable_entries
-                SET timetable_id = :tt_id
-                WHERE school_id = :sid AND deleted_at IS NULL
-            """), {"tt_id": tt_id, "sid": sid})
+    op.execute("""
+        INSERT INTO timetables (id, school_id, name, description, academic_year, is_active, created_at, updated_at)
+        SELECT gen_random_uuid(), id, 'Timetable 2026 - 2027', 'Default migrated school timetable', '2026-2027', true, now(), now()
+        FROM schools WHERE deleted_at IS NULL
+    """)
+    op.execute("""
+        INSERT INTO timetable_setups (id, school_id, timetable_id, name, description, is_default, applicable_days, created_at, updated_at)
+        SELECT gen_random_uuid(), school_id, id, 'Standard Bell Schedule', 'Default bell schedule for all classes', true,
+               '["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"]', now(), now()
+        FROM timetables
+    """)
+    op.execute("""
+        UPDATE timetable_periods AS period
+        SET timetable_id = setup.timetable_id, setup_id = setup.id,
+            is_break = false, label = 'Period ' || period.period_number::text
+        FROM timetable_setups AS setup
+        WHERE setup.school_id = period.school_id AND period.deleted_at IS NULL
+    """)
+    op.execute("""
+        UPDATE timetable_entries AS entry SET timetable_id = timetable.id
+        FROM timetables AS timetable
+        WHERE timetable.school_id = entry.school_id AND entry.deleted_at IS NULL
+    """)
 
 
 def downgrade() -> None:
+    op.execute("""
+        DO $migration$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM timetable_periods WHERE deleted_at IS NULL
+                       GROUP BY school_id, period_number HAVING count(*) > 1)
+                OR EXISTS (SELECT 1 FROM timetables WHERE deleted_at IS NULL GROUP BY school_id HAVING count(*) > 1)
+                OR EXISTS (SELECT 1 FROM timetable_setup_assignments WHERE deleted_at IS NULL) THEN
+                RAISE EXCEPTION 'Legacy timetable schema cannot represent this data. Restore a verified backup or roll forward.';
+            END IF;
+        END
+        $migration$;
+    """)
     op.drop_index('uq_timetable_entries_teacher_with_tt', table_name='timetable_entries', postgresql_where=sa.text('deleted_at IS NULL AND teacher_user_id IS NOT NULL AND timetable_id IS NOT NULL'))
     op.drop_index('uq_timetable_entries_slot_with_tt', table_name='timetable_entries', postgresql_where=sa.text('deleted_at IS NULL AND timetable_id IS NOT NULL'))
     op.drop_index('idx_timetable_entries_timetable_id', table_name='timetable_entries')

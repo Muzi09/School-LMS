@@ -1,7 +1,7 @@
 
 import { Navigate, Outlet, useLocation } from "react-router-dom"
-import { useAuth } from "@/context/AuthContext"
-import { hasPermission, Permission } from "@/lib/permissions"
+import { useAuth } from "@/context/authState"
+import { hasPermission } from "@/lib/permissions"
 
 export function AdminRoute() {
   const { isAuthenticated, isAdmin, isLoading } = useAuth()

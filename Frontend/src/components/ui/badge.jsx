@@ -26,9 +26,9 @@ const badgeVariants = cva(
 )
 
 function Badge({
-  className,
-  variant = "default",
-  render,
+  className = "",
+  variant = /** @type {import("class-variance-authority").VariantProps<typeof badgeVariants>["variant"]} */ ("default"),
+  render = undefined,
   ...props
 }) {
   if (render) {
@@ -51,4 +51,4 @@ function Badge({
   );
 }
 
-export { Badge, badgeVariants }
+export { Badge }

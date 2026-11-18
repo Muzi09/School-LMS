@@ -13,11 +13,13 @@ from app.api.deps import (
     require_delete_staff,
     require_manage_staff,
     require_resend_staff_setup,
+    require_school_id,
     require_update_staff,
     require_view_staff,
 )
 from app.core.config import settings
 from app.core.exceptions import BadRequestException
+from app.models.enums import UserRole
 from app.models.school import School
 from app.models.smtp_configuration import SmtpConfiguration
 from app.models.user import User
@@ -92,7 +94,6 @@ def complete_staff_setup(
     service.complete_staff_setup(
         raw_token=payload.token,
         password=payload.password,
-        pin=payload.pin,
     )
     return MessageResponse(message="Staff account activated successfully! You can now log in.")
 
@@ -115,7 +116,7 @@ def create_staff(
     current_user: Annotated[User, Depends(require_create_staff)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    school_id = current_user.school_id
+    school_id = require_school_id(current_user)
     user, raw_token = service.create_staff(
         data=data,
         created_by_id=current_user.id,
@@ -209,8 +210,8 @@ def preview_bulk_staff(
     if not filename.lower().endswith(".xlsx"):
         raise BadRequestException("Invalid file type. Only Excel (.xlsx) files are supported.")
 
-    file_bytes = file.file.read()
-    school_id = current_user.school_id
+    file_bytes = file.file.read(10 * 1024 * 1024 + 1)
+    school_id = require_school_id(current_user)
 
     return parse_and_validate_file(
         file_bytes=file_bytes,
@@ -233,11 +234,12 @@ def bulk_create_staff(
     current_user: Annotated[User, Depends(require_create_staff)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    require_school_id(current_user)
     filename = file.filename or ""
     if not filename.lower().endswith(".xlsx"):
         raise BadRequestException("Invalid file type. Only Excel (.xlsx) files are supported.")
 
-    file_bytes = file.file.read()
+    file_bytes = file.file.read(10 * 1024 * 1024 + 1)
     return execute_bulk_import(
         file_bytes=file_bytes,
         current_user=current_user,
@@ -262,6 +264,7 @@ def list_staff(
     page_size: Annotated[int, Query(ge=1, le=100, description="Page size")] = 10,
 ):
     items, total = service.list_staff(
+        school_id=require_school_id(current_user),
         is_active=is_active,
         status=status,
         search=search,
@@ -289,7 +292,7 @@ def generate_staff_id(
     joining_year: Annotated[int | None, Query(description="Joining year, defaults to current year")] = None,
     role_code: Annotated[str, Query(description="Role code, defaults to STF")] = "STF",
 ):
-    school_id = current_user.school_id
+    school_id = require_school_id(current_user)
     staff_id, seq = service.generate_staff_id(
         school_id=school_id,
         joining_year=joining_year,
@@ -316,7 +319,7 @@ def get_staff(
     service: Annotated[UserService, Depends(get_user_service)],
     current_user: Annotated[User, Depends(require_view_staff)],
 ):
-    user = service.get_staff_by_id(staff_id=staff_id)
+    user = service.get_staff_by_id(staff_id=staff_id, school_id=require_school_id(current_user))
     return StaffDetailRead.model_validate(user)
 
 
@@ -332,7 +335,9 @@ def update_staff(
     service: Annotated[UserService, Depends(get_user_service)],
     current_user: Annotated[User, Depends(require_update_staff)],
 ):
-    user = service.update_staff(staff_id=staff_id, data=data, updated_by_id=current_user.id)
+    user = service.update_staff(
+        staff_id=staff_id, data=data, updated_by_id=current_user.id, school_id=require_school_id(current_user)
+    )
     return StaffDetailRead.model_validate(user)
 
 
@@ -348,7 +353,10 @@ def change_staff_status(
     service: Annotated[UserService, Depends(get_user_service)],
     current_user: Annotated[User, Depends(require_manage_staff)],
 ):
-    user = service.change_user_status(user_id=staff_id, is_active=data.is_active, updated_by_id=current_user.id)
+    user = service.change_user_status(
+        user_id=staff_id, is_active=data.is_active, updated_by_id=current_user.id,
+        school_scope=(require_school_id(current_user), UserRole.STAFF),
+    )
     return StaffDetailRead.model_validate(user)
 
 
@@ -363,7 +371,10 @@ def delete_staff(
     service: Annotated[UserService, Depends(get_user_service)],
     current_user: Annotated[User, Depends(require_delete_staff)],
 ):
-    service.soft_delete_user(user_id=staff_id, deleted_by_id=current_user.id)
+    service.soft_delete_user(
+        user_id=staff_id, deleted_by_id=current_user.id,
+        school_scope=(require_school_id(current_user), UserRole.STAFF),
+    )
     return MessageResponse(message=f"Staff member {staff_id} deleted successfully.")
 
 
@@ -379,7 +390,7 @@ def resend_staff_setup(
     current_user: Annotated[User, Depends(require_resend_staff_setup)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    user, raw_token = service.resend_staff_setup_token(staff_id=staff_id)
+    user, raw_token = service.resend_staff_setup_token(staff_id=staff_id, school_id=require_school_id(current_user))
     setup_url = f"{settings.FRONTEND_URL}/login/setup?token={raw_token}"
 
     smtp_config = (

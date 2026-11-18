@@ -1,4 +1,3 @@
-import React from "react"
 import { Badge } from "@/components/ui/badge"
 import { ClassSectionChip } from "./ClassSectionChip"
 import { getWingTheme } from "./theme"

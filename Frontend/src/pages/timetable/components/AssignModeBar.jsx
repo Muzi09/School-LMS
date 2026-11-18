@@ -5,11 +5,7 @@ import {
   CheckCircle2,
   Undo2,
   Redo2,
-  X,
   Keyboard,
-  Info,
-  ChevronUp,
-  ChevronDown,
   ArrowRight,
   ShieldAlert,
   Trash2,
@@ -22,7 +18,6 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "@/components/ui/sheet"
 import { getIsMac, formatTimingsInText } from "../timetableUtils"
 import { cn } from "@/lib/utils"
@@ -36,26 +31,21 @@ export function AssignModeBar({
   canRedo = false,
   onUndo,
   onRedo,
-  onExitMode,
   issuesList = [], // [{ id, type: 'conflict'|'unassigned', title, sectionName, day, period, onJump, onResolve, onClear }]
   onResolveConflict,
   onClearAllConflicts,
-  className,
+  className = undefined,
 }) {
   const [isIssuesOpen, setIsIssuesOpen] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showConflictsPopover, setShowConflictsPopover] = useState(false)
-  const [isMac, setIsMac] = useState(false)
+  const [isMac] = useState(getIsMac)
   const [coords, setCoords] = useState(null)
   const [conflictsCoords, setConflictsCoords] = useState(null)
   const buttonRef = useRef(null)
   const hoverTimeoutRef = useRef(null)
   const conflictsButtonRef = useRef(null)
   const conflictsHoverTimeoutRef = useRef(null)
-
-  useEffect(() => {
-    setIsMac(getIsMac())
-  }, [])
 
   const conflictsList = useMemo(() => {
     return (issuesList || []).filter((i) => i.type === "conflict")
@@ -145,14 +135,15 @@ export function AssignModeBar({
     }
   }, [])
 
-  // Close shortcuts popup & issues drawer when edit mode is toggled off
-  useEffect(() => {
+  const [wasActive, setWasActive] = useState(isActive)
+  if (wasActive !== isActive) {
+    setWasActive(isActive)
     if (!isActive) {
       setShowShortcuts(false)
       setShowConflictsPopover(false)
       setIsIssuesOpen(false)
     }
-  }, [isActive])
+  }
 
   return (
     <>

@@ -1,4 +1,3 @@
-import * as React from "react"
 import {
   DialogTrigger as DialogTriggerPrimitive,
   Popover as PopoverPrimitive,
@@ -7,15 +6,16 @@ import {
 
 import { cn } from "@/lib/utils"
 
+/** @param {React.ComponentProps<typeof DialogTriggerPrimitive>} props */
 function PopoverTrigger({ ...props }) {
   return <DialogTriggerPrimitive data-slot="popover-trigger" {...props} />
 }
 
 function Popover({
-  className,
+  className = "",
   offset = 8,
   crossOffset = 0,
-  placement = "bottom end",
+  placement = /** @type {React.ComponentProps<typeof PopoverPrimitive>["placement"]} */ ("bottom end"),
   children,
   ...props
 }) {
@@ -36,7 +36,7 @@ function Popover({
   )
 }
 
-function PopoverDialog({ className, children, ...props }) {
+function PopoverDialog({ className = "", children, ...props }) {
   return (
     <DialogPrimitive
       data-slot="popover-dialog"

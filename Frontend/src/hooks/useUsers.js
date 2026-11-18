@@ -70,7 +70,7 @@ export function useCreateUser() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ role, ...data }) => {
+    mutationFn: async (/** @type {{ role: number | string } & Record<string, unknown>} */ { role, ...data }) => {
       switch (Number(role)) {
         case 1:
           return createPrincipalApi(data)
@@ -95,7 +95,7 @@ export function useUpdateUser() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ userId, data }) => updateUserApi(userId, data),
+    mutationFn: (/** @type {{ userId: string, data: Record<string, unknown> }} */ { userId, data }) => updateUserApi(userId, data),
     onSuccess: (updatedUser, { userId }) => {
       queryClient.invalidateQueries({ queryKey: userKeys.detail(userId) })
       queryClient.invalidateQueries({ queryKey: userKeys.lists() })
@@ -110,7 +110,7 @@ export function useUpdateUserStatus() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ userId, isActive }) => updateUserStatusApi(userId, isActive),
+    mutationFn: (/** @type {{ userId: string, isActive: boolean }} */ { userId, isActive }) => updateUserStatusApi(userId, isActive),
     onMutate: async ({ userId, isActive }) => {
       await queryClient.cancelQueries({ queryKey: userKeys.lists() })
 
@@ -148,7 +148,7 @@ export function useDeleteUser() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (userId) => deleteUserApi(userId),
+    mutationFn: (/** @type {string} */ userId) => deleteUserApi(userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.lists() })
     },

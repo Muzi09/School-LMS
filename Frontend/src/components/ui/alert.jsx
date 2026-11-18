@@ -1,4 +1,3 @@
-import * as React from "react"
 import { cva } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
@@ -26,8 +25,8 @@ const alertVariants = cva(
 )
 
 function Alert({
-  className,
-  variant = "default",
+  className = "",
+  variant = /** @type {import("class-variance-authority").VariantProps<typeof alertVariants>["variant"]} */ ("default"),
   ...props
 }) {
   return (
@@ -41,7 +40,7 @@ function Alert({
 }
 
 function AlertTitle({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -54,7 +53,7 @@ function AlertTitle({
 }
 
 function AlertDescription({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -66,4 +65,4 @@ function AlertDescription({
   )
 }
 
-export { Alert, AlertTitle, AlertDescription, alertVariants }
+export { Alert, AlertTitle, AlertDescription }

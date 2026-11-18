@@ -1,3 +1,4 @@
+from app.models.auth_session import BrowserSession, LoginAttempt
 from app.models.base import (
     AuditMixin,
     Base,
@@ -17,6 +18,7 @@ from app.models.smtp_configuration import SmtpConfiguration
 from app.models.staff import StaffProfile, StaffWing
 from app.models.staff_onboarding_token import StaffOnboardingToken
 from app.models.student import StudentProfile
+from app.models.student_record_event import StudentRecordEvent
 from app.models.subject import ClassSubject, Subject
 from app.models.timetable import (
     DayOfWeek,
@@ -31,6 +33,8 @@ from app.models.wing import Wing, WingClass
 
 __all__ = [
     "Base",
+    "BrowserSession",
+    "LoginAttempt",
     "TimestampMixin",
     "SoftDeleteMixin",
     "UserAuditMixin",
@@ -55,6 +59,7 @@ __all__ = [
     "StaffWing",
     "StaffOnboardingToken",
     "StudentProfile",
+    "StudentRecordEvent",
     "Conversation",
     "ConversationParticipant",
     "Message",
@@ -65,4 +70,3 @@ __all__ = [
     "TimetableSetup",
     "TimetableSetupAssignment",
 ]
-

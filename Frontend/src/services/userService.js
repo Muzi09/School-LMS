@@ -11,14 +11,15 @@ const getApiBase = () => {
 
 const API_BASE = getApiBase()
 
+/** @param {{ schoolId?: string, role?: number | string | null, isActive?: boolean | string | null, search?: string, page?: number, pageSize?: number }} [filters] */
 export async function fetchUsers({ schoolId, role, isActive, search, page = 1, pageSize = 20 } = {}) {
   const params = new URLSearchParams();
   if (schoolId) params.append("school_id", schoolId);
-  if (role !== undefined && role !== null && role !== "") params.append("role", role);
-  if (isActive !== undefined && isActive !== null && isActive !== "") params.append("is_active", isActive);
+  if (role !== undefined && role !== null && role !== "") params.append("role", String(role));
+  if (isActive !== undefined && isActive !== null && isActive !== "") params.append("is_active", String(isActive));
   if (search) params.append("search", search);
-  params.append("page", page);
-  params.append("page_size", pageSize);
+  params.append("page", String(page));
+  params.append("page_size", String(pageSize));
 
   const res = await fetch(`${API_BASE}/users?${params.toString()}`);
   if (!res.ok) {

@@ -1,21 +1,8 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react"
+import { useState, useEffect, useLayoutEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 
-const tooltipListeners = new Set()
-let activeTooltipState = null
-
-export function showTimetableTooltip(text, targetEl) {
-  if (!text || !targetEl) return
-  activeTooltipState = { text, targetEl }
-  tooltipListeners.forEach((fn) => fn(activeTooltipState))
-}
-
-export function hideTimetableTooltip() {
-  if (!activeTooltipState) return
-  activeTooltipState = null
-  tooltipListeners.forEach((fn) => fn(null))
-}
+import { tooltipListeners } from "./timetableTooltipState"
 
 export function TimetableTooltip() {
   const [tooltipState, setTooltipState] = useState(null)

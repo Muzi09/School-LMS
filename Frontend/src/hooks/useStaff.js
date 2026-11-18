@@ -38,7 +38,7 @@ export function useCreateStaff() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (data) => createStaffApi(data),
+    mutationFn: createStaffApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
     },
@@ -49,7 +49,7 @@ export function useUpdateStaff() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ staffId, data }) => updateStaffApi(staffId, data),
+    mutationFn: (/** @type {{ staffId: string, data: Record<string, unknown> }} */ { staffId, data }) => updateStaffApi(staffId, data),
     onSuccess: (updated, { staffId }) => {
       queryClient.invalidateQueries({ queryKey: staffKeys.detail(staffId) })
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
@@ -61,7 +61,7 @@ export function useUpdateStaffStatus() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ staffId, isActive }) => updateStaffStatusApi(staffId, isActive),
+    mutationFn: (/** @type {{ staffId: string, isActive: boolean }} */ { staffId, isActive }) => updateStaffStatusApi(staffId, isActive),
     onMutate: async ({ staffId, isActive }) => {
       await queryClient.cancelQueries({ queryKey: staffKeys.lists() })
       const previousQueries = queryClient.getQueriesData({ queryKey: staffKeys.lists() })
@@ -91,7 +91,7 @@ export function useDeleteStaff() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (staffId) => deleteStaffApi(staffId),
+    mutationFn: deleteStaffApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
     },
@@ -100,7 +100,7 @@ export function useDeleteStaff() {
 
 export function usePreviewBulkStaff() {
   return useMutation({
-    mutationFn: (file) => previewBulkStaffImportApi(file),
+    mutationFn: previewBulkStaffImportApi,
   })
 }
 
@@ -108,7 +108,7 @@ export function useCreateBulkStaff() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (file) => createBulkStaffImportApi(file),
+    mutationFn: createBulkStaffImportApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
     },

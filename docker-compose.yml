@@ -1,15 +1,21 @@
-services:
+x-backend-env: &backend-env
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+  FRONTEND_URL: https://${LMS_DOMAIN:?Set LMS_DOMAIN}
+  ACCESS_TOKEN_EXPIRE_MINUTES: 60
+  SMTP_ENCRYPTION_KEY: ${SMTP_ENCRYPTION_KEY:-}
+  SMTP_ALLOWED_HOSTS: ${SMTP_ALLOWED_HOSTS:-smtp.gmail.com,smtp.office365.com,smtp.mail.yahoo.com}
+  CHAT_REDIS_URL: redis://redis:6379/0
+  FORWARDED_ALLOW_IPS: "*"
 
-  # ─────────────────────────────────────────────────
-  # SERVICE 1: PostgreSQL Database
-  # ─────────────────────────────────────────────────
+services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: school_lms_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-ChangeMeToSomethingStrong123!}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,48 +24,56 @@ services:
       timeout: 3s
       retries: 5
 
-  # ─────────────────────────────────────────────────
-  # SERVICE 2: FastAPI Backend Application
-  # ─────────────────────────────────────────────────
-  backend:
-    build:
-      context: ./Backend
+  redis:
+    image: redis:7.4.12-alpine3.22
     restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql+psycopg://postgres:${DB_PASSWORD:-ChangeMeToSomethingStrong123!}@db:5432/school_lms_db
-      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-secret-string}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 1440
-      FRONTEND_URL: ${FRONTEND_URL:-http://13.211.230.212,http://localhost:5173}
-      ADMIN_DEFAULT_EMAIL: ${ADMIN_DEFAULT_EMAIL:-admin@platform.com}
-      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-Admin@123}
-      ADMIN_DEFAULT_FIRST_NAME: ${ADMIN_DEFAULT_FIRST_NAME:-Admin}
-      ADMIN_DEFAULT_LAST_NAME: ${ADMIN_DEFAULT_LAST_NAME:-User}
-      ADMIN_DEFAULT_MOBILE: ${ADMIN_DEFAULT_MOBILE:-9999999999}
-    volumes:
-      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  migrate:
+    build: ./Backend
+    environment: *backend-env
+    command: ["python", "-m", "alembic", "upgrade", "head"]
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "8000:8000"
 
-  # ─────────────────────────────────────────────────
-  # SERVICE 3: Caddy — Web Server & Reverse Proxy
-  # ─────────────────────────────────────────────────
-  caddy:
-    image: caddy:2-alpine
+  backend:
+    build: ./Backend
     restart: unless-stopped
+    environment: *backend-env
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    environment:
+      LMS_DOMAIN: ${LMS_DOMAIN:?Set LMS_DOMAIN}
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - ./Frontend/dist:/srv/dist:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata:

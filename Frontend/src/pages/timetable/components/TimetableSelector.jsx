@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import { useState } from "react"
 import {
   Calendar,
   ChevronDown,
@@ -8,7 +8,6 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
-  AlertCircle,
   Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -20,6 +19,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
 import { DeleteConfirmDialog } from "@/components/common/DeleteConfirmDialog"
+import { Dialog, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import {
   useActivateTimetable,
   useDuplicateTimetable,
@@ -32,7 +32,6 @@ import { cn } from "@/lib/utils"
 export function TimetableSelector({
   timetables = [],
   selectedTimetableId,
-  currentCompletionPct = null,
   onSelectTimetable,
   onCreateNew,
   canManage = false,
@@ -371,6 +370,23 @@ export function TimetableSelector({
       )}
 
 
+      {confirmActiveTarget && (
+        <Dialog isOpen onOpenChange={(open) => {
+          if (!open && !activateMutation.isPending) setConfirmActiveTarget(null)
+        }}>
+          <DialogTitle>Activate {confirmActiveTarget.name}?</DialogTitle>
+          <DialogDescription>The school will switch to this timetable.</DialogDescription>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmActiveTarget(null)} disabled={activateMutation.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={() => handleSetActive(confirmActiveTarget)} disabled={activateMutation.isPending}>
+              {activateMutation.isPending ? "Activating…" : "Activate"}
+            </Button>
+          </DialogFooter>
+        </Dialog>
+      )}
+
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmDialog
         isOpen={Boolean(deleteTarget)}
@@ -378,8 +394,8 @@ export function TimetableSelector({
         onConfirm={handleDelete}
         title={`Delete "${deleteTarget?.name}"?`}
         description="Are you sure you want to delete this timetable? All associated periods, setups, and entries will be removed."
-        confirmLabel="Delete Timetable"
-        isLoading={deleteMutation.isPending}
+        confirmText="Delete Timetable"
+        isPending={deleteMutation.isPending}
       />
     </>
   )

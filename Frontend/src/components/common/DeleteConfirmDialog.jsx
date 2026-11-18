@@ -11,13 +11,13 @@ export function DeleteConfirmDialog({
   onClose,
   onConfirm,
   title = "Delete Record",
-  description,
-  itemName,
+  description = undefined,
+  itemName = undefined,
   subText = "This action cannot be undone and will revoke associated permissions.",
   confirmText = "Delete",
   cancelText = "Cancel",
   isPending = false,
-  className,
+  className = undefined,
 }) {
   if (!isOpen) return null
 

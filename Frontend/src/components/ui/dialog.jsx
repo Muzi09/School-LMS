@@ -1,4 +1,3 @@
-import * as React from "react"
 import {
   Dialog as DialogPrimitive,
   DialogTrigger as DialogTriggerPrimitive,
@@ -11,14 +10,16 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
+/** @param {React.ComponentProps<typeof DialogTriggerPrimitive>} props */
 function DialogTrigger({
   ...props
 }) {
   return <DialogTriggerPrimitive data-slot="dialog-trigger" {...props} />;
 }
 
+/** @param {React.ComponentProps<typeof Button>} props */
 function DialogClose({
-  className,
+  className = "",
   variant = "outline",
   size = "default",
   ...props
@@ -35,7 +36,7 @@ function DialogClose({
 }
 
 function DialogOverlay({
-  className,
+  className = "",
   children,
   ...props
 }) {
@@ -53,7 +54,7 @@ function DialogOverlay({
 }
 
 function Dialog({
-  className,
+  className = "",
   children,
   showCloseButton = true,
   isDismissable = true,
@@ -87,7 +88,7 @@ function Dialog({
 }
 
 function DialogHeader({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -99,7 +100,7 @@ function DialogHeader({
 }
 
 function DialogFooter({
-  className,
+  className = "",
   showCloseButton = false,
   children,
   ...props
@@ -116,7 +117,7 @@ function DialogFooter({
 }
 
 function DialogTitle({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -129,7 +130,7 @@ function DialogTitle({
 }
 
 function DialogDescription({
-  className,
+  className = "",
   ...props
 }) {
   return (

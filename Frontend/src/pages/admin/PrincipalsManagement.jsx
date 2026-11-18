@@ -29,6 +29,7 @@ import { principalValidationSchema } from "@/validations"
 
 export function PrincipalsManagement() {
   const queryClient = useQueryClient()
+  /** @type {{ isSmtpConfigured?: boolean, openSmtpModal?: () => void }} */
   const outletContext = useOutletContext() || {}
   const isSmtpConfigured = Boolean(outletContext.isSmtpConfigured)
   const openSmtpModal = outletContext.openSmtpModal || (() => {})
@@ -64,10 +65,12 @@ export function PrincipalsManagement() {
     }
   }
 
-  const { data: principals, isLoading } = useQuery({
-    queryKey: ["adminPrincipals"],
-    queryFn: adminService.getPrincipals,
+  const [page, setPage] = useState(1)
+  const { data: principalPage, isLoading, isError, refetch } = useQuery({
+    queryKey: ["adminPrincipals", page],
+    queryFn: () => adminService.getPrincipals(page),
   })
+  const principals = principalPage?.items ?? []
 
   const createMutation = useMutation({
     mutationFn: adminService.createPrincipal,
@@ -233,7 +236,12 @@ export function PrincipalsManagement() {
           <div className="flex justify-center py-16">
             <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
-        ) : !principals || principals.length === 0 ? (
+        ) : isError ? (
+          <div className="space-y-3 p-6 text-center" role="alert">
+            <p>Could not load principals.</p>
+            <button type="button" className="underline" onClick={() => refetch()}>Try again</button>
+          </div>
+        ) : principals.length === 0 ? (
           <div className="text-center py-16 px-4">
             <GraduationCap className="size-12 mx-auto text-muted-foreground/50 mb-3" />
             <h3 className="text-base font-semibold text-foreground">No Principals Registered</h3>
@@ -389,6 +397,14 @@ export function PrincipalsManagement() {
           </div>
         )}
       </div>
+
+      {principalPage && (principalPage.total_pages > 1 || page > 1) && (
+        <nav aria-label="Principal pages" className="flex items-center justify-between px-2">
+          <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-2 disabled:opacity-50">Previous</button>
+          <span>Page {page} of {Math.max(1, principalPage.total_pages)}</span>
+          <button type="button" disabled={page >= principalPage.total_pages} onClick={() => setPage(page + 1)} className="px-3 py-2 disabled:opacity-50">Next</button>
+        </nav>
+      )}
 
       {/* Invite Principal / Regenerated Link Modal */}
       {isModalOpen && (
@@ -562,7 +578,7 @@ export function PrincipalsManagement() {
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-muted/40 border border-border text-xs text-muted-foreground leading-relaxed">
-                    💡 <strong>Note:</strong> Admin does not set passwords or configure school details. The Principal will complete school setup and create their own Password & Quick Login PIN via the onboarding link.
+                    💡 <strong>Note:</strong> Admin does not set passwords or configure school details. The Principal will complete school setup and create their own password via the onboarding link.
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/80">

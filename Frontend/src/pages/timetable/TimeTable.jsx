@@ -7,7 +7,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/common/PageHeader"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/context/authState"
 import { Permission, hasPermission } from "@/lib/permissions"
 import {
   useTimetables,
@@ -25,7 +25,6 @@ import { PrintTimetableModal } from "./components/PrintTimetableModal"
 import { PublishTimetableModal } from "./components/PublishTimetableModal"
 import { BellScheduleSetupModal } from "./components/BellScheduleSetupModal"
 import { CreateTimetableModal } from "./components/CreateTimetableModal"
-import { parseSearchTokens } from "./searchUtils"
 import { toast } from "sonner"
 
 export function TimeTable() {
@@ -133,10 +132,6 @@ export function TimeTable() {
       sessionStorage.removeItem("timetable_search_query")
     }
   }
-
-  const searchTokens = useMemo(() => {
-    return parseSearchTokens(searchQuery)
-  }, [searchQuery])
 
   // 5. Assign Mode (Edit Mode) State (persisted across navigation)
   const [isAssignMode, setIsAssignMode] = useState(() => {
@@ -356,9 +351,7 @@ export function TimeTable() {
           onRetry={refetchClassWise}
           selectedWingId={activeWingId || "ALL"}
           searchQuery={searchQuery}
-          searchTokens={searchTokens}
           isAssignMode={isAssignMode}
-          onToggleAssignMode={handleToggleAssignMode}
           onAssignBarPropsChange={setAssignBarProps}
           zoom={zoomLevel}
           onOpenBellSetup={() => setIsBellSetupOpen(true)}
@@ -416,6 +409,7 @@ export function TimeTable() {
           isOpen={isBellSetupOpen}
           onClose={() => setIsBellSetupOpen(false)}
           timetableId={selectedTimetableId}
+          timetableVersion={timetableData?.timetable?.version ?? currentTimetable?.version}
           wings={wingsData}
           initialSetups={timetableData?.setups}
           onSaved={() => {

@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import React from "react"
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react"
 import { BellScheduleSetupModal } from "../../components/BellScheduleSetupModal"
@@ -15,6 +14,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
     ...actual,
     useQueryClient: vi.fn(() => ({
       invalidateQueries: mockInvalidateQueries,
+      setQueriesData: vi.fn(),
     })),
   }
 })
@@ -221,7 +221,8 @@ describe("BellScheduleSetupModal Orchestrator Integration", () => {
     expect(screen.queryByText("Duplicate")).toBeNull()
   })
 
-  it("autosaves changes with updated version and avoids infinite 409 looping", async () => {
+  it("persists a dirty schedule only after explicit save", async () => {
+    const onSaved = vi.fn()
     mockMutateAsync.mockResolvedValueOnce([
       {
         id: "setup-1",
@@ -238,20 +239,40 @@ describe("BellScheduleSetupModal Orchestrator Integration", () => {
         onClose={vi.fn()}
         timetableId="tt-123"
         wings={mockWings}
+        onSaved={onSaved}
       />
     )
 
     const duplicateBtn = screen.getByText("Duplicate")
     fireEvent.click(duplicateBtn)
 
-    // Wait for debounced autosave mutation to fire
+    expect(mockMutateAsync).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Save Bell Schedule" }))
     await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+      expect(onSaved).toHaveBeenCalledTimes(1)
     })
-
-    // Wait longer and ensure it doesn't repeatedly loop
-    await new Promise((r) => setTimeout(r, 600))
     expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+    expect(mockMutateAsync.mock.calls[0][0]).toEqual(expect.objectContaining({
+      timetable_id: "tt-123",
+    }))
+  })
+
+  it("keeps unsaved edits after a conflict and lets the user discard them", async () => {
+    const onClose = vi.fn()
+    mockMutateAsync.mockRejectedValueOnce(Object.assign(new Error("The timetable has changed."), { status: 409 }))
+    render(<BellScheduleSetupModal isOpen onClose={onClose} timetableId="tt-123" timetableVersion={4} wings={mockWings} />)
+
+    fireEvent.click(screen.getByText("Duplicate"))
+    fireEvent.click(screen.getByRole("button", { name: "Save Bell Schedule" }))
+    expect(await screen.findByText("The timetable has changed. Your edits are still here.")).toBeDefined()
+    expect(mockMutateAsync.mock.calls[0][0].timetable_version).toBe(4)
+    expect(onClose).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }))
+    expect(screen.getByText("Unsaved changes")).toBeDefined()
+    fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }))
+    expect(screen.getByText("All changes saved")).toBeDefined()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })
 

@@ -103,12 +103,11 @@ function checkTimeDisabled(h12, mStr, pStr, minTime, maxTime) {
 export function TimePicker({
   value = "",
   onChange,
-  className,
+  className = undefined,
   disabled = false,
-  id,
-  name,
+  id = undefined,
+  name = undefined,
   placeholder = "Select Time",
-  required = false,
   minTime = null,
   maxTime = null,
 }) {
@@ -125,10 +124,6 @@ export function TimePicker({
     width: 160,
     openUpwards: false,
   })
-
-  const { hour12, minute, period } = React.useMemo(() => {
-    return parseTimeTo12Hour(value)
-  }, [value])
 
   // Draft selection state while time selector is open: { hour12, minute, period }
   const [draft, setDraft] = React.useState(() => parseTimeTo12Hour(value))
@@ -153,13 +148,6 @@ export function TimePicker({
     },
     [isHourDisabled]
   )
-
-  // Sync draft whenever value changes while closed
-  React.useEffect(() => {
-    if (!isOpen) {
-      setDraft(parseTimeTo12Hour(value))
-    }
-  }, [value, isOpen])
 
   // Calculate position relative to trigger button, matching field's width
   const updatePosition = React.useCallback(() => {

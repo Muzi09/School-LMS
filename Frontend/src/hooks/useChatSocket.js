@@ -1,7 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from "react"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/context/authState"
 
 /**
+ * @typedef {object} ChatSocketCallbacks
+ * @property {(message: object, tempId?: string) => void} [onMessage]
+ * @property {(message: object, tempId?: string) => void} [onMessageSent]
+ * @property {(error: string, tempId: string, conversationId: string) => void} [onMessageFailed]
+ * @property {(userId: string, isOnline: boolean, lastSeenAt?: string | null) => void} [onPresenceChange]
+ * @property {(conversationId: string, readerId: string, lastReadAt: string) => void} [onReadReceipt]
+ * @property {(conversationId: string, userId: string, isTyping: boolean, userName?: string) => void} [onTyping]
+ * @property {(event: { type: "conversation_updated", conversation_id: string }) => void} [onConversationUpdated]
+ * @property {() => void} [onReconnect]
+ */
+
+/**
+ * @param {ChatSocketCallbacks} [callbacks]
  * Custom hook for managing a persistent, authenticated WebSocket connection for LMS real-time chat.
  * Implements exponential backoff reconnection, heartbeat keep-alives, and event callbacks.
  */
@@ -15,8 +28,8 @@ export function useChatSocket({
   onConversationUpdated,
   onReconnect,
 } = {}) {
-  const { token, user } = useAuth()
-  const [status, setStatus] = useState(token && user ? "connecting" : "disconnected")
+  const { user } = useAuth()
+  const [status, setStatus] = useState(user ? "connecting" : "disconnected")
   const socketRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const reconnectAttemptsRef = useRef(0)
@@ -50,7 +63,7 @@ export function useChatSocket({
   }, [onMessage, onMessageSent, onMessageFailed, onPresenceChange, onReadReceipt, onTyping, onConversationUpdated, onReconnect])
 
   const connect = useCallback(() => {
-    if (!token || !user) {
+    if (!user) {
       return
     }
 
@@ -62,13 +75,8 @@ export function useChatSocket({
       return
     }
 
-    // Determine WebSocket URL from current host or backend port
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-    const wsHost =
-      window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-        ? "localhost:8000"
-        : window.location.host
-    const wsUrl = `${protocol}//${wsHost}/ws/chat?token=${encodeURIComponent(token)}`
+    const wsUrl = new URL("/ws/chat", window.location.origin)
+    wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:"
 
     try {
       const ws = new WebSocket(wsUrl)
@@ -153,7 +161,7 @@ export function useChatSocket({
     } catch (err) {
       console.error("Failed to initialize WebSocket:", err)
     }
-  }, [token, user])
+  }, [user])
 
   useEffect(() => {
     connectRef.current = connect

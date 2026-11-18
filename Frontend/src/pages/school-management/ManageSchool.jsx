@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
@@ -27,6 +27,9 @@ import {
   AssignClassTeacherDialog,
   UnifySubjectsDialog,
 } from "./Dialogs"
+
+/** @typedef {{ id: string, child_subjects?: SchoolSubject[] }} SchoolSubject */
+/** @typedef {{ classes: { sections?: { id: string, subjects?: SchoolSubject[] }[] }[] }} SchoolConfig */
 
 export function ManageSchool() {
   const queryClient = useQueryClient()
@@ -66,7 +69,7 @@ export function ManageSchool() {
         })
         if (nameCompare !== 0) return nameCompare
         if (a.created_at && b.created_at) {
-          return new Date(a.created_at) - new Date(b.created_at)
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         }
         return String(a.id || "").localeCompare(String(b.id || ""))
       }),
@@ -92,15 +95,12 @@ export function ManageSchool() {
 
   const [selectedWingId, setSelectedWingId] = useState("all") // "all" | "unassigned" | wing.id
 
-  // If redirected with target class from timetable, ensure its wing is active so it is not filtered out
-  useEffect(() => {
-    if (targetClassId && classes.length > 0) {
-      const cls = classes.find((c) => String(c.id) === String(targetClassId))
-      if (cls && cls.wing_id && selectedWingId !== cls.wing_id && selectedWingId !== "all") {
-        setSelectedWingId(cls.wing_id)
-      }
-    }
-  }, [targetClassId, classes])
+  const targetWingId = targetClassId ? classes.find((cls) => String(cls.id) === String(targetClassId))?.wing_id : null
+  const [previousTargetWingId, setPreviousTargetWingId] = useState(targetWingId)
+  if (targetWingId !== previousTargetWingId) {
+    setPreviousTargetWingId(targetWingId)
+    if (targetWingId && selectedWingId !== "all") setSelectedWingId(targetWingId)
+  }
 
   // Filter classes based on selected wing
   const filteredClasses = useMemo(() => {
@@ -152,7 +152,7 @@ export function ManageSchool() {
 
   // 1. Class Mutations
   const createClassMutation = useMutation({
-    mutationFn: (payload) => schoolConfigService.createClass(payload),
+    mutationFn: (/** @type {Record<string, unknown>} */ payload) => schoolConfigService.createClass(payload),
     onSuccess: (data) => {
       invalidateConfig()
       toast.success(`Class '${data?.name}' created successfully.`)
@@ -163,7 +163,7 @@ export function ManageSchool() {
   })
 
   const updateClassMutation = useMutation({
-    mutationFn: ({ classId, payload }) => schoolConfigService.updateClass(classId, payload),
+    mutationFn: (/** @type {{ classId: string, payload: Record<string, unknown> }} */ { classId, payload }) => schoolConfigService.updateClass(classId, payload),
     onSuccess: () => {
       invalidateConfig()
       toast.success("Class updated successfully.")
@@ -174,7 +174,7 @@ export function ManageSchool() {
   })
 
   const deleteClassMutation = useMutation({
-    mutationFn: (classId) => schoolConfigService.deleteClass(classId),
+    mutationFn: (/** @type {string} */ classId) => schoolConfigService.deleteClass(classId),
     onSuccess: () => {
       invalidateConfig()
       toast.success("Class deleted successfully.")
@@ -186,7 +186,7 @@ export function ManageSchool() {
 
   // 2. Section Mutations
   const createSectionMutation = useMutation({
-    mutationFn: ({ classId, payload }) => schoolConfigService.createSection(classId, payload),
+    mutationFn: (/** @type {{ classId: string, payload: Record<string, unknown> }} */ { classId, payload }) => schoolConfigService.createSection(classId, payload),
     onSuccess: () => {
       invalidateConfig()
       toast.success("Section added successfully.")
@@ -197,7 +197,7 @@ export function ManageSchool() {
   })
 
   const updateSectionMutation = useMutation({
-    mutationFn: ({ sectionId, payload }) => schoolConfigService.updateSection(sectionId, payload),
+    mutationFn: (/** @type {{ sectionId: string, payload: Record<string, unknown> }} */ { sectionId, payload }) => schoolConfigService.updateSection(sectionId, payload),
     onSuccess: () => {
       invalidateConfig()
       toast.success("Section renamed successfully.")
@@ -208,7 +208,7 @@ export function ManageSchool() {
   })
 
   const deleteSectionMutation = useMutation({
-    mutationFn: (sectionId) => schoolConfigService.deleteSection(sectionId),
+    mutationFn: (/** @type {string} */ sectionId) => schoolConfigService.deleteSection(sectionId),
     onSuccess: () => {
       invalidateConfig()
       toast.success("Section deleted successfully.")
@@ -219,7 +219,7 @@ export function ManageSchool() {
   })
 
   const assignSectionSubjectsMutation = useMutation({
-    mutationFn: ({ classId, sectionId, subjectIds }) =>
+    mutationFn: (/** @type {{ classId: string, sectionId?: string, subjectIds: string[] }} */ { classId, sectionId, subjectIds }) =>
       schoolConfigService.assignSectionSubjects(classId, sectionId, subjectIds),
     onSuccess: () => {
       invalidateConfig()
@@ -232,7 +232,7 @@ export function ManageSchool() {
 
   // 2b. Toggle Shared Subjects Mutation
   const toggleSharedMutation = useMutation({
-    mutationFn: ({ classId, sameForAllSections, sourceSectionId, mergeAll }) =>
+    mutationFn: (/** @type {{ classId: string, sameForAllSections: boolean, sourceSectionId?: string, mergeAll?: boolean }} */ { classId, sameForAllSections, sourceSectionId, mergeAll }) =>
       schoolConfigService.toggleSharedSubjects(classId, {
         same_for_all_sections: sameForAllSections,
         source_section_id: sourceSectionId,
@@ -243,14 +243,14 @@ export function ManageSchool() {
       toast.success(data?.message || "Class subject configuration updated.")
     },
     onError: (err) => {
-      const msg = err.response?.data?.detail || err.message || "Failed to update subject configuration."
+      const msg = err.message || "Failed to update subject configuration."
       toast.error(msg)
     },
   })
 
   // 3. Wing Mutations
   const createWingMutation = useMutation({
-    mutationFn: (payload) => schoolConfigService.createWing(payload),
+    mutationFn: (/** @type {Record<string, unknown>} */ payload) => schoolConfigService.createWing(payload),
     onSuccess: (data) => {
       invalidateConfig()
       if (data?.id) setSelectedWingId(data.id)
@@ -262,7 +262,7 @@ export function ManageSchool() {
   })
 
   const updateWingMutation = useMutation({
-    mutationFn: ({ wingId, payload }) => schoolConfigService.updateWing(wingId, payload),
+    mutationFn: (/** @type {{ wingId: string, payload: Record<string, unknown> }} */ { wingId, payload }) => schoolConfigService.updateWing(wingId, payload),
     onSuccess: () => {
       invalidateConfig()
       toast.success("Wing updated successfully.")
@@ -273,7 +273,7 @@ export function ManageSchool() {
   })
 
   const deleteWingMutation = useMutation({
-    mutationFn: (wingId) => schoolConfigService.deleteWing(wingId),
+    mutationFn: (/** @type {string} */ wingId) => schoolConfigService.deleteWing(wingId),
     onSuccess: () => {
       invalidateConfig()
       setSelectedWingId("all")
@@ -286,7 +286,7 @@ export function ManageSchool() {
 
   // 7. Class Teacher Assignment Mutation (Optimistic + Surgical Cache Update)
   const assignClassTeacherMutation = useMutation({
-    mutationFn: ({ sectionId, teacherId }) =>
+    mutationFn: (/** @type {{ sectionId: string, teacherId: string | null }} */ { sectionId, teacherId }) =>
       schoolConfigService.assignClassTeacher(sectionId, teacherId),
     onMutate: async ({ sectionId, teacherId }) => {
       await queryClient.cancelQueries({ queryKey: ["schoolConfig"] })
@@ -295,7 +295,7 @@ export function ManageSchool() {
         ? teachers.find((t) => String(t.id) === String(teacherId)) || null
         : null
 
-      queryClient.setQueryData(["schoolConfig"], (old) => {
+      queryClient.setQueryData(["schoolConfig"], (/** @type {SchoolConfig | undefined} */ old) => {
         if (!old || !old.classes) return old
         return {
           ...old,
@@ -319,7 +319,7 @@ export function ManageSchool() {
       if (context?.previousConfig) {
         queryClient.setQueryData(["schoolConfig"], context.previousConfig)
       }
-      const msg = err.response?.data?.detail || err.message || "Failed to update class teacher."
+      const msg = err.message || "Failed to update class teacher."
       toast.error(msg)
     },
     onSuccess: (_, variables) => {
@@ -334,7 +334,7 @@ export function ManageSchool() {
 
   // 8. Section Subject Teacher Assignment Mutation (Optimistic + Surgical Cache Update)
   const assignSubjectTeacherMutation = useMutation({
-    mutationFn: ({ sectionId, subjectId, teacherId }) =>
+    mutationFn: (/** @type {{ sectionId: string, subjectId: string, teacherId: string | null }} */ { sectionId, subjectId, teacherId }) =>
       schoolConfigService.assignSectionSubjectTeacher(sectionId, subjectId, teacherId),
     onMutate: async ({ sectionId, subjectId, teacherId }) => {
       await queryClient.cancelQueries({ queryKey: ["schoolConfig"] })
@@ -343,7 +343,7 @@ export function ManageSchool() {
         ? teachers.find((t) => String(t.id) === String(teacherId)) || null
         : null
 
-      queryClient.setQueryData(["schoolConfig"], (old) => {
+      queryClient.setQueryData(["schoolConfig"], (/** @type {SchoolConfig | undefined} */ old) => {
         if (!old || !old.classes) return old
         return {
           ...old,
@@ -390,7 +390,7 @@ export function ManageSchool() {
       if (context?.previousConfig) {
         queryClient.setQueryData(["schoolConfig"], context.previousConfig)
       }
-      const msg = err.response?.data?.detail || err.message || "Failed to update subject teacher."
+      const msg = err.message || "Failed to update subject teacher."
       toast.error(msg)
     },
     onSuccess: (data, variables) => {

@@ -13,7 +13,6 @@ import {
   Clock,
   Plus,
   Trash2,
-  GraduationCap,
   Building2,
   Briefcase,
 } from "lucide-react"
@@ -67,14 +66,15 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
   })
 
   const wings = schoolConfigData?.wings || []
+  const hasWings = wings.length > 0
   const isEmailConfigured = Boolean(emailSetupData?.is_configured)
 
   const validationSchema = React.useMemo(
-    () => getStaffValidationSchema(isEdit, Boolean(wings && wings.length > 0)),
-    [isEdit, wings]
+    () => getStaffValidationSchema(hasWings),
+    [hasWings]
   )
 
-  const initialValues = React.useMemo(() => {
+  const initialValues = React.useMemo(/** @returns {{ first_name: string, last_name: string, login_mobile: string, email: string, roll_no: string, gender: number, date_of_birth: string, tag: string, is_academic: boolean, is_non_academic: boolean, assigned_wing_ids: string[], working_shifts: { start_time: string, end_time: string }[] }} */ () => {
     const profile = staff?.staff_profile || {}
     const defaultShifts =
       profile.working_shifts && profile.working_shifts.length > 0
@@ -167,30 +167,31 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
     onClose()
   }
 
+  const { setFieldValue } = formik
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden"
+    if (!isOpen) return
+    const { style } = document.body
+    const previousOverflow = style.getPropertyValue("overflow")
+    style.setProperty("overflow", "hidden")
+    return () => style.setProperty("overflow", previousOverflow)
+  }, [isOpen])
 
-      // Auto-generate next Staff ID for new staff
-      if (!isEdit) {
-        generateStaffIdApi()
-          .then((res) => {
-            if (res?.staff_id) {
-              formik.setFieldValue("roll_no", res.staff_id)
-            }
-          })
-          .catch(() => {
-            const currentYear = new Date().getFullYear()
-            formik.setFieldValue("roll_no", `${currentYear}STF001`)
-          })
-      }
-    } else {
-      document.body.style.overflow = ""
-    }
+  useEffect(() => {
+    if (!isOpen || isEdit) return
+    let active = true
+    generateStaffIdApi()
+      .then((res) => {
+        if (active && res?.staff_id) setFieldValue("roll_no", res.staff_id)
+      })
+      .catch(() => {
+        if (!active) return
+        const currentYear = new Date().getFullYear()
+        setFieldValue("roll_no", `${currentYear}STF001`)
+      })
     return () => {
-      document.body.style.overflow = ""
+      active = false
     }
-  }, [isOpen, isEdit])
+  }, [isOpen, isEdit, setFieldValue])
 
   if (!isOpen) return null
 

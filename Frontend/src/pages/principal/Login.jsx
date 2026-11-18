@@ -9,14 +9,14 @@ import {
   ArrowRight,
   AlertCircle,
 } from "lucide-react"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/context/authState"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { generalValidationSchema } from "@/validations"
 import schoolLogo from "@/assets/ideal-school-logo.png"
 
 export function PrincipalLogin() {
-  const { login, quickLogin } = useAuth()
+  const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [showPassword, setShowPassword] = useState(false)
@@ -48,22 +48,7 @@ export function PrincipalLogin() {
       const passwordSecret = values.password.trim()
 
       try {
-        let res
-        try {
-          res = await login(emailClean, passwordSecret)
-        } catch (loginErr) {
-          // If the secret could be a quick PIN (4-10 digits), try quickLogin as fallback
-          if (/^\d{4,10}$/.test(passwordSecret)) {
-            try {
-              res = await quickLogin(emailClean, passwordSecret)
-            } catch {
-              throw loginErr
-            }
-          } else {
-            throw loginErr
-          }
-        }
-        handleSuccessfulAuth(res)
+        handleSuccessfulAuth(await login(emailClean, passwordSecret))
       } catch (err) {
         setServerError(err.message || "Invalid email or password.")
       } finally {
@@ -105,7 +90,6 @@ export function PrincipalLogin() {
           </div>
         )}
 
-        {/* Unified Login Form (Email + Password or PIN) */}
         <form onSubmit={formik.handleSubmit} className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-foreground uppercase tracking-wider block mb-1.5">
@@ -140,7 +124,7 @@ export function PrincipalLogin() {
               <Input
                 type={showPassword ? "text" : "password"}
                 name="password"
-                placeholder="Enter password or PIN"
+                placeholder="Enter password"
                 value={formik.values.password}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}

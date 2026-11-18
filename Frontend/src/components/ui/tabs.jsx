@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import { cva } from "class-variance-authority";
 import {
   TabList as TabListPrimitive,
@@ -12,7 +11,7 @@ import {
 import { cn } from "@/lib/utils"
 
 function Tabs({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -39,8 +38,8 @@ const tabsListVariants = cva(
 )
 
 function TabsList({
-  className,
-  variant = "default",
+  className = "",
+  variant = /** @type {import("class-variance-authority").VariantProps<typeof tabsListVariants>["variant"]} */ ("default"),
   ...props
 }) {
   return (
@@ -53,7 +52,7 @@ function TabsList({
 }
 
 function TabsTrigger({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -71,7 +70,7 @@ function TabsTrigger({
 }
 
 function TabsContent({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -82,4 +81,4 @@ function TabsContent({
   );
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants }
+export { Tabs, TabsList, TabsTrigger, TabsContent }

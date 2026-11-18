@@ -1,8 +1,11 @@
-import React, { useState, useDeferredValue, useMemo } from "react"
+import { useCallback, useState, useDeferredValue, useMemo } from "react"
+import { toast } from "sonner"
+import { getStudentByIdApi } from "@/api/studentService"
+import { useAuth } from "@/context/authState"
+import { hasPermission, Permission } from "@/lib/permissions"
 import {
   GraduationCap,
   UserPlus,
-  RefreshCw,
   Eye,
   Edit2,
   Trash2,
@@ -19,9 +22,10 @@ import { Combobox } from "@/components/ui/combobox"
 import { formatDateTime } from "@/lib/utils"
 
 export function StudentList() {
+  const { user } = useAuth()
+  const canManage = hasPermission(user?.role, Permission.MANAGE_STUDENT)
   const [globalFilter, setGlobalFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
-  const [classFilter, setClassFilter] = useState("")
   const [pagination, setPagination] = useState({
     pageIndex: 0,
     pageSize: 10,
@@ -37,7 +41,6 @@ export function StudentList() {
     refetch,
   } = useStudentsList({
     isActive: statusFilter === "" ? undefined : statusFilter === "true",
-    className: classFilter || undefined,
     search: deferredSearch.trim() || undefined,
     page: pagination.pageIndex + 1,
     pageSize: pagination.pageSize,
@@ -46,7 +49,7 @@ export function StudentList() {
   const studentsList = data?.items || []
   const total = data?.total || 0
 
-  const updateStatusMutation = useUpdateStudentStatus()
+  const { mutate: updateStatus } = useUpdateStudentStatus()
 
   // Modal states
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -56,11 +59,26 @@ export function StudentList() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   const [deletingStudent, setDeletingStudent] = useState(null)
 
-  const handleToggleStatus = (student) => {
-    updateStatusMutation.mutate({
+  const handleToggleStatus = useCallback((student) => {
+    updateStatus({
       studentId: student.id,
       isActive: !student.is_active,
     })
+  }, [updateStatus])
+
+  const openStudent = async (studentId, edit) => {
+    try {
+      const details = await getStudentByIdApi(studentId)
+      if (edit) {
+        setEditingStudent(details)
+        setIsFormOpen(true)
+      } else {
+        setViewingStudent(details)
+        setIsDetailsOpen(true)
+      }
+    } catch (error) {
+      toast.error(error.message || "Unable to load student details.")
+    }
   }
 
   const columns = useMemo(
@@ -83,9 +101,6 @@ export function StudentList() {
               <div>
                 <span className="font-semibold text-foreground text-sm block">
                   {s.first_name} {profile.middle_name ? `${profile.middle_name} ` : ""}{s.last_name}
-                </span>
-                <span className="text-xs text-muted-foreground block truncate max-w-[180px]">
-                  {s.email || "No email"}
                 </span>
               </div>
             </div>
@@ -118,30 +133,14 @@ export function StudentList() {
         ),
       },
       {
-        accessorKey: "login_mobile",
-        header: "Login Mobile",
-        Cell: ({ cell }) => (
-          <span className="font-mono text-foreground text-sm">
-            {cell.getValue()}
-          </span>
-        ),
-      },
-      {
-        id: "father_name",
-        header: "Father's Name",
-        accessorFn: (row) => {
-          const p = row.student_profile || {}
-          return p.father_first_name ? `${p.father_first_name} ${p.father_last_name || ""}` : "—"
-        },
-        Cell: ({ cell }) => <span className="text-foreground text-sm">{cell.getValue()}</span>,
-      },
-      {
         accessorKey: "is_active",
         header: "Status",
         Cell: ({ row }) => {
           const s = row.original
           return (
             <button
+              type="button"
+              disabled={!canManage}
               onClick={() => handleToggleStatus(s)}
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
                 s.is_active
@@ -211,7 +210,7 @@ export function StudentList() {
         ),
       },
     ],
-    []
+    [canManage, handleToggleStatus]
   )
 
   return (
@@ -223,10 +222,10 @@ export function StudentList() {
         description="Register students, manage academic placement, class sections, and guardian contact profiles."
         onRefresh={() => refetch()}
         isRefreshing={isFetching}
-        onCreate={() => {
+        onCreate={canManage ? () => {
           setEditingStudent(null)
           setIsFormOpen(true)
-        }}
+        } : undefined}
         createLabel="Create Student"
         createIcon={UserPlus}
       />
@@ -258,7 +257,7 @@ export function StudentList() {
         }}
         onPaginationChange={setPagination}
         onGlobalFilterChange={setGlobalFilter}
-        enableRowActions
+        enableRowActions={canManage}
         renderRowActions={({ row }) => {
           const s = row.original
           return (
@@ -267,10 +266,7 @@ export function StudentList() {
                 variant="ghost"
                 size="icon"
                 title="View Student Details"
-                onClick={() => {
-                  setViewingStudent(s)
-                  setIsDetailsOpen(true)
-                }}
+                onClick={() => openStudent(s.id, false)}
                 className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
               >
                 <Eye className="size-4" />
@@ -279,10 +275,7 @@ export function StudentList() {
                 variant="ghost"
                 size="icon"
                 title="Edit Student"
-                onClick={() => {
-                  setEditingStudent(s)
-                  setIsFormOpen(true)
-                }}
+                onClick={() => openStudent(s.id, true)}
                 className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
               >
                 <Edit2 className="size-4" />

@@ -8,13 +8,18 @@ import {
   Edit2,
   Calendar,
   Building,
+  Download,
 } from "lucide-react"
 
+import { toast } from "sonner"
+import { exportStudentApi } from "@/api/studentService"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { downloadBlob } from "@/lib/download"
 import { formatDateTime } from "@/lib/utils"
 
 export function StudentDetailsModal({ isOpen, onClose, student, onEdit }) {
+  const [isExporting, setIsExporting] = React.useState(false)
   React.useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden"
@@ -27,6 +32,18 @@ export function StudentDetailsModal({ isOpen, onClose, student, onEdit }) {
   }, [isOpen])
 
   if (!isOpen || !student) return null
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const data = await exportStudentApi(student.id)
+      downloadBlob(data, `student-${student.id}.json`)
+    } catch {
+      toast.error("Unable to export this student record.")
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   const profile = student.student_profile || {}
   const genderMap = { 1: "Male", 2: "Female", 3: "Other" }
@@ -149,7 +166,11 @@ export function StudentDetailsModal({ isOpen, onClose, student, onEdit }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4.5 border-t border-border flex items-center justify-end gap-3 bg-muted/20">
+        <div className="px-6 py-4.5 border-t border-border flex flex-wrap items-center justify-end gap-3 bg-muted/20">
+          <Button type="button" variant="outline" onClick={handleExport} disabled={isExporting}>
+            <Download className="size-4" />
+            {isExporting ? "Exporting…" : "Export record"}
+          </Button>
           <Button
             type="button"
             variant="outline"

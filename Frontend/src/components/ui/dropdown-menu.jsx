@@ -1,4 +1,3 @@
-import * as React from "react"
 import { cva } from "class-variance-authority"
 import {
   composeRenderProps,
@@ -15,6 +14,7 @@ import {
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronRightIcon } from "lucide-react"
 
+/** @param {React.ComponentProps<typeof MenuTriggerPrimitive>} props */
 function DropdownMenuTrigger({
   ...props
 }) {
@@ -23,10 +23,10 @@ function DropdownMenuTrigger({
 
 function DropdownMenu({
   "data-slot": dataSlot = "dropdown-menu-content",
-  placement = "bottom start",
+  placement = /** @type {React.ComponentProps<typeof PopoverPrimitive>["placement"]} */ ("bottom start"),
   offset = 4,
   crossOffset = 0,
-  className,
+  className = "",
   children,
   ...props
 }) {
@@ -56,8 +56,8 @@ function DropdownMenuGroup({
 }
 
 function DropdownMenuLabel({
-  className,
-  inset,
+  className = "",
+  inset = undefined,
   ...props
 }) {
   return (
@@ -85,8 +85,8 @@ const dropdownMenuItemVariants = cva(
 )
 
 function DropdownMenuItem({
-  className,
-  inset,
+  className = "",
+  inset = undefined,
   variant = "default",
   children,
   ...props
@@ -122,6 +122,7 @@ function DropdownMenuItem({
   );
 }
 
+/** @param {React.ComponentProps<typeof SubmenuTriggerPrimitive>} props */
 function DropdownMenuSub({
   ...props
 }) {
@@ -129,8 +130,8 @@ function DropdownMenuSub({
 }
 
 function DropdownMenuSubTrigger({
-  className,
-  inset,
+  className = "",
+  inset = undefined,
   children,
   ...props
 }) {
@@ -155,15 +156,17 @@ function DropdownMenuSubTrigger({
 }
 
 function DropdownMenuSubContent({
-  placement = "end top",
+  children,
+  placement = /** @type {React.ComponentProps<typeof PopoverPrimitive>["placement"]} */ ("end top"),
   crossOffset = -3,
   offset = 0,
-  className,
+  className = "",
   ...props
 }) {
   return (
     <DropdownMenu
       data-slot="dropdown-menu-sub-content"
+      children={children}
       className={cn(
         "w-auto min-w-[96px] rounded-2xl bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/5 duration-100 dark:ring-foreground/10",
         className
@@ -176,7 +179,7 @@ function DropdownMenuSubContent({
 }
 
 function DropdownMenuSeparator({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -188,7 +191,7 @@ function DropdownMenuSeparator({
 }
 
 function DropdownMenuShortcut({
-  className,
+  className = "",
   ...props
 }) {
   return (

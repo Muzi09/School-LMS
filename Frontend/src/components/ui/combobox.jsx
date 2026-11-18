@@ -16,23 +16,23 @@ import { cn } from "@/lib/utils"
  */
 export function Combobox({
   options = [],
-  value,
-  onValueChange,
-  onChange,
+  value = undefined,
+  onValueChange = undefined,
+  onChange = undefined,
   placeholder = "Select an option...",
   emptyText = "No results found.",
   searchable = true,
   clearable = false,
   disabled = false,
   showDescriptionInTrigger = true,
-  anchorRef,
-  anchorSelector,
-  className,
-  popoverClassName,
-  id,
-  name,
+  anchorRef = undefined,
+  anchorSelector = undefined,
+  className = undefined,
+  popoverClassName = undefined,
+  id = undefined,
+  name = undefined,
   autoOpen = false,
-  onOpenChange,
+  onOpenChange = undefined,
 }) {
   const [open, setOpen] = React.useState(false)
   const hasOpenedRef = React.useRef(false)
@@ -151,18 +151,26 @@ export function Combobox({
     })
   }, [anchorRef, anchorSelector])
 
-  // Auto open if requested (e.g., deep linking from timetable)
+  const didAutoOpen = React.useRef(false)
   React.useEffect(() => {
-    if (autoOpen && !open && !disabled) {
-      const timer = setTimeout(() => {
-        updatePosition()
-        setOpen(true)
-        const curIdx = normalizedOptions.findIndex((opt) => String(opt.value) === String(value))
-        setHighlightedIndex(curIdx >= 0 ? curIdx : 0)
-      }, 350)
-      return () => clearTimeout(timer)
+    if (!autoOpen) {
+      didAutoOpen.current = false
+      return
     }
-  }, [autoOpen, disabled])
+    if (open) {
+      didAutoOpen.current = true
+      return
+    }
+    if (disabled || didAutoOpen.current) return
+    const timer = setTimeout(() => {
+      didAutoOpen.current = true
+      updatePosition()
+      setOpen(true)
+      const index = normalizedOptions.findIndex((option) => String(option.value) === String(value))
+      setHighlightedIndex(index >= 0 ? index : 0)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [autoOpen, disabled, open, normalizedOptions, updatePosition, value])
 
   // Open / Close toggle
   const handleOpenToggle = () => {

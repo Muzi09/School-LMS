@@ -74,7 +74,6 @@ class StaffSetupValidateResponse(BaseModel):
 class StaffCompleteSetupRequest(BaseModel):
     token: str = Field(..., description="Single-use setup token from invitation")
     password: str = Field(..., min_length=8, description="Password created by Staff")
-    pin: str = Field(..., min_length=4, max_length=4, pattern=r"^\d{4}$", description="4-digit numeric Quick Login PIN created by Staff")
 
 
 class StaffIdGenerateResponse(BaseModel):

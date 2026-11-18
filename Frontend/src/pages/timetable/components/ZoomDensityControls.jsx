@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 export function ZoomControls({
   zoomLevel = 100,
   onZoomChange,
-  className,
+  className = undefined,
 }) {
   const handleZoomOut = () => {
     onZoomChange(Math.max(60, zoomLevel - 10))

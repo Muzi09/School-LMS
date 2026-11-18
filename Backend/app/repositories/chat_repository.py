@@ -203,7 +203,7 @@ class ChatRepository:
         self.db.commit()
         return self.get_conversation_by_id(conversation.id)
 
-    def get_conversation_by_id(self, conversation_id: UUID) -> Conversation | None:
+    def get_conversation_by_id(self, conversation_id: UUID, *, lock: bool = False) -> Conversation | None:
         """Fetch a conversation by ID with loaded participants, users, and creator."""
         stmt = (
             select(Conversation)
@@ -215,6 +215,8 @@ class ChatRepository:
                 joinedload(Conversation.creator),
             )
         )
+        if lock:
+            stmt = stmt.with_for_update(of=Conversation)
         return self.db.scalars(stmt).first()
 
     def is_participant(self, conversation_id: UUID, user_id: UUID) -> bool:
@@ -448,12 +450,14 @@ class ChatRepository:
         sender_id: UUID,
         content: str,
         message_type: str = "TEXT",
+        client_message_id: UUID | None = None,
     ) -> Message:
         """Create and persist a message, updating conversation timestamp and sender last_read_at."""
         now = datetime.now(timezone.utc)
         message = Message(
             conversation_id=conversation_id,
             sender_id=sender_id,
+            client_message_id=client_message_id,
             content=content,
             message_type=message_type,
             created_at=now,
@@ -483,6 +487,13 @@ class ChatRepository:
         # Load sender
         self.db.refresh(message, ["sender"])
         return message
+
+    def get_client_message(self, conversation_id: UUID, sender_id: UUID, client_id: UUID) -> Message | None:
+        return self.db.scalar(select(Message).options(joinedload(Message.sender)).where(
+            Message.conversation_id == conversation_id,
+            Message.sender_id == sender_id,
+            Message.client_message_id == client_id,
+        ))
 
     def mark_as_read(self, conversation_id: UUID, user_id: UUID) -> datetime:
         """Mark a conversation as read by setting user's last_read_at to now."""

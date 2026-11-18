@@ -1,3 +1,4 @@
+from zipfile import BadZipFile, ZipFile
 import io
 import logging
 import re
@@ -414,6 +415,112 @@ def _normalize_cell_value(val: Any) -> str:
     return str(val).strip()
 
 
+def _read_staff_rows(file_bytes: bytes) -> list[tuple[int, dict[str, Any]]]:
+    if not file_bytes:
+        raise BadRequestException("The uploaded file is empty.")
+
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise BadRequestException("File size exceeds maximum allowed limit of 10 MB.")
+
+    try:
+        with ZipFile(io.BytesIO(file_bytes)) as archive:
+            members = archive.infolist()
+            if len(members) > 1000 or sum(member.file_size for member in members) > 32 * 1024 * 1024:
+                raise BadRequestException("The expanded workbook exceeds the supported size.")
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True, keep_links=False)
+    except (BadZipFile, ValueError, OSError, KeyError, openpyxl.utils.exceptions.InvalidFileException) as exc:
+        raise BadRequestException("Invalid or corrupt XLSX file.") from exc
+
+    try:
+        if not wb.sheetnames:
+            raise BadRequestException("The uploaded workbook contains no worksheets.")
+
+        # Target the first worksheet
+        ws = wb.active
+
+        if ws.max_column and ws.max_column > 128:
+            raise BadRequestException("The workbook contains too many columns.")
+        if ws.max_row and ws.max_row > 5001:
+            raise BadRequestException("The workbook contains too many worksheet rows.")
+        rows = ws.iter_rows(max_col=min(ws.max_column or 128, 128), max_row=min(ws.max_row or 5001, 5001), values_only=True)
+        header_row = list(next(rows, ()))
+        while header_row and header_row[-1] is None:
+            header_row.pop()
+
+        if not header_row or all(h is None or str(h).strip() == "" for h in header_row):
+            raise BadRequestException("Invalid file format. The uploaded file is missing the header row.")
+
+        raw_headers = [str(h) if h is not None else "" for h in header_row]
+
+        missing_cols = []
+        unexpected_cols = []
+        seen_canonical = set()
+        duplicate_headers = []
+        col_index_map: dict[str, int] = {}
+
+        for idx, h in enumerate(raw_headers, start=1):
+            h_clean = h.strip()
+            if not h_clean:
+                continue
+            h_norm = h_clean.lower()
+            canonical = COLUMN_ALIASES.get(h_norm)
+
+            if not canonical:
+                unexpected_cols.append(h_clean)
+                continue
+
+            if canonical in seen_canonical:
+                duplicate_headers.append(h_clean)
+            else:
+                seen_canonical.add(canonical)
+                col_index_map[canonical] = idx
+
+        for exp in REQUIRED_COLUMNS:
+            if exp not in seen_canonical:
+                missing_cols.append(exp)
+
+        if duplicate_headers:
+            raise BadRequestException(f"Invalid file format. Duplicate column headers detected: {', '.join(duplicate_headers)}.")
+
+        if missing_cols or unexpected_cols:
+            err_msg_parts = ["Invalid file format. The uploaded file does not match the Staff Import template."]
+            if missing_cols:
+                err_msg_parts.append(f"Missing mandatory columns: {', '.join(missing_cols)}")
+            if unexpected_cols:
+                err_msg_parts.append(f"Unexpected columns: {', '.join(unexpected_cols)}")
+            raise BadRequestException("\n".join(err_msg_parts))
+
+        # Read data rows (Row 2 onwards, numbering data records starting from 1)
+        raw_data_rows: list[tuple[int, dict[str, Any]]] = []
+        data_row_counter = 0
+        for values in rows:
+            row_dict = {}
+            has_content = False
+            for col_name in EXPECTED_COLUMNS:
+                col_idx = col_index_map.get(col_name)
+                if col_idx is not None:
+                    raw_val = values[col_idx - 1]
+                    normalized_val = _normalize_cell_value(raw_val)
+                else:
+                    normalized_val = ""
+                row_dict[col_name] = normalized_val
+                if normalized_val:
+                    has_content = True
+
+            if has_content:
+                data_row_counter += 1
+                if data_row_counter > MAX_BULK_IMPORT_ROWS:
+                    raise BadRequestException(f"Import at most {MAX_BULK_IMPORT_ROWS} staff records at a time.")
+                raw_data_rows.append((data_row_counter, row_dict))
+
+        if not raw_data_rows:
+            raise BadRequestException("The uploaded file does not contain any staff records.")
+
+        return raw_data_rows
+    finally:
+        wb.close()
+
+
 def parse_and_validate_file(
     file_bytes: bytes,
     school_id: UUID | None,
@@ -424,100 +531,7 @@ def parse_and_validate_file(
     Parse an uploaded XLSX file, validate headers and every row, check in-file and database duplicates.
     Returns a complete dry-run / preview breakdown without making any changes to the database.
     """
-    if not file_bytes:
-        raise BadRequestException("The uploaded file is empty.")
-
-    if len(file_bytes) > 10 * 1024 * 1024:
-        raise BadRequestException("File size exceeds maximum allowed limit of 10 MB.")
-
-    try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
-    except Exception as exc:
-        logger.warning(f"Failed to read XLSX file: {exc}")
-        raise BadRequestException("Invalid or corrupt XLSX file. Please ensure you upload a valid Excel (.xlsx) file.")
-
-    if not wb.sheetnames:
-        raise BadRequestException("The uploaded workbook contains no worksheets.")
-
-    # Target the first worksheet
-    ws = wb.active
-
-    # Validate Header row (Row 1)
-    header_row = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
-    while header_row and header_row[-1] is None:
-        header_row.pop()
-
-    if not header_row or all(h is None or str(h).strip() == "" for h in header_row):
-        raise BadRequestException("Invalid file format. The uploaded file is missing the header row.")
-
-    raw_headers = [str(h) if h is not None else "" for h in header_row]
-
-    missing_cols = []
-    unexpected_cols = []
-    seen_canonical = set()
-    duplicate_headers = []
-    col_index_map: dict[str, int] = {}
-
-    for idx, h in enumerate(raw_headers, start=1):
-        h_clean = h.strip()
-        if not h_clean:
-            continue
-        h_norm = h_clean.lower()
-        canonical = COLUMN_ALIASES.get(h_norm)
-
-        if not canonical:
-            unexpected_cols.append(h_clean)
-            continue
-
-        if canonical in seen_canonical:
-            duplicate_headers.append(h_clean)
-        else:
-            seen_canonical.add(canonical)
-            col_index_map[canonical] = idx
-
-    for exp in REQUIRED_COLUMNS:
-        if exp not in seen_canonical:
-            missing_cols.append(exp)
-
-    if duplicate_headers:
-        raise BadRequestException(f"Invalid file format. Duplicate column headers detected: {', '.join(duplicate_headers)}.")
-
-    if missing_cols or unexpected_cols:
-        err_msg_parts = ["Invalid file format. The uploaded file does not match the Staff Import template."]
-        if missing_cols:
-            err_msg_parts.append(f"Missing mandatory columns: {', '.join(missing_cols)}")
-        if unexpected_cols:
-            err_msg_parts.append(f"Unexpected columns: {', '.join(unexpected_cols)}")
-        raise BadRequestException("\n".join(err_msg_parts))
-
-    # Read data rows (Row 2 onwards, numbering data records starting from 1)
-    raw_data_rows: list[tuple[int, dict[str, Any]]] = []
-    data_row_counter = 0
-    for r in range(2, ws.max_row + 1):
-        row_dict = {}
-        has_content = False
-        for col_name in EXPECTED_COLUMNS:
-            col_idx = col_index_map.get(col_name)
-            if col_idx is not None:
-                raw_val = ws.cell(row=r, column=col_idx).value
-                normalized_val = _normalize_cell_value(raw_val)
-            else:
-                normalized_val = ""
-            row_dict[col_name] = normalized_val
-            if normalized_val:
-                has_content = True
-
-        if has_content:
-            data_row_counter += 1
-            raw_data_rows.append((data_row_counter, row_dict))
-
-    if not raw_data_rows:
-        raise BadRequestException("The uploaded file does not contain any staff records.")
-
-    if len(raw_data_rows) > MAX_BULK_IMPORT_ROWS:
-        raise BadRequestException(
-            f"The file contains {len(raw_data_rows)} rows. Maximum allowed limit is {MAX_BULK_IMPORT_ROWS} staff records per import."
-        )
+    raw_data_rows = _read_staff_rows(file_bytes)
 
     # Pre-fetch existing database identifiers for batch duplicate detection
     file_emails = {r["email"].lower() for _, r in raw_data_rows if r["email"]}

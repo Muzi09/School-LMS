@@ -4,7 +4,6 @@
  */
 
 import {
-  parseTime,
   formatMinutes,
   addMinutesToTime,
   calculateDuration,
@@ -14,7 +13,6 @@ import {
   MIN_PERIOD_DURATION_MINUTES,
   PERIOD_TYPES,
   ALL_WEEKDAYS,
-  DAY_ORDER,
   sortDays,
   sortSchedules,
 } from "./validators"
@@ -478,7 +476,6 @@ export function bellTimingReducer(state, action) {
           const current = { ...periods[periodIndex] }
           const oldStart = current.start_time
           const oldEnd = current.end_time
-          const oldDur = calculateDuration(oldStart, oldEnd)
 
           current.type = periodData.type || current.type
           current.is_break = current.type === PERIOD_TYPES.RECESS
@@ -700,7 +697,7 @@ export function bellTimingReducer(state, action) {
     }
 
     case "APPLY_TEMPLATE": {
-      const { setupId, scheduleId, templateType = "standard" } = action.payload
+      const { setupId, scheduleId } = action.payload
       const nextSetups = state.setups.map((setup) => {
         if (setup.id !== setupId) return setup
         const nextSchedules = setup.schedules.map((sch) => {

@@ -23,7 +23,6 @@ class PrincipalEmailConfigResponse(BaseModel):
     email: str | None = Field(default=None, description="Configured sender email address")
     sender_name: str | None = Field(default=None, description="Configured display sender name")
     is_password_set: bool = Field(default=False, description="Whether an app password has been saved")
-    app_password: str | None = Field(default=None, description="Saved app password")
     updated_at: datetime | None = Field(default=None, description="Last update timestamp")
 
     model_config = ConfigDict(from_attributes=True)

@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from "react"
 import {
-  GraduationCap,
   Trash2,
   Plus,
   Edit2,
@@ -114,7 +113,7 @@ function SingleClassCard({
       })
       if (nameCompare !== 0) return nameCompare
       if (a.created_at && b.created_at) {
-        return new Date(a.created_at) - new Date(b.created_at)
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       }
       return String(a.id || "").localeCompare(String(b.id || ""))
     })
@@ -551,20 +550,12 @@ export function ClassSectionWorkspace({
   targetSubjectId = null,
   onClearTarget = null,
 }) {
-  const [activeHighlight, setActiveHighlight] = useState({
-    sectionId: targetSectionId,
-    subjectId: targetSubjectId,
-  })
-
-  useEffect(() => {
-    setActiveHighlight({
-      sectionId: targetSectionId,
-      subjectId: targetSubjectId,
-    })
-  }, [targetSectionId, targetSubjectId])
+  const targetKey = JSON.stringify([targetSectionId, targetSubjectId])
+  const [dismissedTarget, setDismissedTarget] = useState(null)
+  const isHighlighted = dismissedTarget !== targetKey
 
   const handleStopHighlight = () => {
-    setActiveHighlight({ sectionId: null, subjectId: null })
+    setDismissedTarget(targetKey)
     onClearTarget?.()
   }
 
@@ -598,8 +589,8 @@ export function ClassSectionWorkspace({
           onAssignClassTeacher={onAssignClassTeacher}
           onAssignSubjectTeacher={onAssignSubjectTeacher}
           onToggleSameForAllSections={onToggleSameForAllSections}
-          targetSectionId={activeHighlight.sectionId}
-          targetSubjectId={activeHighlight.subjectId}
+          targetSectionId={isHighlighted ? targetSectionId : null}
+          targetSubjectId={isHighlighted ? targetSubjectId : null}
           onStopHighlight={handleStopHighlight}
         />
       ))}

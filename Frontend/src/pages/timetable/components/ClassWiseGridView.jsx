@@ -1,21 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   CalendarDays,
-  Layers,
-  Search,
   AlertTriangle,
   Clock,
   Plus,
   RefreshCw,
-  FolderOpen,
   FilterX,
-  BookOpen,
-  CheckCircle2,
   Loader2,
   Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Dialog,
@@ -27,19 +21,16 @@ import {
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 import { ClassWiseCard } from "./ClassWiseCard"
 import { JumpToRail } from "./JumpToRail"
-import { AssignModeBar } from "./AssignModeBar"
 import { SlotAssignmentDialog } from "./SlotAssignmentDialog"
 import { TimetableTooltip } from "./TimetableTooltip"
 import {
   useBulkAssignSlot,
-  useCreateTimetableEntry,
   useDeleteTimetableEntry,
 } from "@/hooks/useTimetable"
 import { parseTimetableQuery, sectionMatchesQuery } from "../searchUtils"
 import { isNonTeachingPeriod, sortDays } from "../bellTiming/validators"
 import { getIsMac, formatTime12 } from "../timetableUtils"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
 
 export function ClassWiseGridView({
   timetableData,
@@ -48,11 +39,9 @@ export function ClassWiseGridView({
   onRetry,
   selectedWingId = "ALL", // "ALL" or array of wing IDs
   searchQuery = "",
-  searchTokens = {},
   unassignedOnly = false,
   conflictsOnly = false,
   isAssignMode = false,
-  onToggleAssignMode,
   density = "comfortable",
   zoom = 100,
   onOpenBellSetup,
@@ -71,19 +60,19 @@ export function ClassWiseGridView({
   const [historyStack, setHistoryStack] = useState([])
   const [futureStack, setFutureStack] = useState([])
 
-  // Clear selection and close assignment dialog when edit mode is off
-  useEffect(() => {
+  const [wasAssigning, setWasAssigning] = useState(isAssignMode)
+  if (wasAssigning !== isAssignMode) {
+    setWasAssigning(isAssignMode)
     if (!isAssignMode) {
       setSelectedSlotKey(null)
       setSelectedSlotData(null)
       setCopiedSlotData(null)
       setDialogState({ isOpen: false, cellData: null })
     }
-  }, [isAssignMode])
+  }
 
   const bulkAssignMutation = useBulkAssignSlot()
   const deleteEntryMutation = useDeleteTimetableEntry()
-  const createEntryMutation = useCreateTimetableEntry()
 
   // In-memory per-slot mutation queue to ensure causal sequential execution and eliminate race conditions
   const inFlightSlotMutationsRef = useRef(new Map())
@@ -161,11 +150,15 @@ export function ClassWiseGridView({
       if (!rawSchedules && setup.schedules_json) {
         try {
           rawSchedules = JSON.parse(setup.schedules_json)
-        } catch {}
+        } catch {
+          rawSchedules = null
+        }
       } else if (typeof rawSchedules === "string") {
         try {
           rawSchedules = JSON.parse(rawSchedules)
-        } catch {}
+        } catch {
+          rawSchedules = null
+        }
       }
 
       const rawAppDays = setup.applicable_days || [
@@ -299,6 +292,7 @@ export function ClassWiseGridView({
 
   // Real-time teacher conflict detection
   const { conflictMap, conflictIncidents } = useMemo(() => {
+    /** @type {Record<string, string>} */
     const conflicts = {}
     const incidents = []
     const teacherDayMap = new Map() // key: `${teacher_user_id}_${day_of_week}` -> array of entries
@@ -358,7 +352,9 @@ export function ClassWiseGridView({
         if (!rawSchedules && secSetup.schedules_json) {
           try {
             rawSchedules = JSON.parse(secSetup.schedules_json)
-          } catch {}
+          } catch {
+            rawSchedules = null
+          }
         }
         const dayUpper = (e.day_of_week || "").toUpperCase()
         const targetPNum = e.period_number ?? e.period?.period_number
@@ -395,7 +391,7 @@ export function ClassWiseGridView({
       return direct
     }
 
-    for (const [key, tEntries] of teacherDayMap.entries()) {
+    for (const tEntries of teacherDayMap.values()) {
       if (tEntries.length < 2) continue
 
       // Build adjacency graph of overlapping entries
@@ -487,7 +483,7 @@ export function ClassWiseGridView({
     }
 
     return { conflictMap: conflicts, conflictIncidents: incidents }
-  }, [entries, periodMap, allFlattenedSections, setupMap, setups])
+  }, [entries, periodMap, allFlattenedSections, setupMap, setups, eligible_teachers])
 
   // Filter classes & sections based on search query
   const filteredWings = useMemo(() => {
@@ -623,7 +619,7 @@ export function ClassWiseGridView({
       }
       toast.success(`Cleared ${entriesToClear.length} conflicting slot(s).`)
       setConfirmClearDialog((prev) => ({ ...prev, isOpen: false, entries: [] }))
-    } catch (err) {
+    } catch {
       toast.error("Failed to clear conflicting slots.")
     } finally {
       setIsClearingConflicts(false)
@@ -709,7 +705,7 @@ export function ClassWiseGridView({
     }
 
     return list
-  }, [conflictIncidents, allFlattenedSections, periodMap, timetable?.id])
+  }, [conflictIncidents, allFlattenedSections, periodMap, timetable?.id, getAllDaysForSection, getSplitDaysForSectionAndDay, handleClearConflictIncident])
 
   // Total expected slots across all active sections
   const totalSlotsCount = useMemo(() => {
@@ -1163,7 +1159,7 @@ export function ClassWiseGridView({
         })
         toast.success("Undone unassign")
       }
-    } catch (err) {
+    } catch {
       toast.error("Undo failed")
     }
   }, [historyStack, timetable, entries, bulkAssignMutation, deleteEntryMutation])
@@ -1181,7 +1177,7 @@ export function ClassWiseGridView({
         await bulkAssignMutation.mutateAsync(nextAction.payload)
         toast.success("Redone")
       }
-    } catch (err) {
+    } catch {
       toast.error("Redo failed")
     }
   }, [futureStack, bulkAssignMutation])
@@ -1489,6 +1485,7 @@ export function ClassWiseGridView({
     const handleKeyDown = (e) => {
       // Don't intercept if an input / textarea is focused or dialog is open
       if (
+        e.defaultPrevented ||
         dialogState.isOpen ||
         ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)
       ) {
@@ -1620,6 +1617,8 @@ export function ClassWiseGridView({
     selectedSlotData,
     copiedSlotData,
     timetable,
+    getAllDaysForSection,
+    getSplitDaysForSectionAndDay,
   ])
 
   // LOADING SKELETON
@@ -1770,7 +1769,6 @@ export function ClassWiseGridView({
                           density={density}
                           zoom={zoom}
                           searchQuery={searchQuery}
-                          searchTokens={searchTokens}
                           unassignedOnly={unassignedOnly}
                           conflictsOnly={conflictsOnly}
                         />

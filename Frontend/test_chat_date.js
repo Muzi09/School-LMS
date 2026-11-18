@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
-import { formatLastSeen } from "./src/lib/chatDate.js"
+import { formatLastSeen as localizedLastSeen } from "./src/lib/chatDate.js"
+
+const formatLastSeen = (value, now) => localizedLastSeen(value, now, "en-US")
 
 console.log("Starting chatDate test suite...")
 
@@ -93,3 +95,8 @@ console.log("[PASS] Older-date formatting matches 'Last seen on 02 Aug 2023, 05:
 console.log("\n==========================================")
 console.log("ALL FRONTEND LAST SEEN FORMATTING TESTS PASSED!")
 console.log("==========================================\n")
+
+const indiaTime = new Intl.DateTimeFormat("en-IN", { hour: "2-digit", minute: "2-digit" })
+  .format(yesterday224PM).replace(/\u202f/g, " ")
+assert.equal(localizedLastSeen(yesterday224PM, baseNow, "en-IN"), "Last seen yesterday " + indiaTime)
+assert.match(localizedLastSeen(sec30Ago, baseNow, "hi-IN"), /^पिछली बार ऑनलाइन /u)

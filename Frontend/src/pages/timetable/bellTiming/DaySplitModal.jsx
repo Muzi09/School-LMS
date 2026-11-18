@@ -1,5 +1,4 @@
-import React from "react"
-import { Calendar, Split, X } from "lucide-react"
+import { Split, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const DAY_FULL_NAMES = {
@@ -14,7 +13,6 @@ const DAY_FULL_NAMES = {
 export function DaySplitModal({
   isOpen,
   onClose,
-  schedule,
   daysToSplit = [],
   onConfirmSplit,
 }) {

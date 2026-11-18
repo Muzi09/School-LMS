@@ -35,6 +35,28 @@ class StudentUpdate(BaseModel):
     subjects: List[str] | None = Field(default=None, description="Optional list of subjects chosen for this student")
 
 
+class StudentRosterProfile(BaseModel):
+    middle_name: str | None = None
+    roll_no: str
+    class_name: str
+    section: str
+    house: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StudentRosterRead(BaseModel):
+    id: UUID
+    first_name: str
+    last_name: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    student_profile: StudentRosterProfile
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class StudentDetailRead(BaseModel):
     id: UUID
     first_name: str

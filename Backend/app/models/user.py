@@ -128,8 +128,6 @@ class User(Base, AuditMixin):
             return self.staff_profile.school_id
         if self.student_profile and self.student_profile.school_id:
             return self.student_profile.school_id
-        if self.created_by_user and self.created_by_user.school_id:
-            return self.created_by_user.school_id
         return None
 
     @property

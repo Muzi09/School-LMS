@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect } from "react"
 import { useFormik } from "formik"
 import {
   GraduationCap,
@@ -88,9 +88,9 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
   const updateStudentMutation = useUpdateStudent()
   const [serverError, setServerError] = useState("")
 
-  const validationSchema = React.useMemo(() => getStudentValidationSchema(isEdit), [isEdit])
+  const validationSchema = React.useMemo(() => getStudentValidationSchema(), [])
 
-  const initialValues = React.useMemo(() => {
+  const initialValues = React.useMemo(/** @returns {{ first_name: string, middle_name: string, last_name: string, login_mobile: string, email: string, roll_no: string, gender: number, date_of_birth: string, class_name: string, section: string, house: string, father_first_name: string, father_last_name: string, selected_subjects: string[] }} */ () => {
     const profile = student?.student_profile || {}
     return {
       first_name: student?.first_name || "",
@@ -182,54 +182,34 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
     },
   })
 
-  // Debounced Roll Number Calculation
-  const calculationTimerRef = useRef(null)
+  const { setFieldValue } = formik
+  const { first_name, last_name, class_name, section, selected_subjects } = formik.values
   useEffect(() => {
-    const fn = formik.values.first_name?.trim()
-    const ln = formik.values.last_name?.trim()
-    const cn = formik.values.class_name?.trim()
-    const sec = formik.values.section?.trim()
-
-    if (calculationTimerRef.current) {
-      clearTimeout(calculationTimerRef.current)
+    if (!isOpen) return
+    const firstName = first_name?.trim()
+    const lastName = last_name?.trim()
+    const className = class_name?.trim()
+    const sectionName = section?.trim()
+    if (!firstName || !lastName || !className || !sectionName) {
+      if (!isEdit) setFieldValue("roll_no", "")
+      return
     }
-
-    if (fn && ln && cn && sec) {
-      calculationTimerRef.current = setTimeout(async () => {
-        try {
-          const res = await calculateStudentRollNoApi({
-            firstName: fn,
-            lastName: ln,
-            className: cn,
-            section: sec,
-            studentId: isEdit ? student?.id : undefined,
-          })
-          if (res?.roll_no) {
-            formik.setFieldValue("roll_no", res.roll_no)
-          }
-        } catch {
-          // Keep current roll number if calculation fails
-        }
-      }, 350)
-    } else {
-      if (!isEdit) {
-        formik.setFieldValue("roll_no", "")
+    let active = true
+    const timer = setTimeout(async () => {
+      try {
+        const result = await calculateStudentRollNoApi({
+          firstName, lastName, className, section: sectionName, studentId: isEdit ? student?.id : undefined,
+        })
+        if (active && result?.roll_no) setFieldValue("roll_no", result.roll_no)
+      } catch {
+        // Keep the previous preview when the calculation is unavailable.
       }
-    }
-
+    }, 350)
     return () => {
-      if (calculationTimerRef.current) {
-        clearTimeout(calculationTimerRef.current)
-      }
+      active = false
+      clearTimeout(timer)
     }
-  }, [
-    formik.values.first_name,
-    formik.values.last_name,
-    formik.values.class_name,
-    formik.values.section,
-    isEdit,
-    student?.id,
-  ])
+  }, [isOpen, first_name, last_name, class_name, section, isEdit, student?.id, setFieldValue])
 
   const handleClose = () => {
     createStudentMutation.reset?.()
@@ -311,26 +291,17 @@ export function StudentFormModal({ isOpen, onClose, student = null }) {
     return { academicSubjects: acad, nonAcademicSubjects: nonAcad }
   }, [isUntickedSameForAll, currentSectionObj, formik.values.section])
 
-  // By default all subjects must be ticked initially when section is selected
+  // Preselect the available subjects when the selected section changes.
   useEffect(() => {
-    if (isOpen && isUntickedSameForAll) {
-      const allSubjectNames = [...academicSubjects, ...nonAcademicSubjects].map((s) => s.name)
-      if (allSubjectNames.length > 0) {
-        formik.setFieldValue("selected_subjects", allSubjectNames)
-      }
-    } else if (!isUntickedSameForAll) {
-      if (formik.values.selected_subjects?.length > 0) {
-        formik.setFieldValue("selected_subjects", [])
-      }
-    }
-  }, [
-    isOpen,
-    formik.values.class_name,
-    formik.values.section,
-    isUntickedSameForAll,
-    academicSubjects,
-    nonAcademicSubjects,
-  ])
+    if (!isOpen || !isUntickedSameForAll) return
+    const names = [...academicSubjects, ...nonAcademicSubjects].map((subject) => subject.name)
+    if (names.length) setFieldValue("selected_subjects", names)
+  }, [isOpen, isUntickedSameForAll, academicSubjects, nonAcademicSubjects, class_name, section, setFieldValue])
+
+  const shouldClearSubjects = !isUntickedSameForAll && Boolean(selected_subjects?.length)
+  useEffect(() => {
+    if (shouldClearSubjects) setFieldValue("selected_subjects", [])
+  }, [shouldClearSubjects, setFieldValue])
 
   const handleToggleSubject = (subjectName) => {
     const current = formik.values.selected_subjects || []

@@ -1,7 +1,6 @@
-import React, { useState } from "react"
-import { Calendar, Merge, Check, AlertTriangle, X } from "lucide-react"
+import { useState } from "react"
+import { Merge, Check, AlertTriangle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
 const DAY_FULL_NAMES = {

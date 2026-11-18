@@ -38,10 +38,12 @@ const buttonVariants = cva(
   }
 )
 
+/** @typedef {import("class-variance-authority").VariantProps<typeof buttonVariants>} ButtonVariant */
+
 function Button({
-  className,
-  variant = "default",
-  size = "default",
+  className = "",
+  variant = /** @type {ButtonVariant["variant"]} */ ("default"),
+  size = /** @type {ButtonVariant["size"]} */ ("default"),
   ...props
 }) {
   return (
@@ -55,9 +57,9 @@ function Button({
 }
 
 function LinkButton({
-  className,
-  variant = "default",
-  size = "default",
+  className = "",
+  variant = /** @type {ButtonVariant["variant"]} */ ("default"),
+  size = /** @type {ButtonVariant["size"]} */ ("default"),
   ...props
 }) {
   return (
@@ -70,4 +72,4 @@ function LinkButton({
   );
 }
 
-export { Button, LinkButton, buttonVariants }
+export { Button, LinkButton }

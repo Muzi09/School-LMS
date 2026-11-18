@@ -18,10 +18,10 @@ export function InlineEditInput({
   className = "",
   inputClassName = "",
   autoFocus = true,
-  maxLength,
+  maxLength = undefined,
   disabled = false,
   disableSave = false,
-  clickOutsideRef,
+  clickOutsideRef = undefined,
 }) {
   const selfRef = useRef(null)
 

@@ -25,11 +25,6 @@ import {
   duplicateTimetableApi,
   deleteTimetableApi,
   listSetupsApi,
-  createSetupApi,
-  updateSetupApi,
-  duplicateSetupApi,
-  deleteSetupApi,
-  previewSetupsImpactApi,
   batchSaveSetupsApi,
   getClassWiseTimetableApi,
   checkConflictApi,
@@ -167,7 +162,7 @@ export function useActiveTimetable() {
 export function useCreateTimetable() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (payload) => createTimetableApi(payload),
+    mutationFn: createTimetableApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
@@ -179,7 +174,7 @@ export function useCreateTimetable() {
 export function useUpdateTimetable() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ timetableId, payload }) => updateTimetableApi(timetableId, payload),
+    mutationFn: (/** @type {{ timetableId: string, payload: Record<string, unknown> }} */ { timetableId, payload }) => updateTimetableApi(timetableId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
@@ -212,8 +207,8 @@ export function useTimetablePublishDiff(timetableId, options = {}) {
 export function usePublishTimetable() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (timetableId) => publishTimetableApi(timetableId),
-    onSuccess: (_, timetableId) => {
+    mutationFn: (/** @type {{ timetableId: string, expectedVersion: number }} */ { timetableId, expectedVersion }) => publishTimetableApi(timetableId, expectedVersion),
+    onSuccess: (_, { timetableId }) => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
       queryClient.invalidateQueries({ queryKey: ["timetable", "publish-diff", timetableId] })
@@ -225,7 +220,7 @@ export function usePublishTimetable() {
 export function useDuplicateTimetable() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ timetableId, name }) => duplicateTimetableApi(timetableId, name),
+    mutationFn: (/** @type {{ timetableId: string, name?: string }} */ { timetableId, name }) => duplicateTimetableApi(timetableId, name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.all })
@@ -262,13 +257,13 @@ export function useSetups(timetableId, options = {}) {
 export function useBatchSaveSetups() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (payload) => batchSaveSetupsApi(payload),
+    mutationFn: batchSaveSetupsApi,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.setups(variables.timetable_id) })
       queryClient.invalidateQueries({ queryKey: ["timetable", "class-wise"] })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
-      queryClient.invalidateQueries({ queryKey: timetableKeys.insights(), refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.timetables() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable() })
+      queryClient.invalidateQueries({ queryKey: timetableKeys.insights() })
     },
   })
 }
@@ -399,7 +394,7 @@ function applyOptimisticBulkAssign(oldData, payload) {
 }
 
 // Helper for optimistic delete in class-wise timetable
-function applyOptimisticDelete(oldData, { entryId, sectionId }) {
+function applyOptimisticDelete(oldData, /** @type {{ entryId: string, sectionId?: string }} */ { entryId, sectionId }) {
   if (!oldData || !Array.isArray(oldData.entries)) return oldData
 
   const deletedEntry = oldData.entries.find((e) => String(e.id) === String(entryId))
@@ -460,7 +455,7 @@ export function useBulkAssignSlot() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationKey: ["bulk-assign-slot"],
-    mutationFn: (payload) => bulkAssignSlotApi(payload),
+    mutationFn: (/** @type {Parameters<typeof bulkAssignSlotApi>[0] & { target_count?: number, _optimisticSubject?: object, _optimisticTeacher?: object }} */ payload) => bulkAssignSlotApi(payload),
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey: ["timetable", "class-wise"] })
       const previousData = queryClient.getQueriesData({ queryKey: ["timetable", "class-wise"] })
@@ -501,7 +496,7 @@ export function useCreateTimetableEntry() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (payload) => createTimetableEntryApi(payload),
+    mutationFn: createTimetableEntryApi,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.section_id), refetchType: "none" })
       queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
@@ -515,7 +510,7 @@ export function useUpdateTimetableEntry() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ entryId, payload, sectionId }) => updateTimetableEntryApi(entryId, payload),
+    mutationFn: (/** @type {{ entryId: string, payload: Record<string, unknown>, sectionId?: string }} */ { entryId, payload }) => updateTimetableEntryApi(entryId, payload),
     onSuccess: (_, variables) => {
       if (variables?.sectionId) {
         queryClient.invalidateQueries({ queryKey: timetableKeys.grid(variables.sectionId), refetchType: "none" })
@@ -531,7 +526,7 @@ export function useDeleteTimetableEntry() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ entryId, sectionId }) => deleteTimetableEntryApi(entryId),
+    mutationFn: (/** @type {{ entryId: string, sectionId?: string }} */ { entryId }) => deleteTimetableEntryApi(entryId),
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ["timetable", "class-wise"] })
       const previousData = queryClient.getQueriesData({ queryKey: ["timetable", "class-wise"] })
@@ -576,7 +571,7 @@ export function useUpdatePeriod() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ periodId, payload }) => updatePeriodApi(periodId, payload),
+    mutationFn: (/** @type {{ periodId: string, payload: Record<string, unknown> }} */ { periodId, payload }) => updatePeriodApi(periodId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: timetableKeys.periods() })
       queryClient.invalidateQueries({ queryKey: timetableKeys.all })
@@ -598,7 +593,7 @@ export function useDeletePeriod() {
 
 export function useExportTimetableExcel() {
   return useMutation({
-    mutationFn: ({ timetableId, payload }) => exportTimetableExcelApi({ timetableId, payload }),
+    mutationFn: exportTimetableExcelApi,
   })
 }
 

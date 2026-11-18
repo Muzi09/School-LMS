@@ -5,8 +5,8 @@ export const adminService = {
     return await apiClient.get("/admin/dashboard")
   },
 
-  getPrincipals: async () => {
-    return await apiClient.get("/admin/principals")
+  getPrincipals: async (page) => {
+    return apiClient.get("/admin/principals/page", { params: { page } })
   },
 
   createPrincipal: async (principalData) => {

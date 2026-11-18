@@ -85,6 +85,7 @@ class ChatService:
         return MessageRead(
             id=msg.id,
             conversation_id=msg.conversation_id,
+            client_message_id=msg.client_message_id,
             sender_id=msg.sender_id,
             sender_name=sender_name,
             sender_role=sender_role,
@@ -718,7 +719,8 @@ class ChatService:
         current_user: User,
         conversation_id: UUID,
         content: str,
-    ) -> MessageRead:
+        client_message_id: UUID | None = None,
+    ) -> tuple[MessageRead, bool]:
         """Validate, persist, and return sent message."""
         clean_content = content.strip()
         if not clean_content:
@@ -733,7 +735,7 @@ class ChatService:
                 detail="Message exceeds maximum allowed length of 5000 characters.",
             )
 
-        conv = self.chat_repo.get_conversation_by_id(conversation_id)
+        conv = self.chat_repo.get_conversation_by_id(conversation_id, lock=True)
         if not conv:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -751,13 +753,21 @@ class ChatService:
                 detail="You do not have permission to send messages in this conversation.",
             )
 
+        if client_message_id is not None:
+            existing = self.chat_repo.get_client_message(conversation_id, current_user.id, client_message_id)
+            if existing:
+                if existing.content != clean_content:
+                    raise HTTPException(status.HTTP_409_CONFLICT, "This message ID already has different content.")
+                return self._build_message_read(existing), False
+
         msg = self.chat_repo.create_message(
             conversation_id=conversation_id,
             sender_id=current_user.id,
             content=clean_content,
             message_type="TEXT",
+            client_message_id=client_message_id,
         )
-        return self._build_message_read(msg, is_read=False)
+        return self._build_message_read(msg, is_read=False), True
 
     def mark_conversation_as_read(
         self,

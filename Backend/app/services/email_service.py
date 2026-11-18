@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 from app.core.config import settings
 from app.core.security import decrypt_smtp_password
+from app.core.smtp_policy import smtp_connection
 
 if TYPE_CHECKING:
     from app.models.smtp_configuration import SmtpConfiguration
@@ -34,23 +35,9 @@ def test_smtp_connection(
         if "gmail" in host_clean.lower() or "google" in host_clean.lower():
             pwd_clean = pwd_clean.replace(" ", "")
 
-        if sec == "SSL" or smtp_port == 465:
-            context = ssl.create_default_context()
-            server = smtplib.SMTP_SSL(host_clean, smtp_port, timeout=12, context=context)
-            with server:
-                server.ehlo()
-                if user_clean and pwd_clean:
-                    server.login(user_clean, pwd_clean)
-        else:
-            server = smtplib.SMTP(host_clean, smtp_port, timeout=12)
-            with server:
-                server.ehlo()
-                if sec == "TLS":
-                    context = ssl.create_default_context()
-                    server.starttls(context=context)
-                    server.ehlo()
-                if user_clean and pwd_clean:
-                    server.login(user_clean, pwd_clean)
+        with smtp_connection(host_clean, smtp_port, sec, timeout=12) as server:
+            if user_clean and pwd_clean:
+                server.login(user_clean, pwd_clean)
 
         return True, None
 
@@ -192,25 +179,9 @@ Best regards,
         plain_pwd = plain_pwd.replace(" ", "")
 
     try:
-        if security_mode == "SSL" or smtp_config.smtp_port == 465:
-            context = ssl.create_default_context()
-            server = smtplib.SMTP_SSL(host_clean, smtp_config.smtp_port, timeout=15, context=context)
-            with server:
-                server.ehlo()
-                if user_clean and plain_pwd:
-                    server.login(user_clean, plain_pwd)
-                server.send_message(msg)
-        else:
-            server = smtplib.SMTP(host_clean, smtp_config.smtp_port, timeout=15)
-            with server:
-                server.ehlo()
-                if security_mode == "TLS":
-                    context = ssl.create_default_context()
-                    server.starttls(context=context)
-                    server.ehlo()
-                if user_clean and plain_pwd:
-                    server.login(user_clean, plain_pwd)
-                server.send_message(msg)
+        with smtp_connection(host_clean, smtp_config.smtp_port, security_mode, timeout=15) as server:
+            server.login(user_clean, plain_pwd)
+            server.send_message(msg)
 
         logger.info(f"Successfully sent invitation email to {principal_email} using SMTP host {smtp_config.smtp_host}")
         return True
@@ -367,25 +338,9 @@ Best regards,
         plain_pwd = plain_pwd.replace(" ", "")
 
     try:
-        if security_mode == "SSL" or smtp_config.smtp_port == 465:
-            context = ssl.create_default_context()
-            server = smtplib.SMTP_SSL(host_clean, smtp_config.smtp_port, timeout=15, context=context)
-            with server:
-                server.ehlo()
-                if user_clean and plain_pwd:
-                    server.login(user_clean, plain_pwd)
-                server.send_message(msg)
-        else:
-            server = smtplib.SMTP(host_clean, smtp_config.smtp_port, timeout=15)
-            with server:
-                server.ehlo()
-                if security_mode == "TLS":
-                    context = ssl.create_default_context()
-                    server.starttls(context=context)
-                    server.ehlo()
-                if user_clean and plain_pwd:
-                    server.login(user_clean, plain_pwd)
-                server.send_message(msg)
+        with smtp_connection(host_clean, smtp_config.smtp_port, security_mode, timeout=15) as server:
+            server.login(user_clean, plain_pwd)
+            server.send_message(msg)
 
         logger.info(f"Successfully sent staff invitation email to {staff_email} via SMTP host {smtp_config.smtp_host}")
         return True

@@ -1,7 +1,6 @@
-import * as React from "react"
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }) {
+function Table({ className = "", ...props }) {
   return (
     <div data-slot="table-container" className="relative w-full overflow-x-auto">
       <table
@@ -13,7 +12,7 @@ function Table({ className, ...props }) {
   )
 }
 
-function TableHeader({ className, ...props }) {
+function TableHeader({ className = "", ...props }) {
   return (
     <thead
       data-slot="table-header"
@@ -23,7 +22,7 @@ function TableHeader({ className, ...props }) {
   )
 }
 
-function TableBody({ className, ...props }) {
+function TableBody({ className = "", ...props }) {
   return (
     <tbody
       data-slot="table-body"
@@ -33,7 +32,7 @@ function TableBody({ className, ...props }) {
   )
 }
 
-function TableFooter({ className, ...props }) {
+function TableFooter({ className = "", ...props }) {
   return (
     <tfoot
       data-slot="table-footer"
@@ -43,7 +42,7 @@ function TableFooter({ className, ...props }) {
   )
 }
 
-function TableRow({ className, ...props }) {
+function TableRow({ className = "", ...props }) {
   return (
     <tr
       data-slot="table-row"
@@ -56,7 +55,7 @@ function TableRow({ className, ...props }) {
   )
 }
 
-function TableHead({ className, ...props }) {
+function TableHead({ className = "", ...props }) {
   return (
     <th
       data-slot="table-head"
@@ -69,7 +68,7 @@ function TableHead({ className, ...props }) {
   )
 }
 
-function TableCell({ className, ...props }) {
+function TableCell({ className = "", ...props }) {
   return (
     <td
       data-slot="table-cell"
@@ -82,7 +81,7 @@ function TableCell({ className, ...props }) {
   )
 }
 
-function TableCaption({ className, ...props }) {
+function TableCaption({ className = "", ...props }) {
   return (
     <caption
       data-slot="table-caption"

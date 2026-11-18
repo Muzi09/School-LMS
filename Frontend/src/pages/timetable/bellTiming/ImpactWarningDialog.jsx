@@ -1,5 +1,4 @@
-import React from "react"
-import { AlertTriangle, Clock, X, Check, ArrowRight } from "lucide-react"
+import { AlertTriangle, X, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 

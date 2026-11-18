@@ -1,5 +1,4 @@
-import React from "react"
-import { AlertCircle, RotateCcw, RotateCw, Check, X, Loader2 } from "lucide-react"
+import { RotateCcw, RotateCw, Check, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export function UnsavedBar({

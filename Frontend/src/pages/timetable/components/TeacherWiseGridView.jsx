@@ -1,14 +1,7 @@
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import {
   User,
   Coffee,
-  Search,
-  BookOpen,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  Layers,
-  Sparkles,
   AlertTriangle,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -34,7 +27,6 @@ export function TeacherWiseGridView({
   zoom = 100,
 }) {
   const {
-    timetable,
     setups = [],
     entries = [],
     eligible_teachers = [],
@@ -336,7 +328,7 @@ export function TeacherWiseGridView({
                           const clsName = sec.school_class?.name || ""
                           const secLabel = `${clsName} ${sec.name || ""}`.trim()
                           const subjName = entry.subject?.name || ""
-                          const theme = getSubjectTheme(subjName, entry.subject?.category)
+                          const theme = getSubjectTheme(subjName)
 
                           return (
                             <div

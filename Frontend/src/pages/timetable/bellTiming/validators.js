@@ -3,7 +3,7 @@
  * Enforced uniformly on client and server.
  */
 
-import { parseTime, calculateDuration, toMinutes, areTimesEqual } from "./timeUtils"
+import { parseTime, toMinutes } from "./timeUtils"
 
 export const MIN_PERIOD_DURATION_MINUTES = 15
 export const MAX_PERIOD_DURATION_MINUTES = 180
@@ -453,7 +453,7 @@ export function validateSchedule(schedule) {
 
   // Label uniqueness check
   const seenLabels = new Set()
-  periods.forEach((p, idx) => {
+  periods.forEach((p) => {
     const lbl = (p.label || "").trim().toLowerCase()
     if (lbl) {
       if (seenLabels.has(lbl)) {

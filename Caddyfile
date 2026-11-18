@@ -1,43 +1,21 @@
-# =============================================================
-# Caddyfile — Reverse Proxy & Static Frontend Server
-# =============================================================
-# WHAT THIS DOES:
-# 1. Forwards all API requests (/api/*, /docs, /ws/*) to FastAPI.
-# 2. Serves the built React Web App (HTML/CSS/JS) for all other URLs.
-# 3. Ensures POST requests to /api/* are NOT intercepted by try_files.
-# =============================================================
+{$LMS_DOMAIN} {
+    encode zstd gzip
 
-:80 {
-    # ── 1. Backend API & Documentation ─────────────────────
-    handle /api/* {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        X-Frame-Options "SAMEORIGIN"
+    }
+
+    @backend path /api/* /ws/* /uploads/* /health/live /health/ready
+    handle @backend {
+        request_body {
+            max_size 12MB
+        }
         reverse_proxy backend:8000
     }
 
-    handle /docs* {
-        reverse_proxy backend:8000
-    }
-
-    handle /redoc* {
-        reverse_proxy backend:8000
-    }
-
-    handle /openapi.json {
-        reverse_proxy backend:8000
-    }
-
-    # ── 2. Real-time WebSocket Chat ────────────────────────
-    handle /ws/* {
-        reverse_proxy backend:8000
-    }
-
-    # ── 3. Uploaded Files (School emblems, homework) ───────
-    handle /uploads/* {
-        reverse_proxy backend:8000
-    }
-
-    # ── 4. React Web Application (SPA Fallback) ────────────
-    # In Caddy, a handle block with no matcher acts as a fallback
-    # that only runs if none of the above handles matched!
     handle {
         root * /srv/dist
         try_files {path} /index.html

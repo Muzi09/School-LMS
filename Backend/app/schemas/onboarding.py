@@ -72,8 +72,6 @@ class SchoolSetupRequest(BaseModel):
     # Step 7: Principal Credentials
     password: str = Field(..., min_length=8, max_length=100)
     confirm_password: str = Field(..., min_length=8, max_length=100)
-    pin: str = Field(..., min_length=4, max_length=10, description="4-10 digit quick login PIN")
-    confirm_pin: str = Field(..., min_length=4, max_length=10)
 
 
 class SchoolSetupResponse(BaseModel):

@@ -21,7 +21,7 @@ function Avatar({
 }
 
 function AvatarImage({
-  className,
+  className = undefined,
   ...props
 }) {
   const [state, setState] = React.useState(props.src ? "loading" : "error")

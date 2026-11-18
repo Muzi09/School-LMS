@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import { useState } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -10,12 +10,10 @@ import {
   Sun,
   Moon,
   Building2,
-  Mail,
   CheckCircle2,
-  AlertCircle,
 } from "lucide-react"
-import { useAuth } from "@/context/AuthContext"
-import { useTheme } from "@/context/ThemeContext"
+import { useAuth } from "@/context/authState"
+import { useTheme } from "@/context/themeState"
 import { adminService } from "@/api/adminService"
 import { Button } from "@/components/ui/button"
 import { SmtpConfigModal } from "@/pages/admin/SmtpConfigModal"
@@ -34,9 +32,8 @@ export function AdminLayout() {
 
   const isSmtpConfigured = Boolean(smtpConfig?.is_configured)
 
-  const handleLogout = () => {
-    logout()
-    navigate("/admin/login", { replace: true })
+  const handleLogout = async () => {
+    if (await logout()) navigate("/admin/login", { replace: true })
   }
 
   const navItems = [

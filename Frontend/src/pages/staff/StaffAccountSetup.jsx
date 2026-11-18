@@ -3,7 +3,6 @@ import { useSearchParams, useNavigate, Link } from "react-router-dom"
 import {
   GraduationCap,
   Lock,
-  Hash,
   Eye,
   EyeOff,
   CheckCircle2,
@@ -26,17 +25,14 @@ export function StaffAccountSetup() {
   // Validation / Loading States
   const [isValidating, setIsValidating] = useState(true)
   const [tokenError, setTokenError] = useState(null)
-  const [staffInfo, setStaffInfo] = useState(null)
+  const [staffInfo, setStaffInfo] = useState(/** @type {import("@/api/staffService").StaffSetupValidation | null} */ (null))
 
   // Form Fields
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [pin, setPin] = useState("")
-  const [confirmPin, setConfirmPin] = useState("")
 
   // UI States
   const [showPassword, setShowPassword] = useState(false)
-  const [showPin, setShowPin] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState(null)
   const [isSuccess, setIsSuccess] = useState(false)
@@ -57,7 +53,7 @@ export function StaffAccountSetup() {
         setTokenError(null)
         const response = await validateStaffSetupTokenApi(token)
         if (isMounted) {
-          setStaffInfo(response.data)
+          setStaffInfo(response)
         }
       } catch (err) {
         if (isMounted) {
@@ -94,22 +90,11 @@ export function StaffAccountSetup() {
       return
     }
 
-    // PIN validation
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-      setFormError("Quick Login PIN must be exactly 4 numeric digits.")
-      return
-    }
-    if (pin !== confirmPin) {
-      setFormError("PINs do not match. Please verify both fields.")
-      return
-    }
-
     try {
       setIsSubmitting(true)
       await completeStaffSetupApi({
         token,
         password,
-        pin,
       })
       setIsSuccess(true)
     } catch (err) {
@@ -188,7 +173,7 @@ export function StaffAccountSetup() {
           </div>
           <h2 className="text-2xl font-bold text-foreground">Account Activated!</h2>
           <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-            Welcome to the school team! Your Master Password and Quick Login PIN have been successfully configured.
+            Welcome to the school team! Your password is ready to use.
           </p>
 
           <div className="mt-6 p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 text-left text-xs space-y-2">
@@ -228,7 +213,7 @@ export function StaffAccountSetup() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Set Up Your Staff Account</h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            Create your master password and 4-digit Quick Login PIN to activate access.
+            Create a password to activate your account.
           </p>
         </div>
 
@@ -303,53 +288,6 @@ export function StaffAccountSetup() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat password"
                   className="h-10 text-sm rounded-xl px-3.5"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2: Quick Login PIN */}
-          <div className="p-4 rounded-2xl border border-border bg-card/60 space-y-3.5">
-            <div className="flex items-center gap-2 font-bold text-xs sm:text-sm text-foreground">
-              <Hash className="size-4 text-primary" />
-              <span>Create Quick Login PIN (4 digits)</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
-                  4-Digit PIN
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showPin ? "text" : "password"}
-                    maxLength={4}
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-                    placeholder="••••"
-                    className="pr-10 h-10 text-sm font-mono tracking-widest text-center rounded-xl px-3.5"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPin(!showPin)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
-                  >
-                    {showPin ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
-                  Confirm PIN
-                </label>
-                <Input
-                  type={showPin ? "text" : "password"}
-                  maxLength={4}
-                  value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
-                  placeholder="••••"
-                  className="h-10 text-sm font-mono tracking-widest text-center rounded-xl px-3.5"
                 />
               </div>
             </div>

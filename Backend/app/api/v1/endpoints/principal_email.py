@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_manage_email_setup
 from app.core.database import get_db
-from app.core.security import encrypt_smtp_password, decrypt_smtp_password
+from app.core.smtp_policy import validate_smtp_target
+from app.core.security import encrypt_smtp_password, smtp_password_is_configured
 from app.models.school import School
 from app.models.smtp_configuration import SmtpConfiguration
 from app.models.user import User
@@ -25,17 +26,18 @@ def _derive_smtp_details(email: str, custom_host: str | None = None, custom_port
         host = custom_host.strip()
         port = custom_port or (465 if "ssl" in host.lower() else 587)
         sec = "SSL" if port == 465 else "TLS"
-        return host, port, sec
+        return validate_smtp_target(host, port, sec), port, sec
 
     email_clean = email.strip().lower()
     domain = email_clean.split("@")[-1] if "@" in email_clean else ""
 
     if domain in ("outlook.com", "hotmail.com", "live.com", "office365.com"):
-        return "smtp.office365.com", 587, "TLS"
-    if domain in ("yahoo.com", "ymail.com"):
-        return "smtp.mail.yahoo.com", 587, "TLS"
-    # Default to Gmail / Google Workspace (standard for Google for Education domains)
-    return "smtp.gmail.com", 587, "TLS"
+        host = "smtp.office365.com"
+    elif domain in ("yahoo.com", "ymail.com"):
+        host = "smtp.mail.yahoo.com"
+    else:
+        host = "smtp.gmail.com"
+    return validate_smtp_target(host, 587, "TLS"), 587, "TLS"
 
 
 @router.get("", response_model=PrincipalEmailConfigResponse, summary="Get Principal Email Setup Status")
@@ -69,23 +71,14 @@ def get_principal_email_setup(
             email=current_user.email,
             sender_name=default_sender,
             is_password_set=False,
-            app_password=None,
             updated_at=None,
         )
 
-    decrypted_pwd = None
-    if smtp_config.smtp_password_encrypted:
-        try:
-            decrypted_pwd = decrypt_smtp_password(smtp_config.smtp_password_encrypted)
-        except Exception:
-            decrypted_pwd = None
-
     return PrincipalEmailConfigResponse(
-        is_configured=bool(smtp_config.is_active and smtp_config.smtp_host and smtp_config.from_email),
+        is_configured=bool(smtp_config.is_active and smtp_config.smtp_host and smtp_config.from_email and smtp_password_is_configured(smtp_config.smtp_password_encrypted)),
         email=smtp_config.from_email or smtp_config.smtp_username,
         sender_name=smtp_config.from_name,
-        is_password_set=bool(smtp_config.smtp_password_encrypted),
-        app_password=decrypted_pwd,
+        is_password_set=smtp_password_is_configured(smtp_config.smtp_password_encrypted),
         updated_at=smtp_config.updated_at,
     )
 
@@ -162,7 +155,6 @@ def save_principal_email_setup(
         email=smtp_config.from_email,
         sender_name=smtp_config.from_name,
         is_password_set=True,
-        app_password=app_pwd_clean,
         updated_at=smtp_config.updated_at,
     )
 

@@ -6,12 +6,7 @@ from app.models.enums import UserRole
 
 class LoginRequest(BaseModel):
     email: EmailStr = Field(..., description="User email address")
-    password: str = Field(..., min_length=1, description="User plaintext password")
-
-
-class QuickLoginRequest(BaseModel):
-    email: EmailStr = Field(..., description="Principal email address")
-    pin: str = Field(..., min_length=4, max_length=10, description="Principal quick login PIN")
+    password: str = Field(..., min_length=1, max_length=72, description="User plaintext password")
 
 
 class AuthUserResponse(BaseModel):
@@ -32,6 +27,6 @@ class AuthUserResponse(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: str | None = None
     token_type: str = "bearer"
     user: AuthUserResponse

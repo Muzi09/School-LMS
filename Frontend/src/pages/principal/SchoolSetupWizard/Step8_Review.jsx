@@ -223,10 +223,6 @@ export function Step8Review({
               <CheckCircle2 className="size-4 text-emerald-500" />
               <span className="text-foreground font-medium">Master Password Configured</span>
             </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-4 text-emerald-500" />
-              <span className="text-foreground font-medium">Quick Login PIN Configured</span>
-            </div>
           </div>
         </div>
       </div>

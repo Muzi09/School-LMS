@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 from typing import Annotated
@@ -13,15 +14,22 @@ from fastapi import (
     status,
 )
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import (
     get_chat_service,
     get_current_user,
     get_db,
     get_user_repository,
+    require_staff_or_principal,
 )
 from app.core.connection_manager import chat_connection_manager
-from app.core.security import decode_access_token
+from app.core.browser_session import COOKIE_NAME, find_browser_user
+from app.core.config import settings
+from app.core.database import SessionLocal
+from app.models.enums import UserRole
+from app.repositories.chat_repository import ChatRepository
+from app.repositories.user_repository import UserRepository
 from app.models.user import User
 from app.schemas.chat import (
     AddParticipantsRequest,
@@ -52,7 +60,7 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
     description="Search active users within the current user's school who can be messaged.",
 )
 def search_chat_users(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
     search: Annotated[str | None, Query(description="Search term (name, email, or mobile)")] = None,
 ):
@@ -66,7 +74,7 @@ def search_chat_users(
     description="Retrieve all conversations (direct, group, broadcast) for the current user.",
 )
 def list_conversations(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     return service.list_conversations(current_user=current_user)
@@ -81,7 +89,7 @@ def list_conversations(
 )
 def create_conversation(
     data: CreateConversationRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     return service.get_or_create_conversation(
@@ -99,7 +107,7 @@ def create_conversation(
 )
 async def create_group_conversation(
     data: CreateGroupRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     conv = service.create_group(
@@ -128,7 +136,7 @@ async def create_group_conversation(
 )
 async def create_broadcast_conversation(
     data: CreateBroadcastRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     conv = service.create_broadcast(
@@ -155,7 +163,7 @@ async def create_broadcast_conversation(
 )
 def get_conversation_details(
     conversation_id: UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     return service.get_conversation_details(
@@ -173,7 +181,7 @@ def get_conversation_details(
 async def update_conversation(
     conversation_id: UUID,
     data: UpdateConversationRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     service.update_group_name(
@@ -201,7 +209,7 @@ async def update_conversation(
 async def add_participants(
     conversation_id: UUID,
     data: AddParticipantsRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     added = service.add_group_participants(
@@ -229,7 +237,7 @@ async def add_participants(
 async def remove_participant(
     conversation_id: UUID,
     user_id: UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     participant_ids_before = service.chat_repo.get_participant_ids(conversation_id)
@@ -258,7 +266,7 @@ async def remove_participant(
 )
 async def leave_group(
     conversation_id: UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
     data: TransferOwnershipRequest | None = None,
 ):
@@ -288,7 +296,7 @@ async def leave_group(
 )
 def get_messages(
     conversation_id: UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
     limit: Annotated[int, Query(ge=1, le=100, description="Page limit")] = 50,
     before: Annotated[datetime | None, Query(description="Cursor for pagination before timestamp")] = None,
@@ -311,21 +319,18 @@ def get_messages(
 async def send_message_rest(
     conversation_id: UUID,
     data: SendMessageRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
-    msg = service.send_message(
-        current_user=current_user,
-        conversation_id=conversation_id,
-        content=data.content,
+    msg, created = await run_in_threadpool(
+        service.send_message, current_user, conversation_id, data.content, data.client_message_id,
     )
-
-    participant_ids = service.chat_repo.get_participant_ids(conversation_id)
-    event_payload = {
-        "type": "message",
-        "message": msg.model_dump(mode="json"),
-    }
-    await chat_connection_manager.broadcast_to_users(participant_ids, event_payload)
+    if created:
+        participant_ids = await run_in_threadpool(service.chat_repo.get_participant_ids, conversation_id)
+        await chat_connection_manager.broadcast_to_users(
+            [user_id for user_id in participant_ids if user_id != current_user.id],
+            {"type": "message", "message": msg.model_dump(mode="json")},
+        )
     return msg
 
 
@@ -337,7 +342,7 @@ async def send_message_rest(
 )
 async def mark_as_read(
     conversation_id: UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_staff_or_principal)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ):
     last_read_at = service.mark_conversation_as_read(
@@ -363,231 +368,116 @@ async def mark_as_read(
     )
 
 
-async def handle_chat_websocket(
-    websocket: WebSocket,
-    token: str | None = None,
-    db: Session | None = None,
-):
-    """
-    Core WebSocket handler for real-time messaging, presence, and typing.
-    Validates JWT token, attaches to ConnectionManager, and processes events.
-    """
-    if not token:
-        query_token = websocket.query_params.get("token")
-        if query_token:
-            token = query_token
+def _socket_actor(db: Session, token: str | None) -> User | None:
+    user = find_browser_user(db, token)
+    if user is None or user.school_id is None or user.role not in {UserRole.STAFF, UserRole.PRINCIPAL}:
+        return None
+    return user
 
-    if not token:
-        logger.warning("WebSocket chat connection rejected: no token provided")
+
+def _socket_identity(token: str | None) -> tuple[UUID, UUID] | None:
+    with SessionLocal() as db:
+        user = _socket_actor(db, token)
+        return (user.id, user.school_id) if user else None
+
+
+def _process_socket_event(token: str, identity: tuple[UUID, UUID], data: dict):
+    event = data.get("type")
+    with SessionLocal() as db:
+        user = _socket_actor(db, token)
+        if not user or (user.id, user.school_id) != identity:
+            return None
+        if event == "ping":
+            return {"type": "pong"}, [], None
+        if event not in {"send_message", "typing_start", "typing_stop", "mark_read"}:
+            return {"type": "error", "error": "Unrecognized chat event."}, [], None
+
+        repo = ChatRepository(db)
+        service = ChatService(chat_repo=repo, user_repo=UserRepository(db), db=db)
+        try:
+            conversation_id = UUID(str(data.get("conversation_id")))
+            conversation = repo.get_conversation_by_id(conversation_id)
+            if conversation is None or not service.can_view_conversation(user, conversation):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found.")
+
+            recipients = [uid for uid in repo.get_participant_ids(conversation_id) if uid != user.id]
+            if event == "send_message":
+                payload = SendMessageRequest(content=data.get("content"), client_message_id=data.get("temp_id"))
+                message, created = service.send_message(
+                    user, conversation_id, payload.content, payload.client_message_id,
+                )
+                output = message.model_dump(mode="json")
+                return (
+                    {"type": "message_sent", "temp_id": data.get("temp_id"), "message": output},
+                    recipients if created else [],
+                    {"type": "message", "message": output},
+                )
+            if event == "mark_read":
+                last_read_at = service.mark_conversation_as_read(user, conversation_id)
+                return None, recipients, {
+                    "type": "read_receipt", "conversation_id": str(conversation_id),
+                    "reader_id": str(user.id), "last_read_at": last_read_at.isoformat(),
+                }
+            if conversation.type == "BROADCAST":
+                return None, [], None
+            return None, recipients, {
+                "type": "typing", "conversation_id": str(conversation_id),
+                "user_id": str(user.id), "user_name": f"{user.first_name} {user.last_name}".strip(),
+                "is_typing": event == "typing_start",
+            }
+        except (HTTPException, ValueError) as exc:
+            if event == "send_message":
+                detail = exc.detail if isinstance(exc, HTTPException) else "Invalid message."
+                return {"type": "message_failed", "temp_id": data.get("temp_id"), "error": detail}, [], None
+            return None, [], None
+
+
+async def handle_chat_websocket(websocket: WebSocket) -> None:
+    token = websocket.cookies.get(COOKIE_NAME)
+    if websocket.headers.get("origin") not in settings.frontend_origins or not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    try:
-        payload = decode_access_token(token)
-        user_id_str = payload.get("sub")
-        if not user_id_str:
-            raise ValueError("Token missing sub")
-        user_id = UUID(user_id_str)
-    except Exception as e:
-        logger.warning(f"WebSocket auth failed to decode token: {e}")
+    identity = await run_in_threadpool(_socket_identity, token)
+    if identity is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    close_db_on_exit = False
-    if db is None:
-        from app.core.database import SessionLocal
-        db = SessionLocal()
-        close_db_on_exit = True
-
+    user_id, school_id = identity
+    await chat_connection_manager.connect(user_id, school_id, websocket)
     try:
-        user = db.get(User, user_id)
-        if not user or not user.is_active or user.deleted_at is not None:
-            logger.warning(f"WebSocket rejected: user {user_id} not found or inactive")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
-        school_id = user.school_id
-        if not school_id:
-            logger.warning(f"WebSocket rejected: user {user_id} has no associated school")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
-        # Register active connection
-        await chat_connection_manager.connect(user.id, school_id, websocket)
-
-        # Initialize service
-        from app.repositories.chat_repository import ChatRepository
-        from app.repositories.user_repository import UserRepository
-        chat_repo = ChatRepository(db=db)
-        user_repo = UserRepository(db=db)
-        service = ChatService(chat_repo=chat_repo, user_repo=user_repo, db=db)
-
-        # Track conversations where this connection started typing
-        active_typing_conversations: set[UUID] = set()
-
-        # Main message loop
         while True:
-            data = await websocket.receive_json()
-            event_type = data.get("type")
+            try:
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=25)
+            except TimeoutError:
+                if await run_in_threadpool(_socket_identity, token) != identity:
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    break
+                await chat_connection_manager.refresh(user_id, websocket)
+                continue
+            except ValueError:
+                await websocket.send_json({"type": "error", "error": "Invalid chat event."})
+                continue
+            if not isinstance(data, dict):
+                continue
 
-            if event_type == "ping":
-                await websocket.send_json({"type": "pong"})
-
-            elif event_type == "send_message":
-                conv_id_str = data.get("conversation_id")
-                content = data.get("content", "")
-                temp_id = data.get("temp_id")
-
-                try:
-                    conv_id = UUID(conv_id_str)
-                    active_typing_conversations.discard(conv_id)
-                    msg = service.send_message(
-                        current_user=user,
-                        conversation_id=conv_id,
-                        content=content,
-                    )
-                    participant_ids = chat_repo.get_participant_ids(conv_id)
-
-                    # 1. Send confirmation with temp_id to sender
-                    await websocket.send_json({
-                        "type": "message_sent",
-                        "temp_id": temp_id,
-                        "message": msg.model_dump(mode="json"),
-                    })
-
-                    # 2. Broadcast to other participant(s)
-                    recipients = [uid for uid in participant_ids if uid != user.id]
-                    if recipients:
-                        await chat_connection_manager.broadcast_to_users(
-                            recipients,
-                            {
-                                "type": "message",
-                                "message": msg.model_dump(mode="json"),
-                            },
-                        )
-
-                except HTTPException as he:
-                    await websocket.send_json({
-                        "type": "message_failed",
-                        "temp_id": temp_id,
-                        "conversation_id": conv_id_str,
-                        "error": he.detail,
-                    })
-                except Exception as ex:
-                    logger.error(f"Error handling send_message WS: {ex}", exc_info=True)
-                    await websocket.send_json({
-                        "type": "message_failed",
-                        "temp_id": temp_id,
-                        "conversation_id": conv_id_str,
-                        "error": "Failed to send message.",
-                    })
-
-            elif event_type == "typing_start":
-                conv_id_str = data.get("conversation_id")
-                if conv_id_str:
-                    try:
-                        conv_id = UUID(conv_id_str)
-                        conv = chat_repo.get_conversation_by_id(conv_id)
-                        # Suppress typing indicators for broadcast lists
-                        if conv and conv.type != "BROADCAST" and chat_repo.is_participant(conv_id, user.id):
-                            active_typing_conversations.add(conv_id)
-                            participant_ids = chat_repo.get_participant_ids(conv_id)
-                            recipients = [uid for uid in participant_ids if uid != user.id]
-                            if recipients:
-                                await chat_connection_manager.broadcast_to_users(
-                                    recipients,
-                                    {
-                                        "type": "typing",
-                                        "conversation_id": str(conv_id),
-                                        "user_id": str(user.id),
-                                        "user_name": f"{user.first_name} {user.last_name}".strip(),
-                                        "is_typing": True,
-                                    },
-                                )
-                    except Exception as ex:
-                        logger.debug(f"Invalid typing_start event: {ex}")
-
-            elif event_type == "typing_stop":
-                conv_id_str = data.get("conversation_id")
-                if conv_id_str:
-                    try:
-                        conv_id = UUID(conv_id_str)
-                        active_typing_conversations.discard(conv_id)
-                        conv = chat_repo.get_conversation_by_id(conv_id)
-                        if conv and conv.type != "BROADCAST" and chat_repo.is_participant(conv_id, user.id):
-                            participant_ids = chat_repo.get_participant_ids(conv_id)
-                            recipients = [uid for uid in participant_ids if uid != user.id]
-                            if recipients:
-                                await chat_connection_manager.broadcast_to_users(
-                                    recipients,
-                                    {
-                                        "type": "typing",
-                                        "conversation_id": str(conv_id),
-                                        "user_id": str(user.id),
-                                        "user_name": f"{user.first_name} {user.last_name}".strip(),
-                                        "is_typing": False,
-                                    },
-                                )
-                    except Exception as ex:
-                        logger.debug(f"Invalid typing_stop event: {ex}")
-
-            elif event_type == "mark_read":
-                conv_id_str = data.get("conversation_id")
-                if conv_id_str:
-                    try:
-                        conv_id = UUID(conv_id_str)
-                        last_read_at = service.mark_conversation_as_read(user, conv_id)
-                        participant_ids = chat_repo.get_participant_ids(conv_id)
-                        recipients = [uid for uid in participant_ids if uid != user.id]
-                        if recipients and last_read_at:
-                            await chat_connection_manager.broadcast_to_users(
-                                recipients,
-                                {
-                                    "type": "read_receipt",
-                                    "conversation_id": str(conv_id),
-                                    "reader_id": str(user.id),
-                                    "last_read_at": last_read_at.isoformat(),
-                                },
-                            )
-                    except Exception:
-                        pass
-
+            result = await run_in_threadpool(_process_socket_event, token, identity, data)
+            if result is None:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                break
+            reply, recipients, event = result
+            if reply and reply.get("type") == "pong":
+                await chat_connection_manager.refresh(user_id, websocket)
+            if reply:
+                await websocket.send_json(reply)
+            if recipients and event:
+                await chat_connection_manager.broadcast_to_users(recipients, event)
     except WebSocketDisconnect:
-        await chat_connection_manager.disconnect(user_id, websocket)
-    except Exception as e:
-        logger.error(f"WebSocket unexpected exception: {e}", exc_info=True)
-        await chat_connection_manager.disconnect(user_id, websocket)
+        pass
     finally:
-        # Clean up any ephemeral typing state on disconnect
-        if active_typing_conversations:
-            for c_id in list(active_typing_conversations):
-                try:
-                    p_ids = chat_repo.get_participant_ids(c_id)
-                    recips = [uid for uid in p_ids if uid != user.id]
-                    if recips:
-                        await chat_connection_manager.broadcast_to_users(
-                            recips,
-                            {
-                                "type": "typing",
-                                "conversation_id": str(c_id),
-                                "user_id": str(user.id),
-                                "user_name": f"{user.first_name} {user.last_name}".strip(),
-                                "is_typing": False,
-                            },
-                        )
-                except Exception:
-                    pass
-            active_typing_conversations.clear()
-        if close_db_on_exit and db:
-            db.close()
+        await chat_connection_manager.disconnect(user_id, websocket)
 
 
 @router.websocket("/ws")
-async def chat_websocket_route(
-    websocket: WebSocket,
-    token: Annotated[str | None, Query()] = None,
-    db: Annotated[Session, Depends(get_db)] = None,
-):
-    """Router-mounted WebSocket endpoint: /api/v1/chat/ws"""
-    await handle_chat_websocket(websocket, token=token, db=db)
-
+async def chat_websocket_route(websocket: WebSocket):
+    await handle_chat_websocket(websocket)

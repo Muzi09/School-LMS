@@ -539,13 +539,16 @@ def get_publish_diff(
 )
 def publish_timetable(
     timetable_id: UUID,
+    expected_version: Annotated[int, Query(ge=1)],
     service: Annotated[TimetableService, Depends(get_timetable_service)],
     current_user: Annotated[User, Depends(require_manage_timetable)],
 ):
     school_id = current_user.school_id
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
-    return service.publish_timetable(school_id=school_id, timetable_id=timetable_id, user_id=current_user.id)
+    return service.publish_timetable(
+        school_id=school_id, timetable_id=timetable_id, user_id=current_user.id, expected_version=expected_version,
+    )
 
 
 @router.post(

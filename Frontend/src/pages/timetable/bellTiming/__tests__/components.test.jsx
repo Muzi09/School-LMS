@@ -1,18 +1,53 @@
 // @vitest-environment jsdom
-import React from "react"
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, fireEvent, cleanup } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { MemoryRouter } from "react-router-dom"
 import { BellTimeline } from "../BellTimeline"
 import { DayTabs } from "../DayTabs"
 import { PeriodModal } from "../PeriodModal"
 import { DaySplitModal } from "../DaySplitModal"
 import { DayMergeModal } from "../DayMergeModal"
 import { MoveScheduleModal } from "../MoveScheduleModal"
-import { SetupCard } from "../SetupCard"
 import { PERIOD_TYPES } from "../validators"
+import { ClassWiseCell } from "../../components/ClassWiseCell"
+import { SlotAssignmentDialog } from "../../components/SlotAssignmentDialog"
 
 afterEach(() => {
   cleanup()
+})
+
+it("opens an empty class assignment with Enter and selects it with Space", () => {
+  const select = vi.fn()
+  const open = vi.fn()
+  render(<ClassWiseCell day="Monday" period={{ period_number: 1 }} isAssignMode onClick={select} onAssignClick={open} />)
+  const cell = screen.getByRole("button", { name: "Monday, P1. Assign lesson." })
+  cell.focus()
+  fireEvent.keyDown(cell, { key: "Enter" })
+  fireEvent.keyDown(cell, { key: " " })
+  expect(open).toHaveBeenCalledTimes(1)
+  expect(select).toHaveBeenCalledTimes(1)
+})
+
+it("opens the assignment dialog for the selected timetable section", () => {
+  const queryClient = new QueryClient()
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <SlotAssignmentDialog
+          isOpen
+          onClose={vi.fn()}
+          cellData={{
+            timetableId: "tt-1",
+            section: { id: "section-1", class_name: "Grade 6", name: "A" },
+            day: "MONDAY",
+            period: { id: "period-1", period_number: 1, start_time: "08:30", end_time: "09:15" },
+          }}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  expect(screen.getByRole("heading", { name: "Grade 6 - A" })).toBeDefined()
 })
 
 describe("Bell Timing Components Integration", () => {
@@ -257,14 +292,15 @@ describe("Bell Timing Components Integration", () => {
     })
 
     it("rejects period duration < 15 minutes and shows validation error", () => {
+      const shortPeriod = { ...sampleSchedule.periods[0], start_time: "08:30", end_time: "08:40" }
       render(
         <PeriodModal
           isOpen={true}
           onClose={vi.fn()}
           mode="edit"
           periodIndex={0}
-          periodData={{ start_time: "08:30", end_time: "08:40", type: PERIOD_TYPES.CLASS, label: "P1" }}
-          schedule={sampleSchedule}
+          periodData={shortPeriod}
+          schedule={{ ...sampleSchedule, periods: [shortPeriod, ...sampleSchedule.periods.slice(1)] }}
           onSave={vi.fn()}
         />
       )

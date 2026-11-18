@@ -7,21 +7,21 @@ import { cn } from "@/lib/utils"
  * Common Page Header Component with title, icon, descriptive subtitle, and action buttons.
  */
 export function PageHeader({
-  icon: Icon,
+  icon: Icon = undefined,
   title,
-  description,
-  badge,
-  iconClassName,
-  titleClassName,
-  descriptionClassName,
-  onRefresh,
+  description = undefined,
+  badge = undefined,
+  iconClassName = undefined,
+  titleClassName = undefined,
+  descriptionClassName = undefined,
+  onRefresh = undefined,
   isRefreshing = false,
-  onCreate,
-  createLabel,
-  createIcon: CreateIcon,
-  actions,
-  children,
-  className,
+  onCreate = undefined,
+  createLabel = undefined,
+  createIcon: CreateIcon = undefined,
+  actions = undefined,
+  children = undefined,
+  className = undefined,
   ...props
 }) {
   return (

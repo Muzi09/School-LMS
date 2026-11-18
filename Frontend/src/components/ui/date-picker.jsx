@@ -47,11 +47,11 @@ function toDateString(year, month, day) {
 export function DatePicker({
   value = "",
   onChange,
-  className,
+  className = undefined,
   disabled = false,
   required = false,
-  id,
-  name,
+  id = undefined,
+  name = undefined,
   minYear = 1950,
   maxYear = new Date().getFullYear() + 5,
   ...props
@@ -71,13 +71,14 @@ export function DatePicker({
   const [viewYear, setViewYear] = React.useState(parsed ? parsed.year : today.year)
   const [viewMonth, setViewMonth] = React.useState(parsed ? parsed.month : today.month)
 
-  // Sync view when value changes externally
-  React.useEffect(() => {
+  const [lastValue, setLastValue] = React.useState(value)
+  if (lastValue !== value) {
+    setLastValue(value)
     if (parsed) {
       setViewYear(parsed.year)
       setViewMonth(parsed.month)
     }
-  }, [value])
+  }
 
   // Calculate popover positioning relative to trigger
   const calculatePosition = React.useCallback(() => {
@@ -116,11 +117,6 @@ export function DatePicker({
   // Position updates and event listeners when open
   React.useLayoutEffect(() => {
     if (!isOpen) return
-
-    const pos = calculatePosition()
-    if (pos) {
-      setCoords(pos)
-    }
 
     const handleScrollOrResize = () => {
       const updatedPos = calculatePosition()

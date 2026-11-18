@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.check.json",
+  "compilerOptions": {
+    "strict": false,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "files": [],
+  "include": ["src/**/*"],
+  "exclude": ["**/__tests__/**", "**/*.test.js", "**/*.test.jsx"]
+}

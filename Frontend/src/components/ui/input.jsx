@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import {
   composeRenderProps,
   Input as InputPrimitive,
@@ -9,8 +8,8 @@ import {
 import { cn } from "@/lib/utils"
 
 function Input({
-  className,
-  type,
+  className = undefined,
+  type = undefined,
   ...props
 }) {
   return (

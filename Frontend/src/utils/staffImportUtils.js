@@ -1,22 +1,4 @@
-import * as XLSX from "xlsx"
-
-export const REQUIRED_COLUMNS = [
-  "first_name",
-  "last_name",
-  "login_mobile",
-  "email",
-  "gender",
-  "date_of_birth",
-]
-
-export const OPTIONAL_COLUMNS = [
-  "tag",
-  "staff_type",
-  "wings",
-  "timings",
-]
-
-export const EXPECTED_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
+import { downloadBlob } from "@/lib/download"
 
 export const SPECIMEN_COLUMNS = [
   "first_name",
@@ -31,213 +13,15 @@ export const SPECIMEN_COLUMNS = [
   "timings",
 ]
 
-export const COLUMN_ALIASES = {
-  first_name: "first_name",
-  firstname: "first_name",
-  "first name": "first_name",
-  last_name: "last_name",
-  lastname: "last_name",
-  "last name": "last_name",
-  login_mobile: "login_mobile",
-  mobile: "login_mobile",
-  mobile_number: "login_mobile",
-  "login mobile": "login_mobile",
-  email: "email",
-  email_address: "email",
-  "email address": "email",
-  gender: "gender",
-  date_of_birth: "date_of_birth",
-  "date_of_birth (yyyy-mm-dd)": "date_of_birth",
-  "date_of_birth(yyyy-mm-dd)": "date_of_birth",
-  "date of birth (yyyy-mm-dd)": "date_of_birth",
-  "date of birth": "date_of_birth",
-  dob: "date_of_birth",
-  tag: "tag",
-  designation: "tag",
-  "tag / designation": "tag",
-  staff_type: "staff_type",
-  "staff type": "staff_type",
-  type: "staff_type",
-  wings: "wings",
-  assigned_wings: "wings",
-  "assigned wings": "wings",
-  timings: "timings",
-  working_hours: "timings",
-  "working hours": "timings",
-}
-
-export const COLUMN_LABELS = {
-  first_name: "First Name",
-  last_name: "Last Name",
-  login_mobile: "Mobile Number",
-  email: "Email Address",
-  gender: "Gender (Male / Female / Other)",
-  date_of_birth: "Date of Birth (YYYY-MM-DD)",
-  "date_of_birth (YYYY-MM-DD)": "Date of Birth (YYYY-MM-DD)",
-  tag: "Designation",
-  designation: "Designation",
-  staff_type: "Staff Type (Academic / Non-Academic / Both)",
-  wings: "Assigned Wings",
-  timings: "Working Hours (e.g. 08:00-14:00)",
-}
-
-/**
- * Perform immediate client-side structural and header validation on selected XLSX file.
- */
-export async function validateXlsxFileClient(file) {
-  if (!file) {
-    return {
-      isValid: false,
-      error: "No file selected.",
-      missingColumns: [],
-      unexpectedColumns: [],
-      rowCount: 0,
-    }
+export function validateXlsxFileClient(file) {
+  if (!file) return { isValid: false, error: "No file selected." }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    return { isValid: false, error: "Only Excel (.xlsx) files are supported." }
   }
-
-  // 1. Check extension
-  const fileName = file.name || ""
-  if (!fileName.toLowerCase().endsWith(".xlsx")) {
-    return {
-      isValid: false,
-      error: "Invalid file format. Only Excel (.xlsx) files are supported.",
-      missingColumns: [],
-      unexpectedColumns: [],
-      rowCount: 0,
-    }
+  if (!file.size || file.size > 10 * 1024 * 1024) {
+    return { isValid: false, error: "Upload a non-empty workbook of at most 10 MB." }
   }
-
-  // 2. Check file size (max 10MB)
-  if (file.size > 10 * 1024 * 1024) {
-    return {
-      isValid: false,
-      error: "File size exceeds the 10 MB limit. Please upload a smaller file.",
-      missingColumns: [],
-      unexpectedColumns: [],
-      rowCount: 0,
-    }
-  }
-
-  try {
-    const arrayBuffer = await file.arrayBuffer()
-    const workbook = XLSX.read(arrayBuffer, { type: "array" })
-
-    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-      return {
-        isValid: false,
-        error: "The uploaded workbook contains no worksheets.",
-        missingColumns: [],
-        unexpectedColumns: [],
-        rowCount: 0,
-      }
-    }
-
-    const firstSheetName = workbook.SheetNames[0]
-    const worksheet = workbook.Sheets[firstSheetName]
-
-    // Convert sheet to array of rows
-    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false })
-
-    if (!rows || rows.length === 0) {
-      return {
-        isValid: false,
-        error: "The uploaded file is empty or missing headers.",
-        missingColumns: EXPECTED_COLUMNS,
-        unexpectedColumns: [],
-        rowCount: 0,
-      }
-    }
-
-    const rawHeaders = rows[0] || []
-    // Filter trailing empty headers
-    while (rawHeaders.length > 0 && (rawHeaders[rawHeaders.length - 1] === undefined || rawHeaders[rawHeaders.length - 1] === null || String(rawHeaders[rawHeaders.length - 1]).trim() === "")) {
-      rawHeaders.pop()
-    }
-
-    if (rawHeaders.length === 0) {
-      return {
-        isValid: false,
-        error: "Invalid file format. Header row is missing or empty.",
-        missingColumns: EXPECTED_COLUMNS,
-        unexpectedColumns: [],
-        rowCount: 0,
-      }
-    }
-
-    const stringHeaders = rawHeaders.map((h) => String(h ?? ""))
-    const seenCanonical = new Set()
-    const duplicateHeaders = []
-    const unexpectedColumns = []
-
-    stringHeaders.forEach((h) => {
-      const clean = h.trim()
-      if (!clean) return
-
-      const norm = clean.toLowerCase()
-      const canonical = COLUMN_ALIASES[norm]
-
-      if (!canonical) {
-        unexpectedColumns.push(clean)
-        return
-      }
-
-      if (seenCanonical.has(canonical)) {
-        duplicateHeaders.push(clean)
-      } else {
-        seenCanonical.add(canonical)
-      }
-    })
-
-    const missingColumns = REQUIRED_COLUMNS.filter((col) => !seenCanonical.has(col))
-
-    if (duplicateHeaders.length > 0) {
-      return {
-        isValid: false,
-        error: `Duplicate column headers found: ${duplicateHeaders.join(", ")}`,
-        missingColumns,
-        unexpectedColumns,
-        rowCount: rows.length - 1,
-      }
-    }
-
-    if (missingColumns.length > 0 || unexpectedColumns.length > 0) {
-      let errorMsg = "Invalid file format. The uploaded file does not match the Staff Import template."
-      return {
-        isValid: false,
-        error: errorMsg,
-        missingColumns,
-        unexpectedColumns,
-        rowCount: Math.max(0, rows.length - 1),
-      }
-    }
-
-    const dataRowCount = Math.max(0, rows.length - 1)
-    if (dataRowCount === 0) {
-      return {
-        isValid: false,
-        error: "The uploaded file does not contain any staff records.",
-        missingColumns: [],
-        unexpectedColumns: [],
-        rowCount: 0,
-      }
-    }
-
-    return {
-      isValid: true,
-      error: null,
-      missingColumns: [],
-      unexpectedColumns: [],
-      rowCount: dataRowCount,
-    }
-  } catch (err) {
-    return {
-      isValid: false,
-      error: `Could not parse XLSX file: ${err.message || "Workbook may be corrupt or unreadable."}`,
-      missingColumns: [],
-      unexpectedColumns: [],
-      rowCount: 0,
-    }
-  }
+  return { isValid: true, error: null }
 }
 
 export const MOCK_STAFF_RECORDS = [
@@ -295,34 +79,10 @@ export const INSTRUCTIONS_DATA = [
 export const EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 /**
- * Trigger download of Blob data in the browser.
- */
-export function downloadBlob(blob, filename) {
-  // Ensure the blob has the proper Excel MIME type
-  const fileBlob =
-    blob instanceof Blob && blob.type && blob.type.includes("sheet")
-      ? blob
-      : new Blob([blob], { type: EXCEL_MIME_TYPE })
-
-  const url = window.URL.createObjectURL(fileBlob)
-  const a = document.createElement("a")
-  a.style.display = "none"
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  setTimeout(() => {
-    window.URL.revokeObjectURL(url)
-    if (a.parentNode) {
-      a.parentNode.removeChild(a)
-    }
-  }, 2000)
-}
-
-/**
  * Generate official sample XLSX template on the client as a genuine Excel Blob.
  */
-export function generateSampleStaffXlsx(filename = "staff_bulk_import_sample.xlsx") {
+export async function generateSampleStaffXlsx(filename = "staff_bulk_import_sample.xlsx") {
+  const XLSX = await import("xlsx")
   const workbook = XLSX.utils.book_new()
 
   // Sheet 1: Staff_Import_Template with headers and 3 mock records
@@ -362,9 +122,10 @@ export function generateSampleStaffXlsx(filename = "staff_bulk_import_sample.xls
 /**
  * Generate and download an XLSX error report containing rejected/duplicate rows plus error reasons.
  */
-export function exportErrorReportXlsx(rows = []) {
+export async function exportErrorReportXlsx(rows = []) {
   const errorRows = rows.filter((r) => r.status === "DUPLICATE" || r.status === "INVALID" || (r.errors && r.errors.length > 0))
   if (errorRows.length === 0) return
+  const XLSX = await import("xlsx")
 
   const data = errorRows.map((r) => ({
     Row: r.row_number,
@@ -393,7 +154,8 @@ export function exportErrorReportXlsx(rows = []) {
 /**
  * Generate and download an XLSX results report of created staff records and setup URLs.
  */
-export function exportResultsXlsx(results = []) {
+export async function exportResultsXlsx(results = []) {
+  const XLSX = await import("xlsx")
   const data = results.map((r) => ({
     "Staff ID": r.roll_no || "",
     Name: r.name || "",

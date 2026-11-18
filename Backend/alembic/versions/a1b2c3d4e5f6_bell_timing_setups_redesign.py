@@ -6,7 +6,6 @@ Create Date: 2026-11-05 18:25:00.000000
 
 """
 from typing import Sequence, Union
-import json
 from alembic import op
 import sqlalchemy as sa
 
@@ -38,64 +37,68 @@ def upgrade() -> None:
         postgresql_where=sa.text('deleted_at IS NULL AND setup_id IS NOT NULL')
     )
 
-    # 4. Migrate existing data: set period_type based on is_break
-    conn = op.get_bind()
-    conn.execute(sa.text("""
+    # Use PostgreSQL statements so the same backfill works in SQL-only runs.
+    op.execute("""
         UPDATE timetable_periods
         SET period_type = CASE WHEN is_break THEN 'RECESS' ELSE 'CLASS' END,
-            schedule_id = 'default'
-        WHERE schedule_id IS NULL OR period_type IS NULL
-    """))
+            schedule_id = COALESCE(schedule_id, 'default')
+    """)
+    op.execute("""
+        DO $migration$
+        DECLARE
+            setup_row RECORD;
+            days jsonb;
+        BEGIN
+            FOR setup_row IN SELECT id, applicable_days FROM timetable_setups WHERE deleted_at IS NULL LOOP
+                BEGIN
+                    days := setup_row.applicable_days::jsonb;
+                EXCEPTION WHEN invalid_text_representation THEN
+                    days := NULL;
+                END;
+                IF jsonb_typeof(days) IS DISTINCT FROM 'array' THEN
+                    days := '["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"]'::jsonb;
+                END IF;
 
-    # Populate schedules_json for existing setups
-    setups = conn.execute(sa.text("SELECT id, applicable_days FROM timetable_setups WHERE deleted_at IS NULL")).fetchall()
-    for s in setups:
-        s_id = str(s[0])
-        app_days_raw = s[1]
-        app_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-        if app_days_raw:
-            try:
-                parsed = json.loads(app_days_raw)
-                if isinstance(parsed, list):
-                    app_days = parsed
-            except Exception:
-                pass
-
-        periods = conn.execute(sa.text("""
-            SELECT id, period_number, start_time::text, end_time::text, is_break, label, period_type
-            FROM timetable_periods
-            WHERE setup_id = :s_id AND deleted_at IS NULL
-            ORDER BY period_number ASC
-        """), {"s_id": s_id}).fetchall()
-
-        period_items = []
-        for p in periods:
-            period_items.append({
-                "id": str(p[0]),
-                "period_number": p[1],
-                "start_time": p[2][:5] if p[2] else "08:30",
-                "end_time": p[3][:5] if p[3] else "09:15",
-                "is_break": bool(p[4]),
-                "label": p[5] or (f"P{p[1]}" if not p[4] else "RECESS"),
-                "type": p[6] or ("RECESS" if p[4] else "CLASS"),
-            })
-
-        schedules_payload = [
-            {
-                "id": "default",
-                "days": app_days,
-                "periods": period_items,
-            }
-        ]
-
-        conn.execute(sa.text("""
-            UPDATE timetable_setups
-            SET schedules_json = :schedules_json
-            WHERE id = :s_id
-        """), {"s_id": s_id, "schedules_json": json.dumps(schedules_payload)})
+                UPDATE timetable_setups
+                SET schedules_json = jsonb_build_array(jsonb_build_object(
+                    'id', 'default',
+                    'days', days,
+                    'periods', COALESCE((
+                        SELECT jsonb_agg(jsonb_build_object(
+                            'id', period.id,
+                            'period_number', period.period_number,
+                            'start_time', left(period.start_time::text, 5),
+                            'end_time', left(period.end_time::text, 5),
+                            'is_break', period.is_break,
+                            'label', COALESCE(period.label, CASE WHEN period.is_break THEN 'RECESS' ELSE 'P' || period.period_number END),
+                            'type', period.period_type
+                        ) ORDER BY period.period_number)
+                        FROM timetable_periods period
+                        WHERE period.setup_id = setup_row.id AND period.deleted_at IS NULL
+                    ), '[]'::jsonb)
+                ))::text
+                WHERE id = setup_row.id;
+            END LOOP;
+        END
+        $migration$;
+    """)
 
 
 def downgrade() -> None:
+    op.execute("""
+        DO $migration$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM timetable_setups WHERE version <> 1 OR order_index <> 0)
+               OR EXISTS (
+                    SELECT 1 FROM timetable_periods
+                    WHERE schedule_id IS DISTINCT FROM 'default'
+                       OR period_type <> CASE WHEN is_break THEN 'RECESS' ELSE 'CLASS' END
+               ) THEN
+                RAISE EXCEPTION 'Bell schedule data cannot be represented by the previous schema. Restore a verified backup or repair forward.';
+            END IF;
+        END
+        $migration$;
+    """)
     op.drop_index('uq_timetable_periods_setup_sched_num', table_name='timetable_periods', postgresql_where=sa.text('deleted_at IS NULL AND setup_id IS NOT NULL'))
     op.create_index(
         'uq_timetable_periods_setup_period_num',

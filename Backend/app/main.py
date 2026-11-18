@@ -1,12 +1,25 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.connection_manager import chat_connection_manager
 from app.core.database import engine
 from app.core.exceptions import AppException
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    try:
+        await chat_connection_manager.start()
+        yield
+    finally:
+        await chat_connection_manager.stop()
+
 
 app = FastAPI(
     title="School LMS API",
@@ -14,6 +27,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 
@@ -37,24 +51,23 @@ async def app_exception_handler(request: Request, exc: AppException):
     )
 
 
+@app.exception_handler(OperationalError)
+async def database_operation_failed(_request: Request, exc: OperationalError):
+    if getattr(exc.orig, "sqlstate", None) in {"40001", "40P01", "55P03"}:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "A database change is in progress. Refresh and retry."},
+        )
+    return JSONResponse(status_code=503, content={"detail": "The database is temporarily unavailable."})
+
+
 import os
 from fastapi.staticfiles import StaticFiles
 
 # CORS configuration
-allowed_origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-if settings.FRONTEND_URL:
-    for url in settings.FRONTEND_URL.split(","):
-        clean_url = url.strip().rstrip("/")
-        if clean_url and clean_url not in allowed_origins:
-            allowed_origins.append(clean_url)
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=settings.frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,12 +89,16 @@ async def root_chat_websocket(websocket: WebSocket):
 
 
 @app.get("/", tags=["Health"])
-def root():
-    with engine.connect() as connection:
-        result = connection.execute(text("SELECT 1"))
+@app.get("/health/live", tags=["Health"])
+def liveness():
+    return {"status": "live"}
 
-    return {
-        "message": "School LMS API is running",
-        "database": result.scalar(),
-        "docs": "/docs",
-    }
+
+@app.get("/health/ready", tags=["Health"])
+def readiness():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
+    return {"status": "ready"}

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
  * - DIRECT: Subtle bouncing dots without names.
  * - GROUP: Shows user names (e.g. "Sarah is typing...") alongside subtle bouncing dots.
  */
-export function TypingIndicator({ typingText, className }) {
+export function TypingIndicator({ typingText, className = undefined }) {
   return (
     <div
       role="status"

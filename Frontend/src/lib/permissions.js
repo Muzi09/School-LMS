@@ -39,6 +39,7 @@ export const Permission = {
   MANAGE_SCHOOL: "MANAGE_SCHOOL",
 }
 
+/** @type {Record<number, string[]>} */
 export const ROLE_PERMISSIONS = {
   [UserRole.SUPER_ADMIN]: Object.values(Permission),
   [UserRole.PRINCIPAL]: [
@@ -60,7 +61,6 @@ export const ROLE_PERMISSIONS = {
   [UserRole.STAFF]: [
     Permission.STAFF_DASHBOARD_ACCESS,
     Permission.VIEW_STUDENT,
-    Permission.MANAGE_STUDENT,
     Permission.VIEW_TIMETABLE,
   ],
   [UserRole.STUDENT]: [],

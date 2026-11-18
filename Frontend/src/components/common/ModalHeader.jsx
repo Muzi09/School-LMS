@@ -7,16 +7,16 @@ import { cn } from "@/lib/utils"
  * Provides a standardized layout with an icon badge, title, description, and close action.
  */
 export function ModalHeader({
-  icon: Icon,
+  icon: Icon = undefined,
   title,
-  description,
+  description = undefined,
   onClose,
-  iconClassName,
-  titleClassName,
-  descriptionClassName,
-  badge,
-  children,
-  className,
+  iconClassName = undefined,
+  titleClassName = undefined,
+  descriptionClassName = undefined,
+  badge = undefined,
+  children = undefined,
+  className = undefined,
   closeButtonTitle = "Close",
   ...props
 }) {

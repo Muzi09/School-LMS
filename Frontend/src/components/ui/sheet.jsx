@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import {
   Heading,
   ModalOverlay as ModalOverlayPrimitive,
@@ -13,14 +12,16 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
+/** @param {React.ComponentProps<typeof SheetTriggerPrimitive>} props */
 function SheetTrigger({
   ...props
 }) {
   return <SheetTriggerPrimitive data-slot="sheet-trigger" {...props} />;
 }
 
+/** @param {React.ComponentProps<typeof Button>} props */
 function SheetClose({
-  className,
+  className = "",
   variant = "outline",
   size = "default",
   ...props
@@ -37,7 +38,7 @@ function SheetClose({
 }
 
 function SheetOverlay({
-  className,
+  className = "",
   children,
   ...props
 }) {
@@ -56,11 +57,11 @@ function SheetOverlay({
 }
 
 function Sheet({
-  className,
+  className = "",
   children,
   side = "right",
   showCloseButton = true,
-  style,
+  style = undefined,
   ...props
 }) {
   return (
@@ -93,7 +94,7 @@ function Sheet({
 }
 
 function SheetContent({
-  className,
+  className = "",
   children,
   side = "right",
   showCloseButton = true,
@@ -111,7 +112,7 @@ function SheetContent({
 }
 
 function SheetHeader({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -123,7 +124,7 @@ function SheetHeader({
 }
 
 function SheetFooter({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -135,7 +136,7 @@ function SheetFooter({
 }
 
 function SheetTitle({
-  className,
+  className = "",
   ...props
 }) {
   return (
@@ -148,7 +149,7 @@ function SheetTitle({
 }
 
 function SheetDescription({
-  className,
+  className = "",
   ...props
 }) {
   return (

@@ -13,7 +13,7 @@ import {
   RefreshCw,
 } from "lucide-react"
 import { adminService } from "@/api/adminService"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/context/authState"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
@@ -38,14 +38,16 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
     .join(" ")
   const defaultSenderName = existingConfig?.from_name || userFullName || "School LMS Platform"
 
+  /** @type {{ smtp_host: string, smtp_port: number | string, from_email: string, smtp_password: string, from_name: string }} */
+  const initialValues = {
+    smtp_host: existingConfig?.smtp_host || "smtp.gmail.com",
+    smtp_port: existingConfig?.smtp_port || 587,
+    from_email: defaultUserEmail,
+    smtp_password: "",
+    from_name: defaultSenderName,
+  }
   const formik = useFormik({
-    initialValues: {
-      smtp_host: existingConfig?.smtp_host || "smtp.gmail.com",
-      smtp_port: existingConfig?.smtp_port || 587,
-      from_email: defaultUserEmail,
-      smtp_password: existingConfig?.smtp_password || "",
-      from_name: defaultSenderName,
-    },
+    initialValues,
     validationSchema: smtpConfigValidationSchema,
     enableReinitialize: true,
     onSubmit: async (values) => {
@@ -57,7 +59,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
           smtp_username: values.from_email.trim().toLowerCase(),
           smtp_password: values.smtp_password.trim(),
           from_name: values.from_name.trim(),
-          security: "TLS",
+          security: Number(values.smtp_port) === 465 ? "SSL" : "TLS",
           is_active: true,
         }
 
@@ -105,7 +107,7 @@ export function SmtpConfigModal({ isOpen, onClose, existingConfig = null }) {
         from_email: formik.values.from_email.trim().toLowerCase(),
         smtp_username: formik.values.from_email.trim().toLowerCase(),
         smtp_password: formik.values.smtp_password ? formik.values.smtp_password.trim() : null,
-        security: "TLS",
+        security: Number(formik.values.smtp_port) === 465 ? "SSL" : "TLS",
       }
 
       const res = await adminService.testSmtpConfig(payload)

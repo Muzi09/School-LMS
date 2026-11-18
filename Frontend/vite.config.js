@@ -3,6 +3,7 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import process from 'node:process'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -26,6 +27,10 @@ export default defineConfig(({ mode }) => {
         '/uploads': {
           target: backendUrl,
           changeOrigin: true,
+        },
+        '/ws': {
+          target: backendUrl,
+          ws: true,
         },
       },
     },

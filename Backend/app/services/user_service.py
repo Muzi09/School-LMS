@@ -1,14 +1,16 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.core.exceptions import BadRequestException, ConflictException, NotFoundException
-from app.core.security import generate_onboarding_token, hash_password, hash_pin, hash_token
+from app.core.security import generate_onboarding_token, hash_password, hash_token
 from app.models.enums import UserRole
 from app.models.principal import PrincipalProfile
+from app.models.school import School
+from app.models.school_class import SchoolClass
 from app.models.staff import StaffProfile, StaffWing
 from app.models.section import Section
 from app.models.subject import ClassSubject
@@ -16,11 +18,13 @@ from app.models.timetable import TimetableEntry
 from app.models.wing import Wing
 from app.models.staff_onboarding_token import StaffOnboardingToken
 from app.models.student import StudentProfile
+from app.models.student_record_event import StudentRecordEvent
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import CreatePrincipalRequest, UserUpdate
 from app.schemas.staff import CreateStaffRequest, StaffUpdate
 from app.schemas.student import CreateStudentRequest, StudentUpdate
+from app.services.timetable_service import TimetableService
 
 
 class UserService:
@@ -36,6 +40,13 @@ class UserService:
     ):
         self.user_repo = user_repo
         self.db = db
+
+    def _validate_staff_wings(self, school_id: UUID, wing_ids: list[UUID]) -> None:
+        allowed = self.db.scalars(select(Wing.id).where(Wing.school_id == school_id, Wing.deleted_at.is_(None))).all()
+        if len(set(wing_ids)) != len(wing_ids) or not set(wing_ids).issubset(allowed):
+            raise BadRequestException("Select unique wings from the staff member’s school.")
+        if allowed and not wing_ids:
+            raise BadRequestException("Academic staff must be assigned to at least one wing.")
 
     def verify_email_available(self, email: str, exclude_user_id: UUID | None = None) -> None:
         """Verify that the email is not already taken by an active user."""
@@ -183,9 +194,7 @@ class UserService:
                 raise BadRequestException("At least one staff classification (Academic or Non-Academic) must be selected.")
 
             if school_id and is_academic:
-                school_wings_count = self.db.query(Wing).filter(Wing.school_id == school_id, Wing.deleted_at.is_(None)).count()
-                if school_wings_count > 0 and (not assigned_wing_ids or len(assigned_wing_ids) == 0):
-                    raise BadRequestException("Academic staff must be assigned to at least one wing.")
+                self._validate_staff_wings(school_id, assigned_wing_ids)
 
             staff_profile = StaffProfile(
                 user_id=user.id,
@@ -274,14 +283,14 @@ class UserService:
 
         return token_record, user
 
-    def complete_staff_setup(self, raw_token: str, password: str, pin: str) -> User:
-        """Atomically activate staff account by setting password, PIN, and status=ACTIVE."""
+    def complete_staff_setup(self, raw_token: str, password: str) -> User:
+        """Atomically activate staff account by setting its password and status to ACTIVE."""
         token_record, user = self.validate_staff_setup_token(raw_token)
 
         try:
             user.password_hash = hash_password(password)
             if user.staff_profile:
-                user.staff_profile.pin_hash = hash_pin(pin)
+                user.staff_profile.pin_hash = None
                 user.staff_profile.status = "ACTIVE"
                 user.staff_profile.activated_at = datetime.now(timezone.utc)
             user.updated_at = datetime.now(timezone.utc)
@@ -294,9 +303,9 @@ class UserService:
             self.db.rollback()
             raise
 
-    def resend_staff_setup_token(self, staff_id: UUID) -> tuple[User, str]:
+    def resend_staff_setup_token(self, staff_id: UUID, *, school_id: UUID) -> tuple[User, str]:
         """Invalidate old tokens and generate a fresh setup token for pending staff."""
-        user = self.get_staff_by_id(staff_id)
+        user = self.get_staff_by_id(staff_id, school_id=school_id, lock=True)
         if user.staff_profile and user.staff_profile.status == "ACTIVE":
             raise BadRequestException("This staff member has already activated their account.")
 
@@ -311,15 +320,18 @@ class UserService:
         self.db.commit()
         return user, raw_token
 
-    def get_staff_by_id(self, staff_id: UUID) -> User:
+    def get_staff_by_id(self, staff_id: UUID, *, school_id: UUID | None = None, lock: bool = False) -> User:
         """Retrieve staff user by ID."""
-        user = self.user_repo.get_by_id_with_profiles(staff_id)
+        scope = (school_id, UserRole.STAFF) if school_id is not None else None
+        user = self.user_repo.get_by_id_with_profiles(staff_id, school_scope=scope, lock=lock)
         if not user or user.role != UserRole.STAFF:
             raise NotFoundException(f"Staff member with ID '{staff_id}' not found.")
         return user
 
     def list_staff(
         self,
+        *,
+        school_id: UUID,
         is_active: bool | None = None,
         status: str | None = None,
         search: str | None = None,
@@ -329,6 +341,7 @@ class UserService:
         """List staff members with search, filters, and pagination."""
         skip = (page - 1) * page_size
         return self.user_repo.list_staff(
+            school_id=school_id,
             is_active=is_active,
             status=status,
             search=search,
@@ -341,9 +354,11 @@ class UserService:
         staff_id: UUID,
         data: StaffUpdate,
         updated_by_id: UUID | None = None,
+        *,
+        school_id: UUID,
     ) -> User:
         """Update staff user information and profile fields."""
-        user = self.get_staff_by_id(staff_id)
+        user = self.get_staff_by_id(staff_id, school_id=school_id, lock=True)
 
         if data.email is not None and (user.email is None or data.email.lower() != user.email.lower()):
             self.verify_email_available(data.email, exclude_user_id=staff_id)
@@ -363,7 +378,7 @@ class UserService:
             user.is_active = data.is_active
 
         user.updated_by = updated_by_id
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         if data.profile and user.staff_profile:
             profile_dict = data.profile.model_dump(exclude_unset=True)
@@ -381,9 +396,7 @@ class UserService:
 
             school_id = user.staff_profile.school_id
             if school_id and user.staff_profile.is_academic and assigned_wing_ids is not None:
-                school_wings_count = self.db.query(Wing).filter(Wing.school_id == school_id, Wing.deleted_at.is_(None)).count()
-                if school_wings_count > 0 and len(assigned_wing_ids) == 0:
-                    raise BadRequestException("Academic staff must be assigned to at least one wing.")
+                self._validate_staff_wings(school_id, assigned_wing_ids)
 
             if assigned_wing_ids is not None:
                 # Remove existing staff_wings
@@ -412,6 +425,8 @@ class UserService:
         last_name: str,
         class_name: str,
         section: str,
+        *,
+        school_id: UUID,
         student_id: UUID | None = None,
     ) -> tuple[str, int]:
         """
@@ -423,6 +438,7 @@ class UserService:
         ln = last_name.strip()
         cn = class_name.strip()
         sec = section.strip()
+        section_id = self._student_section(school_id, cn, sec)
 
         stmt = (
             select(User)
@@ -430,8 +446,8 @@ class UserService:
             .where(
                 User.deleted_at.is_(None),
                 User.role == UserRole.STUDENT,
-                StudentProfile.class_name == cn,
-                StudentProfile.section == sec,
+                StudentProfile.school_id == school_id,
+                self._student_roster_match(section_id, cn, sec),
             )
         )
         if student_id:
@@ -455,10 +471,38 @@ class UserService:
 
         return "1", 1
 
+    def _lock_student_roster(self, school_id: UUID) -> None:
+        school = self.db.scalar(select(School.id).where(
+            School.id == school_id, School.deleted_at.is_(None), School.is_active.is_(True),
+        ).with_for_update())
+        if school is None:
+            raise NotFoundException("School not found.")
+
+    def _student_section(self, school_id: UUID, class_name: str, section: str) -> UUID | None:
+        return self.db.scalar(select(Section.id).join(SchoolClass, Section.class_id == SchoolClass.id).where(
+            Section.school_id == school_id, SchoolClass.school_id == school_id,
+            Section.name == section, SchoolClass.name == class_name,
+            Section.deleted_at.is_(None), SchoolClass.deleted_at.is_(None),
+        ))
+
+    @staticmethod
+    def _student_roster_match(section_id: UUID | None, class_name: str, section: str):
+        existing_labels = and_(
+            StudentProfile.section_id.is_(None), StudentProfile.class_name == class_name,
+            StudentProfile.section == section,
+        )
+        return or_(StudentProfile.section_id == section_id, existing_labels) if section_id else existing_labels
+
+    def record_student_event(self, school_id: UUID, student_id: UUID, actor_id: UUID | None, action: str) -> None:
+        self.db.add(StudentRecordEvent(school_id=school_id, student_id=student_id, actor_id=actor_id, action=action))
+
     def reassign_class_section_roll_numbers(
         self,
         class_name: str,
         section: str,
+        *,
+        school_id: UUID,
+        section_id: UUID | None = None,
     ) -> None:
         """
         Reassigns roll numbers sequentially (1, 2, ..., N) to all active students
@@ -468,6 +512,7 @@ class UserService:
         sec = section.strip()
         if not cn or not sec:
             return
+        section_id = section_id or self._student_section(school_id, cn, sec)
 
         stmt = (
             select(User)
@@ -475,8 +520,8 @@ class UserService:
             .where(
                 User.deleted_at.is_(None),
                 User.role == UserRole.STUDENT,
-                StudentProfile.class_name == cn,
-                StudentProfile.section == sec,
+                StudentProfile.school_id == school_id,
+                self._student_roster_match(section_id, cn, sec),
             )
             .options(joinedload(User.student_profile))
             .order_by(
@@ -484,6 +529,7 @@ class UserService:
                 func.lower(User.last_name).asc(),
                 func.lower(func.coalesce(StudentProfile.middle_name, "")).asc(),
                 User.created_at.asc(),
+                User.id.asc(),
             )
         )
         students = list(self.db.scalars(stmt).unique().all())
@@ -502,6 +548,9 @@ class UserService:
         school_id: UUID | None = None,
     ) -> User:
         """Create a Student user with StudentProfile atomically."""
+        if school_id is None:
+            raise BadRequestException("A school account is required to enroll a student.")
+        self._lock_student_roster(school_id)
         if data.email:
             self.verify_email_available(data.email)
         self.verify_mobile_available(data.login_mobile)
@@ -523,12 +572,18 @@ class UserService:
 
             # 2. Create StudentProfile
             profile_dict = data.profile.model_dump()
+            profile_dict["class_name"] = profile_dict["class_name"].strip()
+            profile_dict["section"] = profile_dict["section"].strip()
+            section_id = self._student_section(school_id, profile_dict["class_name"], profile_dict["section"])
+            if section_id is None:
+                raise BadRequestException("Choose a valid class and section in this school.")
             if not profile_dict.get("roll_no"):
                 profile_dict["roll_no"] = "temp"
 
             student_profile = StudentProfile(
                 user_id=user.id,
                 school_id=school_id,
+                section_id=section_id,
                 **profile_dict,
             )
             self.user_repo.add_student_profile(student_profile, autocommit=False)
@@ -538,23 +593,28 @@ class UserService:
             self.reassign_class_section_roll_numbers(
                 class_name=student_profile.class_name,
                 section=student_profile.section,
+                school_id=school_id,
+                section_id=section_id,
             )
 
+            self.record_student_event(school_id, user.id, created_by_id, "created")
             self.db.commit()
-            return self.get_student_by_id(user.id)
+            return self.get_student_by_id(user.id, school_id=school_id)
         except Exception:
             self.db.rollback()
             raise
 
-    def get_student_by_id(self, student_id: UUID) -> User:
+    def get_student_by_id(self, student_id: UUID, *, school_id: UUID) -> User:
         """Retrieve student user by ID."""
-        user = self.user_repo.get_by_id_with_profiles(student_id)
+        user = self.user_repo.get_by_id_with_profiles(student_id, school_scope=(school_id, UserRole.STUDENT))
         if not user or user.role != UserRole.STUDENT:
             raise NotFoundException(f"Student with ID '{student_id}' not found.")
         return user
 
     def list_students(
         self,
+        *,
+        school_id: UUID,
         is_active: bool | None = None,
         class_name: str | None = None,
         section: str | None = None,
@@ -565,6 +625,7 @@ class UserService:
         """List student members with search, filters, and pagination."""
         skip = (page - 1) * page_size
         return self.user_repo.list_students(
+            school_id=school_id,
             is_active=is_active,
             class_name=class_name,
             section=section,
@@ -578,14 +639,18 @@ class UserService:
         student_id: UUID,
         data: StudentUpdate,
         updated_by_id: UUID | None = None,
+        *,
+        school_id: UUID,
     ) -> User:
         """Update student user information and profile fields."""
-        user = self.get_student_by_id(student_id)
+        self._lock_student_roster(school_id)
+        user = self.get_student_by_id(student_id, school_id=school_id)
 
         old_first_name = user.first_name
         old_last_name = user.last_name
         old_class_name = user.student_profile.class_name if user.student_profile else None
         old_section = user.student_profile.section if user.student_profile else None
+        old_section_id = user.student_profile.section_id if user.student_profile else None
 
         if data.email is not None and (user.email is None or data.email.lower() != user.email.lower()):
             self.verify_email_available(data.email, exclude_user_id=student_id)
@@ -605,10 +670,18 @@ class UserService:
             user.is_active = data.is_active
 
         user.updated_by = updated_by_id
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         if data.profile and user.student_profile:
-            for key, value in data.profile.model_dump(exclude_unset=True).items():
+            profile_changes = data.profile.model_dump(exclude_unset=True)
+            if "class_name" in profile_changes or "section" in profile_changes:
+                new_class = profile_changes.get("class_name", old_class_name)
+                new_section = profile_changes.get("section", old_section)
+                section_id = self._student_section(school_id, new_class, new_section) if new_class and new_section else None
+                if section_id is None:
+                    raise BadRequestException("Choose a valid class and section in this school.")
+                user.student_profile.section_id = section_id
+            for key, value in profile_changes.items():
                 setattr(user.student_profile, key, value)
 
         self.db.flush()
@@ -620,10 +693,13 @@ class UserService:
         class_section_changed = (new_class_name != old_class_name) or (new_section != old_section)
 
         if new_class_name and new_section and (name_changed or class_section_changed):
-            self.reassign_class_section_roll_numbers(new_class_name, new_section)
+            self.reassign_class_section_roll_numbers(
+                new_class_name, new_section, school_id=school_id, section_id=user.student_profile.section_id,
+            )
             if class_section_changed and old_class_name and old_section:
-                self.reassign_class_section_roll_numbers(old_class_name, old_section)
+                self.reassign_class_section_roll_numbers(old_class_name, old_section, school_id=school_id, section_id=old_section_id)
 
+        self.record_student_event(school_id, user.id, updated_by_id, "updated")
         self.db.commit()
         self.db.refresh(user)
         return user
@@ -683,7 +759,7 @@ class UserService:
             user.is_active = data.is_active
 
         user.updated_by = updated_by_id
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         if data.principal_profile and user.principal_profile:
             for key, value in data.principal_profile.model_dump(exclude_unset=True).items():
@@ -707,25 +783,37 @@ class UserService:
         user_id: UUID,
         is_active: bool,
         updated_by_id: UUID | None = None,
+        *,
+        school_scope: tuple[UUID, UserRole] | None = None,
     ) -> User:
         """Activate or deactivate a user account."""
-        user = self.user_repo.get_by_id(user_id)
+        user = self.user_repo.get_by_id_with_profiles(user_id, school_scope=school_scope, lock=True)
         if not user:
             raise NotFoundException(f"User with ID '{user_id}' not found.")
         user.is_active = is_active
         user.updated_by = updated_by_id
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
+        if school_scope is not None and school_scope[1] == UserRole.STUDENT:
+            self.record_student_event(school_scope[0], user.id, updated_by_id, "activated" if is_active else "deactivated")
         self.db.commit()
         self.db.refresh(user)
-        return self.user_repo.get_by_id_with_profiles(user_id)
+        return user
 
     def soft_delete_user(
         self,
         user_id: UUID,
         deleted_by_id: UUID | None = None,
+        *,
+        school_scope: tuple[UUID, UserRole] | None = None,
     ) -> None:
         """Soft delete a user."""
-        user = self.user_repo.get_by_id_with_profiles(user_id)
+        affected_timetables = []
+        if school_scope is not None:
+            if school_scope[1] == UserRole.STUDENT:
+                self._lock_student_roster(school_scope[0])
+            elif school_scope[1] == UserRole.STAFF:
+                affected_timetables = TimetableService(self.db).lock_school_timetables(school_scope[0])
+        user = self.user_repo.get_by_id_with_profiles(user_id, school_scope=school_scope, lock=True)
         if not user:
             raise NotFoundException(f"User with ID '{user_id}' not found.")
 
@@ -739,18 +827,25 @@ class UserService:
             autocommit=False,
         )
 
-        if is_student and class_name and section:
-            self.reassign_class_section_roll_numbers(class_name, section)
-        elif not is_student:
+        if is_student and class_name and section and user.school_id:
+            self.reassign_class_section_roll_numbers(
+                class_name, section, school_id=user.school_id, section_id=user.student_profile.section_id,
+            )
+            self.record_student_event(user.school_id, user.id, deleted_by_id, "soft_deleted")
+        elif user.role == UserRole.STAFF and user.school_id:
             # Nullify any assignments referring to this deleted teacher/staff member
-            self.db.query(ClassSubject).filter(ClassSubject.teacher_id == user_id).update(
+            self.db.query(ClassSubject).filter(ClassSubject.school_id == user.school_id, ClassSubject.teacher_id == user_id).update(
                 {"teacher_id": None}, synchronize_session=False
             )
-            self.db.query(Section).filter(Section.class_teacher_id == user_id).update(
+            self.db.query(Section).filter(Section.school_id == user.school_id, Section.class_teacher_id == user_id).update(
                 {"class_teacher_id": None}, synchronize_session=False
             )
-            self.db.query(TimetableEntry).filter(TimetableEntry.teacher_user_id == user_id).update(
+            changed = self.db.query(TimetableEntry).filter(TimetableEntry.school_id == user.school_id, TimetableEntry.teacher_user_id == user_id).update(
                 {"teacher_user_id": None}, synchronize_session=False
             )
+            if changed:
+                for timetable in affected_timetables:
+                    timetable.version = (timetable.version or 1) + 1
+                    timetable.updated_by = deleted_by_id
 
         self.db.commit()

@@ -14,8 +14,28 @@ function formatTime12h(timeStr) {
   return m === 0 ? `${hour12} ${period}` : `${hour12}:${String(m || 0).padStart(2, "0")} ${period}`
 }
 
+/** @typedef {import("./ClassWiseCell").TimetableSection} TimetableSection */
+/** @typedef {import("./ClassWiseCell").TimetableTeacher} TimetableTeacher */
+/** @typedef {import("./ClassWiseCell").TimetableSetup} TimetableSetup */
+/** @typedef {import("./ClassWiseCell").TimetableEntry} TimetableEntry */
+
+/**
+ * @typedef {object} TimetablePrintProps
+ * @property {string} [schoolName]
+ * @property {string} [timetableTitle]
+ * @property {string} [academicYear]
+ * @property {string} [printScope]
+ * @property {TimetableSection[]} [selectedSections]
+ * @property {TimetableTeacher[]} [selectedTeachers]
+ * @property {TimetableSetup[]} [setups]
+ * @property {TimetableEntry[]} [entries]
+ * @property {string} [pageBreak]
+ * @property {string} [colorMode]
+ * @property {boolean} [includeHeader]
+ */
+
 export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
-  {
+  /** @type {TimetablePrintProps} */ {
     schoolName = "School",
     timetableTitle = "Timetable",
     academicYear = "2026-2027",
@@ -28,7 +48,7 @@ export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
     colorMode = "color", // "color" | "bw"
     includeHeader = true,
   },
-  ref
+  /** @type {React.ForwardedRef<HTMLDivElement>} */ ref
 ) {
   const isColor = colorMode === "color"
   const defaultDays = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
@@ -204,7 +224,7 @@ export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
 
                       if (entry && entry.subject) {
                         const subjName = entry.subject.name || "Subject"
-                        const theme = getSubjectTheme(subjName, entry.subject.category)
+                        const theme = getSubjectTheme(subjName)
                         const teacherName = entry.teacher
                           ? `${entry.teacher.first_name || ""} ${entry.teacher.last_name || ""}`.trim()
                           : ""
@@ -339,7 +359,7 @@ export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
                         const clsName = sec.school_class?.name || ""
                         const secLabel = `${clsName} ${sec.name || ""}`.trim()
                         const subjName = entry.subject?.name || ""
-                        const theme = getSubjectTheme(subjName, entry.subject?.category)
+                        const theme = getSubjectTheme(subjName)
 
                         return (
                           <td

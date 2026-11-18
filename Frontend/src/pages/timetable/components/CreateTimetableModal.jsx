@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { Calendar, Copy, Clock, Loader2, Sparkles } from "lucide-react"
 import {
   Dialog,
@@ -27,7 +27,7 @@ export function CreateTimetableModal({
     existingTimetables[0]?.id || ""
   )
   const [isActive, setIsActive] = useState(false)
-  const [errors, setErrors] = useState({})
+  const [errors, setErrors] = useState(/** @type {{ name?: string, source?: string }} */ ({}))
 
   const createMutation = useCreateTimetable()
 
@@ -41,6 +41,7 @@ export function CreateTimetableModal({
   const handleSubmit = async (e) => {
     e.preventDefault()
 
+    /** @type {{ name?: string, source?: string }} */
     const newErrors = {}
     if (!name.trim()) {
       newErrors.name = "Timetable name is required."

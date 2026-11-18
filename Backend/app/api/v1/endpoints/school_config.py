@@ -1,16 +1,16 @@
-import os
 import re
-import uuid
 from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import get_current_user, require_manage_school
 from app.core.database import get_db
+from app.services.emblem_service import save_emblem
+from app.services.timetable_service import TimetableService
 from app.models.enums import UserRole
 from app.models.house import House
 from app.models.school import School
@@ -59,14 +59,6 @@ from app.schemas.school_config import (
 )
 
 router = APIRouter(prefix="/school", tags=["School Configuration"])
-
-UPLOAD_DIR = os.path.join(os.getcwd(), "uploads", "emblems")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
-ALLOWED_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
-
 
 def _format_teacher(user: Optional[User]) -> Optional[TeacherSimpleRead]:
     if not user or user.deleted_at is not None:
@@ -769,6 +761,7 @@ def update_class(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Rename, reorder, or change wing assignment for a class."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     school_class = db.query(SchoolClass).filter(
         SchoolClass.id == class_id,
         SchoolClass.school_id == current_user.school_id,
@@ -805,7 +798,10 @@ def update_class(
         # Update student profile references to preserve placement
         db.query(StudentProfile).filter(
             StudentProfile.school_id == current_user.school_id,
-            func.lower(StudentProfile.class_name) == old_name.lower(),
+            or_(
+                StudentProfile.section_id.in_(select(Section.id).where(Section.class_id == class_id)),
+                and_(StudentProfile.section_id.is_(None), func.lower(StudentProfile.class_name) == old_name.lower()),
+            ),
         ).update({"class_name": name_clean}, synchronize_session=False)
 
     if payload.order_index is not None:
@@ -875,6 +871,7 @@ def delete_class(
     """
     Soft-delete a class with strict safety checks against dependent students or timetables.
     """
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     school_class = db.query(SchoolClass).filter(
         SchoolClass.id == class_id,
         SchoolClass.school_id == current_user.school_id,
@@ -1001,6 +998,7 @@ def update_section(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Rename a section with duplicate validation and student sync."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     sec = db.query(Section).filter(
         Section.id == section_id,
         Section.school_id == current_user.school_id,
@@ -1041,8 +1039,12 @@ def update_section(
     if parent_class:
         db.query(StudentProfile).filter(
             StudentProfile.school_id == current_user.school_id,
-            func.lower(StudentProfile.class_name) == parent_class.name.lower(),
-            func.lower(StudentProfile.section) == old_name.lower(),
+            or_(
+                StudentProfile.section_id == sec.id,
+                and_(StudentProfile.section_id.is_(None),
+                     func.lower(StudentProfile.class_name) == parent_class.name.lower(),
+                     func.lower(StudentProfile.section) == old_name.lower()),
+            ),
         ).update({"section": name_clean}, synchronize_session=False)
 
     db.commit()
@@ -1056,6 +1058,7 @@ def delete_section(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Soft-delete a section with safety checks for enrolled students and timetables."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     sec = db.query(Section).filter(
         Section.id == section_id,
         Section.school_id == current_user.school_id,
@@ -1546,6 +1549,76 @@ def assign_class_teacher(
     }
 
 
+def _section_teacher_conflict_warning(db: Session, sec: Section, teacher_user: User | None, tt_entries: list[TimetableEntry]) -> dict | None:
+    # Detect any timetable schedule conflicts introduced by this assignment (Non-blocking)
+    warning_payload = None
+    if teacher_user and tt_entries:
+        try:
+            entry_ids = [e.id for e in tt_entries]
+            other_entries = (
+                db.query(TimetableEntry)
+                .options(
+                    joinedload(TimetableEntry.period),
+                    joinedload(TimetableEntry.section).joinedload(Section.school_class),
+                    joinedload(TimetableEntry.subject),
+                )
+                .filter(
+                    TimetableEntry.school_id == sec.school_id,
+                    TimetableEntry.teacher_user_id == teacher_user.id,
+                    TimetableEntry.deleted_at.is_(None),
+                    TimetableEntry.id.notin_(entry_ids),
+                )
+                .all()
+            )
+
+            conflict_summaries = []
+            seen_pairs = set()
+
+            for entry in tt_entries:
+                p1 = entry.period
+                if not p1 or not p1.start_time or not p1.end_time:
+                    continue
+
+                for other in other_entries:
+                    if entry.timetable_id and other.timetable_id and entry.timetable_id != other.timetable_id:
+                        continue
+                    if entry.day_of_week != other.day_of_week:
+                        continue
+
+                    p2 = other.period
+                    if not p2 or not p2.start_time or not p2.end_time:
+                        continue
+
+                    # Check overlapping time interval: max(start1, start2) < min(end1, end2)
+                    if max(p1.start_time, p2.start_time) < min(p1.end_time, p2.end_time):
+                        pair_key = tuple(sorted([str(entry.id), str(other.id)]))
+                        if pair_key not in seen_pairs:
+                            seen_pairs.add(pair_key)
+                            sec1_name = f"{sec.school_class.name}-{sec.name}" if (sec and sec.school_class) else sec.name
+                            other_sec = other.section
+                            sec2_name = f"{other_sec.school_class.name}-{other_sec.name}" if (other_sec and other_sec.school_class) else (other_sec.name if other_sec else "another section")
+                            day_label = entry.day_of_week.capitalize()
+                            p_label = f"Period {p1.period_number}" if p1.period_number else ""
+                            conflict_summaries.append(f"{sec1_name} & {sec2_name} on {day_label} {p_label}".strip())
+
+            if conflict_summaries:
+                count = len(conflict_summaries)
+                examples_str = "; ".join(conflict_summaries[:2])
+                if count > 2:
+                    examples_str += f" (+{count - 2} more)"
+                t_name = f"{teacher_user.first_name} {teacher_user.last_name}".strip()
+                warning_payload = {
+                    "has_conflict": True,
+                    "conflict_count": count,
+                    "details": f"{t_name} is double-booked: {examples_str}. Please review and resolve on the Timetable page.",
+                }
+        except Exception:
+            # Non-blocking: warning detection failure should never fail teacher assignment
+            pass
+
+    return warning_payload
+
+
 @router.put("/sections/{section_id}/subjects/{subject_id}/teacher")
 @router.put("/classes/{class_id}/sections/{section_id}/subjects/{subject_id}/teacher")
 def assign_section_subject_teacher(
@@ -1568,7 +1641,7 @@ def assign_section_subject_teacher(
         )
         .first()
     )
-    if not sec:
+    if not sec or (class_id is not None and sec.class_id != class_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Section not found.",
@@ -1621,8 +1694,6 @@ def assign_section_subject_teacher(
         .first()
     )
 
-    old_teacher_id = cs.teacher_id if cs else None
-
     if cs:
         cs.teacher_id = teacher_user.id if teacher_user else None
         cs.updated_by = current_user.id
@@ -1668,7 +1739,9 @@ def assign_section_subject_teacher(
                     )
                     db.add(child_cs)
 
-    # Synchronize existing timetable entries for this section and subject(s):
+    timetables = TimetableService(db).lock_school_timetables(sec.school_id)
+
+    # Synchronize existing timetable entries for this section and subject(s).
     tt_entries = (
         db.query(TimetableEntry)
         .options(
@@ -1688,80 +1761,14 @@ def assign_section_subject_teacher(
         entry.teacher_user_id = teacher_user.id if teacher_user else None
         entry.updated_by = current_user.id
 
-    try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update teacher assignment: {str(exc)}",
-        )
+    affected_ids = {entry.timetable_id for entry in tt_entries}
+    for timetable in timetables:
+        if timetable.id in affected_ids:
+            timetable.version = (timetable.version or 1) + 1
+            timetable.updated_by = current_user.id
+    db.commit()
 
-    # Detect any timetable schedule conflicts introduced by this assignment (Non-blocking)
-    warning_payload = None
-    if teacher_user and tt_entries:
-        try:
-            entry_ids = [e.id for e in tt_entries]
-            other_entries = (
-                db.query(TimetableEntry)
-                .options(
-                    joinedload(TimetableEntry.period),
-                    joinedload(TimetableEntry.section).joinedload(Section.school_class),
-                    joinedload(TimetableEntry.subject),
-                )
-                .filter(
-                    TimetableEntry.school_id == current_user.school_id,
-                    TimetableEntry.teacher_user_id == teacher_user.id,
-                    TimetableEntry.deleted_at.is_(None),
-                    TimetableEntry.id.notin_(entry_ids),
-                )
-                .all()
-            )
-
-            conflict_summaries = []
-            seen_pairs = set()
-
-            for entry in tt_entries:
-                p1 = entry.period
-                if not p1 or not p1.start_time or not p1.end_time:
-                    continue
-
-                for other in other_entries:
-                    if entry.timetable_id and other.timetable_id and entry.timetable_id != other.timetable_id:
-                        continue
-                    if entry.day_of_week != other.day_of_week:
-                        continue
-
-                    p2 = other.period
-                    if not p2 or not p2.start_time or not p2.end_time:
-                        continue
-
-                    # Check overlapping time interval: max(start1, start2) < min(end1, end2)
-                    if max(p1.start_time, p2.start_time) < min(p1.end_time, p2.end_time):
-                        pair_key = tuple(sorted([str(entry.id), str(other.id)]))
-                        if pair_key not in seen_pairs:
-                            seen_pairs.add(pair_key)
-                            sec1_name = f"{sec.school_class.name}-{sec.name}" if (sec and sec.school_class) else sec.name
-                            other_sec = other.section
-                            sec2_name = f"{other_sec.school_class.name}-{other_sec.name}" if (other_sec and other_sec.school_class) else (other_sec.name if other_sec else "another section")
-                            day_label = entry.day_of_week.capitalize()
-                            p_label = f"Period {p1.period_number}" if p1.period_number else ""
-                            conflict_summaries.append(f"{sec1_name} & {sec2_name} on {day_label} {p_label}".strip())
-
-            if conflict_summaries:
-                count = len(conflict_summaries)
-                examples_str = "; ".join(conflict_summaries[:2])
-                if count > 2:
-                    examples_str += f" (+{count - 2} more)"
-                t_name = f"{teacher_user.first_name} {teacher_user.last_name}".strip()
-                warning_payload = {
-                    "has_conflict": True,
-                    "conflict_count": count,
-                    "details": f"{t_name} is double-booked: {examples_str}. Please review and resolve on the Timetable page.",
-                }
-        except Exception:
-            # Non-blocking: warning detection failure should never fail teacher assignment
-            pass
+    warning_payload = _section_teacher_conflict_warning(db, sec, teacher_user, tt_entries)
 
     return {
         "success": True,
@@ -2639,39 +2646,9 @@ async def upload_school_customization_emblem(
     Does NOT require an onboarding token.
     Validates MIME type, extension, and file size (max 5 MB).
     """
-    if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type '{file.content_type}'. Supported formats: PNG, JPG, JPEG, WEBP.",
-        )
-
-    _, ext = os.path.splitext(file.filename or "")
-    ext = ext.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file extension '{ext}'. Allowed extensions: .png, .jpg, .jpeg, .webp",
-        )
-
-    contents = await file.read()
-    if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File size exceeds maximum limit of 5 MB.",
-        )
-
-    if len(contents) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file is empty.",
-        )
-
-    unique_filename = f"emblem_{uuid.uuid4().hex[:12]}{ext}"
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)
-
-    with open(file_path, "wb") as f:
-        f.write(contents)
-
+    if current_user.school_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "A school account is required.")
+    unique_filename = await save_emblem(file)
     emblem_relative_url = f"/uploads/emblems/{unique_filename}"
 
     return EmblemUploadResponse(

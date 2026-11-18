@@ -1070,27 +1070,6 @@ function SectionSubjectsForm({
     )
   }, [subjectsList])
 
-  // Switch category between Academic and Non-Academic
-  const handleSwitchCategory = (targetSub) => {
-    setSubjectsList((prev) =>
-      prev.map((s) => {
-        const matches = s.id ? s.id === targetSub.id : s.tempId === targetSub.tempId
-        if (matches) {
-          const currentlyAcademic = s.category === "academic" || s.is_academic === true
-          const nextCategory = currentlyAcademic ? "non_academic" : "academic"
-          const nextIsAcad = !currentlyAcademic
-          return {
-            ...s,
-            category: nextCategory,
-            is_academic: nextIsAcad,
-            _categoryChanged: true,
-          }
-        }
-        return s
-      })
-    )
-  }
-
   // Remove subject from this section
   const handleRemoveSubject = (targetSub) => {
     if (editingSubjectKey === (targetSub.id || targetSub.tempId)) {
@@ -2366,16 +2345,10 @@ export function UnifySubjectsDialog({
     return targetClass?.sections || []
   }, [targetClass])
 
-  const [selectedSectionId, setSelectedSectionId] = useState(() => {
-    return sections[0]?.id || ""
-  })
-  const [strategy, setStrategy] = useState("use_section") // "use_section" | "merge"
-
-  useEffect(() => {
-    if (sections.length > 0 && !selectedSectionId) {
-      setSelectedSectionId(sections[0].id)
-    }
-  }, [sections, selectedSectionId])
+  const [preferredSectionId, setSelectedSectionId] = useState("")
+  const selectedSectionId = sections.some((section) => section.id === preferredSectionId)
+    ? preferredSectionId : sections[0]?.id ?? ""
+  const [strategy, setStrategy] = useState("use_section")
 
   if (!isOpen || !targetClass) return null
 

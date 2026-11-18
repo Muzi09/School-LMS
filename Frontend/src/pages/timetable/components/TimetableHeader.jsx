@@ -49,7 +49,7 @@ export function TimetableHeader({
   // Zoom
   zoomLevel = 100,
   onZoomChange,
-  className,
+  className = undefined,
 }) {
   return (
     <header
@@ -243,7 +243,6 @@ export function TimetableHeader({
               canRedo={assignBarProps?.canRedo || false}
               onUndo={assignBarProps?.onUndo}
               onRedo={assignBarProps?.onRedo}
-              onExitMode={onToggleAssignMode}
               issuesList={assignBarProps?.issuesList || []}
               onResolveConflict={assignBarProps?.onResolveConflict}
               onClearAllConflicts={assignBarProps?.onClearAllConflicts}

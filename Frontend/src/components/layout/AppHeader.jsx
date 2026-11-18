@@ -10,7 +10,7 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
-import { useTheme } from "@/context/ThemeContext"
+import { useTheme } from "@/context/themeState"
 import { getRouteMeta } from "@/constants/nav-items"
 
 export function AppHeader() {

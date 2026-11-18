@@ -11,13 +11,13 @@
 **School-LMS** is an enterprise-grade School Management & Academic Logistics Platform designed for K–12 schools and educational institutions. It automates academic planning, timetable generation, staff allocation, student lifecycle tracking, and institutional administration.
 
 ### Multi-Tenancy & Data Isolation Model
-- **Tenant Anchor**: Every institutional record is strictly partitioned by `school_id` (`UUID`).
-- **Data Boundary**: Cross-tenant data leakage is strictly prohibited. All SQL queries, service layers, and REST endpoints filter by `school_id` retrieved directly from the verified session user.
+- **Tenant Anchor**: School-owned records carry a `school_id`. The user table holds platform identities and the principal, staff and student profiles carry school membership.
+- **Data Boundary**: School APIs derive the school from the authenticated profile. The administrator directory has an explicit platform-wide role check.
 - **Role-Based Access Control (RBAC)**: Defined by `UserRole` (`app.models.enums`):
   - `ADMIN (0)`: Super Administrator with global platform visibility and school provisioning capabilities.
   - `PRINCIPAL (1)`: Institutional administrator managing school settings, wings, classes, staff, and timetable publishing.
   - `STAFF (2)`: Teaching and administrative personnel with role scopes (`is_academic`, `is_non_academic`).
-  - `STUDENT (3)`: Enrolled learners accessing class timetables and educational resources.
+  - `STUDENT (3)`: Enrolled learners represented by roster records.
   - `SALES_PERSON (4)`: Onboarding and platform adoption representatives.
 
 ---
@@ -37,11 +37,11 @@ flowchart TD
         F["FastAPI REST Endpoints"] --> G["Pydantic v2 (Strict Schema Validation)"]
         G --> H["Service Layer (Business Logic & Algorithmic Engines)"]
         H --> I["SQLAlchemy 2.0 ORM (Mapped Columns & Row Locks)"]
-        I --> J["Alembic (Idempotent DB Migrations)"]
+        I --> J["Alembic (Versioned DB Migrations)"]
     end
 
     subgraph Persistence ["Persistence Layer (PostgreSQL)"]
-        K[("PostgreSQL 15+ / Row-Level with_for_update()")]
+        K[("PostgreSQL 16 / Row-level locks")]
     end
 
     Frontend <-->|HTTP / JSON REST & Cookies| Backend
@@ -49,12 +49,12 @@ flowchart TD
 ```
 
 ### Backend Infrastructure
-- **Runtime**: Python 3.14+ (Virtual Environment at `Backend/venv`).
+- **Runtime**: Python 3.14.2 in CI and the production image.
 - **Web Framework**: FastAPI (Asynchronous & Synchronous endpoints with dependency injection).
 - **ORM & Database**: SQLAlchemy 2.0 (`Mapped` typed attributes), Alembic for schema migrations.
 - **Relational Engine**: PostgreSQL with strict Foreign Key constraints, indexed audit columns, and pessimistic row locking.
 - **Validation**: Pydantic v2 (Strict boundary validation at the HTTP layer with custom field validators).
-- **Security & Session**: JWT (HS256) bearer tokens, PBKDF2/bcrypt password hashing, optional fast PIN login for classroom staff.
+- **Security & Session**: Browser sign-in uses a revocable, HttpOnly cookie. API clients can sign in for an expiring HS256 bearer token. Passwords use bcrypt. PostgreSQL holds shared sign-in rate counters.
 
 ### Frontend Infrastructure
 - **Framework**: React 19 (SPA with React Router DOM).
@@ -97,14 +97,14 @@ graph TD
 - **`StaffOnboardingToken`**: Secure, time-limited token enabling principal-driven email invitations.
 
 ### C. Student Lifecycle
-- **`StudentProfile` (`student_profiles`)**: Stores enrollment number, assigned class and section, guardian details, and emergency contacts.
+- **`StudentProfile` (`student_profiles`)**: Stores roll number, date of birth, house, and parent names. The school-scoped backfill links matched records to `sections.id`. Class and section labels remain available for compatibility and unmatched historical records. The list excludes contact, birth-date and family fields. Individual detail, export and deletion actions use separate permissions and audit events.
 
 ### D. Subjects & Curriculum Allocation
 - **`Subject` (`subjects`)**: Supports standalone subjects, elective categories, and split/parent-child lab pairings (`is_split`, `parent_id`).
 - **`ClassSubject` (`class_subjects`)**: Triple-binding entity allocating a specific teacher to teach a subject in a specific class-section with weekly period quotas.
 
 ### E. Internal Communications
-- **`Chat` (`chats`, `chat_messages`)**: Direct messaging and school announcement channels between staff and administration.
+- **Chat** uses `conversations`, `conversation_participants` and `messages` for direct, group and broadcast messages between staff and principals. REST and WebSockets share a client message ID for safe retries. Deployments with multiple backend workers share Redis fan-out and presence leases. PostgreSQL is the message source of truth.
 
 ---
 
@@ -124,40 +124,13 @@ The Timetable module is the most algorithmically complex system in the LMS. It h
 
 ---
 
-## 5. Architectural Invariants & Recent Technical Upgrades
+## 5. Timetable invariants
 
-The system enforces strict invariants implemented across Points 1 to 4 of the architectural overhaul:
-
-### A. Point 1: Data Structures & Integer Time Arithmetic
-- **Eliminated Dual-Storage ("Two Notebooks")**: The canonical database table `timetable_periods` is the single source of truth. Legacy JSON period duplicates have been fully synchronized.
-- **Sub-Nanosecond Integer Minutes**: All timeline dragging, period snapping, start/end comparison, and duration arithmetic operate purely on integer minutes from midnight ($0 \dots 1439$). String or floating-point comparison is banned in business logic.
-  $$\text{totalMinutes} = \text{hours} \times 60 + \text{minutes}$$
-
-### B. Point 2: API Protocol & Payload Efficiency
-- **Strong Pydantic Typing**: Untyped `Dict[str, Any]` bypasses in batch payloads have been replaced with strongly-typed `BatchSetupItem` schemas, returning clean `422 Unprocessable Entity` errors at the HTTP gate if malformed.
-- **Zero-Payload Bloat (~50% Reduction)**: Removed duplicate top-level `periods` arrays from setup responses in favor of the schedule period tree.
-- **Post-Mutation Single-Record Reader**: Replaced heavy whole-school list queries ($6$ relational joins) on setup mutations with `get_setup_read(school_id, setup_id)`, which reads only the mutated entity in a single targeted query.
-- **$O(1)$ Hash Map Lookups**: Class and wing assignment lookups use pre-grouped dictionaries (`sections_by_class`, `sections_by_wing`) rather than nested linear loops ($O(A \times S)$).
-
-### C. Point 3: Algorithmic Precision ($O(N \log N + k)$ Sweep-Line)
-- **Sweep-Line Overlap & Gap Detection**: Replaced adjacent-only loops with a chronological interval sweep-line algorithm in both [bell_timing_validator.py](file:///Backend/app/services/bell_timing_validator.py) and [validators.js](file:///Frontend/src/pages/timetable/bellTiming/validators.js).
-- Detects non-adjacent collisions, out-of-order periods, zero-duration slots, and inter-period gaps across any arbitrary sequence of classes, breaks, and multi-track schedules.
-- **Structural Sharing in Reducer**: Eliminated recursive `JSON.parse(JSON.stringify(state.setups))` calls in `scheduleReducer.js`. Undo/redo histories and timeline drag actions clone only modified nodes, eliminating GC pauses and memory churn.
-
-### D. Point 4: Concurrency & Transactional Invariants
-- **Atomic Optimistic Concurrency Control (OCC)**:
-  - Setup tables include a `version: int` column.
-  - During `batch_save_setups` and `update_setup`, existing rows are locked using PostgreSQL row-level locks:
-    ```python
-    db.query(TimetableSetup).filter(...).with_for_update()
-    ```
-  - Stale versions trigger an immediate HTTP `409 ConflictException` before performing writes.
-- **Timetable Root Aggregate Versioning**:
-  - The root `Timetable` record is locked and version-bumped via `_touch_timetable(school_id, timetable_id, user_id)` across all mutating actions (`create_setup`, `update_setup`, `delete_setup`, `split_days`, `merge_days`, `move_classes`, `batch_save_setups`).
-- **Zero-Orphan Section Rule**:
-  - Every class section in the school must belong to exactly one bell schedule setup. Saving an orphan-leaving configuration raises a `422 Unprocessable Entity` error.
-
----
+- `timetable_periods` stores the canonical times and period types. The schedule JSON stores schedule IDs and applicable days. Reads can still use legacy JSON metadata while existing setups transition.
+- The frontend compares times in minutes from midnight. The backend and frontend validate overlap and continuity before saving a setup.
+- Draft mutations and publication take a PostgreSQL lock on the timetable before locking its setup or changing its periods or entries. Setup updates check their version. Publish takes the reviewed draft version and validates and snapshots it under the same lock.
+- Batch saves require one assignment per active section. Unknown and foreign school targets are rejected. SQL also enforces the school, timetable and setup relationship for new or changed assignments.
+- An existing lesson follows its equivalent period when a schedule is split, merged or reassigned. A change that leaves a lesson without a valid teaching slot returns a conflict. The editor preserves the local changes on failure.
 
 ## 6. Database Entity-Relationship Diagram
 
@@ -165,12 +138,15 @@ The system enforces strict invariants implemented across Points 1 to 4 of the ar
 erDiagram
     schools ||--o{ wings : contains
     schools ||--o{ school_classes : operates
-    schools ||--o{ users : employs
+    schools ||--o{ principal_profiles : enrolls
+    schools ||--o{ staff_profiles : enrolls
+    schools ||--o{ student_profiles : enrolls
     schools ||--o{ timetables : owns
     wings ||--o{ wing_classes : groups
     school_classes ||--o{ wing_classes : assigned_to
     school_classes ||--o{ sections : divided_into
-    sections ||--o{ student_profiles : enrolls
+    sections |o--o{ student_profiles : places
+    users ||--o| student_profiles : has
     users ||--o| staff_profiles : has
     users ||--o| principal_profiles : has
     timetables ||--o{ timetable_setups : configures
@@ -182,6 +158,9 @@ erDiagram
     users ||--o{ timetable_entries : taught_by
     timetable_periods ||--o{ timetable_entries : slot_in
     sections ||--o{ timetable_entries : class_of
+    conversations ||--o{ conversation_participants : includes
+    users ||--o{ conversation_participants : joins
+    conversations ||--o{ messages : contains
 ```
 
 ---
@@ -198,10 +177,10 @@ School-LMS/
 │   │   ├── api/
 │   │   │   ├── deps.py                 # Dependency injection (get_db, current_user, RBAC)
 │   │   │   └── v1/
-│   │   │       ├── api.py              # Main v1 router assembly
+│   │   │       ├── router.py           # Main v1 router assembly
 │   │   │       └── endpoints/
 │   │   │           ├── timetable.py    # Timetable, Setups & Grid REST endpoints
-│   │   │           ├── auth.py         # Login, JWT issuing, PIN verification
+│   │   │           ├── auth.py         # Sign-in, sign-out and session lookup
 │   │   │           ├── staff.py        # Staff profile management
 │   │   │           └── school_config.py# Wings, Classes, Sections, Houses
 │   │   ├── core/
@@ -212,7 +191,7 @@ School-LMS/
 │   │   │   ├── timetable.py            # Timetable, TimetableSetup, TimetablePeriod, TimetableEntry
 │   │   │   ├── user.py                 # Core User entity & audit fields
 │   │   │   ├── staff.py                # StaffProfile & StaffWing
-│   │   │   └── school_class.py         # SchoolClass, Section, WingClass
+│   │   │   └── school_class.py         # SchoolClass (sections and wings have their own models)
 │   │   ├── schemas/
 │   │   │   └── timetable.py            # Pydantic request/response schemas (BatchSetupItem, etc.)
 │   │   └── services/
@@ -220,7 +199,7 @@ School-LMS/
 │   │       ├── bell_timing_validator.py# Sweep-Line interval validator ($O(N log N + k)$)
 │   │       └── timetable_export_service.py # Excel workbook generator
 │   └── tests/
-│       ├── test_bell_timing.py         # 23 Automated Pytest tests for Bell Setups, OCC, Sweep-Line
+│       ├── test_bell_timing.py         # Bell setups, version checks and validators
 │       └── test_section_teacher_independence.py # Teacher isolation verification tests
 │
 └── Frontend/
@@ -237,7 +216,7 @@ School-LMS/
     │   │       │   ├── scheduleReducer.js # Structural-sharing state manager (undo/redo)
     │   │       │   ├── timeUtils.js    # Integer minute calculations ($0..1439$)
     │   │       │   ├── validators.js   # Frontend Sweep-Line overlap validator
-    │   │       │   └── __tests__/      # 60 Vitest unit tests for time math, reducer, validators
+    │   │       │   └── __tests__/      # Tests for time math, reducer and UI
     │   │       └── components/
     │   │           ├── BellScheduleSetupModal.jsx # Multi-setup bell configuration modal
     │   │           ├── ClassWiseGridView.jsx      # Interactive weekly class schedule grid
@@ -248,69 +227,12 @@ School-LMS/
 
 ---
 
-## 8. Operational & Developer Runbook
+## 8. Developer verification
 
-### Starting Local Services
+See [the README](readme.md) for local setup. Set `LMS_TEST_DATABASE_URL` to a separate PostgreSQL database whose name ends in `_test` before running the backend suite.
 
-#### 1. Backend Server
-```powershell
-cd Backend
-$env:PYTHONPATH="Backend"
-Backend\venv\Scripts\uvicorn app.main:app --reload --port 8000
-```
-- API Base: `http://localhost:8000`
-- Swagger OpenAPI Documentation: `http://localhost:8000/docs`
-
-#### 2. Frontend Development Server
-```powershell
-cd Frontend
-npm run dev
-```
-- Local Application: `http://localhost:5173`
-
----
-
-### Running Automated Test Suites
-
-Both backend and frontend test suites must pass 100% before committing or deploying:
-
-#### Backend Pytest Suite
-```powershell
-$env:PYTHONPATH="Backend"
-Backend\venv\Scripts\python.exe -m pytest Backend/tests/test_bell_timing.py Backend/tests/test_section_teacher_independence.py
-```
-- **Current Metric**: **23 / 23 Passed** (Sweep-line overlap checks, optimistic concurrency conflict 409, root timetable version bumps, schema serialization).
-
-#### Frontend Vitest Suite
-```powershell
-npm --prefix Frontend exec vitest run src/pages/timetable/bellTiming/__tests__/
-```
-- **Current Metric**: **60 / 60 Passed** (Time string parser, integer minute math, reducer structural sharing, interval validation).
-
-#### Production Frontend Bundle Verification
-```powershell
-npm --prefix Frontend run build
-```
-- **Current Metric**: **3,520 modules transformed cleanly with 0 errors**.
-
----
-
-## 9. Current Status & Active Roadmap
-
-### Completed Milestones
-- [x] **Point 1 (Dual-Storage & Minutes Math)**: Single source of truth in DB table `timetable_periods`; integer minutes math ($0 \dots 1439$).
-- [x] **Point 2 (Clean API & Zero Bloat)**: Strongly typed `BatchSetupItem`; dropped duplicate JSON payload lists; eliminated 6-query post-mutation read storm; $O(1)$ section mapping lookups.
-- [x] **Point 3 (Algorithmic Precision)**: Chronological $O(N \log N + k)$ Sweep-Line algorithm on backend and frontend; structural sharing in reducer state.
-- [x] **Point 4 (Concurrency & Transactional Invariants)**: PostgreSQL row locks (`with_for_update()`); strict OCC (409 Conflict); root timetable aggregate locking.
-- [x] **Setup Period ID Polymorphism**: `SetupPeriodItem.id` supports `Union[UUID, str]` with clean string serialization, preventing HTTP 500 response validation errors.
-
-### Current Paused / Pending Task
-- [ ] **Case 2: Cascading Lecture Impact Handling ("Chair vs. Seat Number")**:
-  - *Context*: When an administrator drags, expands, shrinks, splits, or deletes a bell period in "Set Bell Timing", how should existing teacher lecture assignments scheduled in those slots behave?
-  - *Scenarios to Resolve with Institutional Rules*:
-    1. **Shortened Period**: Keep lecture assigned or warn about reduced teaching time?
-    2. **Lengthened Period**: Keep lecture assigned?
-    3. **Deleted Period**: Cascade delete lectures or move them into an unassigned holding pen?
-    4. **Re-ordered / Inserted Periods**: Shift lectures with period numbers or pin them to clock time?
-  - *Status*: Paused per user instruction to allow dedicated thinking time before implementation.
-
+- From `Backend`, run `python -m pytest --cov=app tests` and `python -m alembic upgrade head --sql`. Offline SQL generation needs a PostgreSQL URL in the configuration.
+- From `Frontend`, run `npm ci`, `npm run lint -- --max-warnings=0`, `npm run typecheck`, `npm run test:coverage`, `node --test --test-isolation=none test_chat_date.js` and `npm run build`. The strict JavaScript type check starts with the modules listed in `tsconfig.check.json`.
+- Run `npm run typecheck:all` to type-check all production frontend source. CI requires both the full check and the scoped strict check.
+- The [verification workflow](.github/workflows/verify.yml) runs the headless suites, SQL generation, dependency checks and the frontend build.
+- See [release operations and student records](docs/operations.md) for deployment and privacy procedures, and the [remediation log](REMEDIATION_LOG.md) for verification results.

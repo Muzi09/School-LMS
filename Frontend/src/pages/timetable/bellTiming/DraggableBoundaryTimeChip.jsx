@@ -13,9 +13,6 @@ export function DraggableBoundaryTimeChip({
   onSaveTime,
   onDragUpdate,
   onDragEnd,
-  boundaryIndex,
-  isFirst = false,
-  isLast = false,
   minLimitMinutes = 0,
   maxLimitMinutes = 1435, // 23:55
   disabled = false,
@@ -32,11 +29,13 @@ export function DraggableBoundaryTimeChip({
   }, [timeStr])
 
   const onDragUpdateRef = useRef(onDragUpdate)
-  onDragUpdateRef.current = onDragUpdate
   const onDragEndRef = useRef(onDragEnd)
-  onDragEndRef.current = onDragEnd
   const onSaveTimeRef = useRef(onSaveTime)
-  onSaveTimeRef.current = onSaveTime
+  useEffect(() => {
+    onDragUpdateRef.current = onDragUpdate
+    onDragEndRef.current = onDragEnd
+    onSaveTimeRef.current = onSaveTime
+  }, [onDragUpdate, onDragEnd, onSaveTime])
 
   const handlePointerDown = (e) => {
     if (disabled || e.button !== 0) return

@@ -261,6 +261,8 @@ class Message(Base):
         nullable=False,
     )
 
+    client_message_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+
     content: Mapped[str] = mapped_column(
         Text,
         nullable=False,
@@ -309,5 +311,6 @@ class Message(Base):
                 "idx_messages_sender_id",
                 cls.sender_id,
             ),
+            Index("uq_messages_sender_client_id", cls.conversation_id, cls.sender_id, cls.client_message_id, unique=True),
         )
 

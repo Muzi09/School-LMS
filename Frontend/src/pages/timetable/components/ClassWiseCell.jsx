@@ -1,11 +1,60 @@
-import React, { memo } from "react"
+import { memo } from "react"
 import { AlertTriangle, Plus, CircleDashed, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format12h } from "../bellTiming/timeUtils"
 import { getTimetablePeriodLabel, isNonTeachingPeriod } from "../bellTiming/validators"
-import { showTimetableTooltip, hideTimetableTooltip } from "./TimetableTooltip"
+import { showTimetableTooltip, hideTimetableTooltip } from "./timetableTooltipState"
 
-export const ClassWiseCell = memo(function ClassWiseCell({
+/** @typedef {{ id?: string, name?: string, first_name?: string, last_name?: string, email?: string, tag?: string, designation?: string, department?: string }} TimetableTeacher */
+/** @typedef {{ id?: string, name: string, code?: string }} TimetableSubject */
+/** @typedef {{ id?: string, subject_id: string, name: string, assigned: number, target: number, teacher?: TimetableTeacher }} TimetableSubjectStat */
+/** @typedef {{ id: string, class_name?: string, name?: string, subject_stats?: TimetableSubjectStat[], school_class?: { name: string } }} TimetableSection */
+/** @typedef {{ id?: string, label?: string, period_number: number, type?: string, period_type?: string, name?: string, start_time?: string, end_time?: string, is_break?: boolean }} TimetablePeriod */
+/** @typedef {{ id: string, days?: string[], periods?: TimetablePeriod[] }} TimetableSchedule */
+/** @typedef {{ assigned_section_ids?: string[] | string, applicable_days?: string[] | string, schedules?: TimetableSchedule[], schedules_json?: string, periods?: TimetablePeriod[] }} TimetableSetup */
+/** @typedef {{ id: string, section_id?: string, section?: TimetableSection, subject_id?: string, subject?: TimetableSubject, teacher_user_id?: string, teacher?: TimetableTeacher, period_id?: string, period_number?: number, period?: TimetablePeriod, day_of_week: string }} TimetableEntry */
+/** @typedef {{ section: TimetableSection, period: TimetablePeriod, day: string, entry?: TimetableEntry | null, scheduleDays?: string[] }} TimetableSlot */
+
+/**
+ * @typedef {object} ClassWiseCellProps
+ * @property {TimetableEntry | null} [entry]
+ * @property {string} day
+ * @property {TimetablePeriod} period
+ * @property {TimetableSection} section
+ * @property {boolean} [isAssignMode]
+ * @property {boolean} [isSelected]
+ * @property {boolean} [isCopied]
+ * @property {string | null} [conflictInfo]
+ * @property {number} [sameDayRepeatCount]
+ * @property {boolean} [isHighlighted]
+ * @property {boolean} [isDimmed]
+ * @property {string} [density]
+ * @property {boolean} [isCurrentPeriod]
+ * @property {import('react').MouseEventHandler<HTMLDivElement>} [onClick]
+ * @property {(event: import('react').MouseEvent<HTMLElement> | import('react').KeyboardEvent<HTMLDivElement>) => void} [onAssignClick]
+ * @property {ClassWiseCellProps['onAssignClick']} [onDoubleClick]
+ * @property {import('react').MouseEventHandler<HTMLDivElement>} [onContextMenu]
+ * @property {(entry: TimetableEntry, section: TimetableSection) => void} [onQuickUnassign]
+ * @property {boolean} [draggable]
+ * @property {import('react').DragEventHandler<HTMLDivElement>} [onDragStart]
+ * @property {import('react').DragEventHandler<HTMLDivElement>} [onDragEnd]
+ * @property {import('react').DragEventHandler<HTMLDivElement>} [onDragOver]
+ * @property {import('react').DragEventHandler<HTMLDivElement>} [onDragLeave]
+ * @property {import('react').DragEventHandler<HTMLDivElement>} [onDrop]
+ */
+
+function activateAssignmentCell(event, openAssignment) {
+  if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key)) return
+  event.preventDefault()
+  if (event.key === "Enter" && openAssignment) {
+    hideTimetableTooltip()
+    openAssignment(event)
+    return
+  }
+  event.currentTarget.click()
+}
+
+export const ClassWiseCell = memo(function ClassWiseCell(/** @type {ClassWiseCellProps} */ {
   entry = null,
   day,
   period,
@@ -18,7 +67,6 @@ export const ClassWiseCell = memo(function ClassWiseCell({
   isHighlighted = false,
   isDimmed = false,
   density = "comfortable", // 'comfortable' | 'compact'
-  isToday = false,
   isCurrentPeriod = false,
   onClick,
   onAssignClick,
@@ -133,6 +181,8 @@ export const ClassWiseCell = memo(function ClassWiseCell({
       <div
         role={isAssignMode ? "button" : undefined}
         tabIndex={isAssignMode ? 0 : undefined}
+        aria-label={isAssignMode ? `${subjectName}, ${teacherName}, ${day}, ${periodLabel}. Edit assignment.` : tooltipText}
+        onKeyDown={isAssignMode ? (event) => activateAssignmentCell(event, onDoubleClick) : undefined}
         onClick={(e) => {
           hideTimetableTooltip()
           if (isAssignMode) onClick?.(e)
@@ -155,7 +205,6 @@ export const ClassWiseCell = memo(function ClassWiseCell({
         onDrop={isAssignMode ? onDrop : undefined}
         onMouseEnter={(e) => showTimetableTooltip(tooltipText, e.currentTarget)}
         onMouseLeave={hideTimetableTooltip}
-        aria-label={tooltipText}
         className={cn(
           "group relative flex items-center justify-start h-full w-full min-w-0 select-none text-left",
           density === "compact" ? "min-h-[38px] py-1 px-2 text-[11px]" : "min-h-[44px] py-1.5 px-2.5 text-xs",
@@ -191,7 +240,9 @@ export const ClassWiseCell = memo(function ClassWiseCell({
                 </span>
               )}
               {conflictInfo && (
-                <AlertTriangle className="size-3.5 text-destructive shrink-0" title={conflictInfo} />
+                <span title={conflictInfo}>
+                  <AlertTriangle className="size-3.5 text-destructive shrink-0" />
+                </span>
               )}
             </div>
           </div>
@@ -226,6 +277,8 @@ export const ClassWiseCell = memo(function ClassWiseCell({
     <div
       role={isAssignMode ? "button" : undefined}
       tabIndex={isAssignMode ? 0 : undefined}
+      aria-label={isAssignMode ? `${day}, ${periodLabel}. Assign lesson.` : unassignedTooltip}
+      onKeyDown={isAssignMode ? (event) => activateAssignmentCell(event, onAssignClick || onDoubleClick) : undefined}
       onClick={(e) => {
         hideTimetableTooltip()
         if (isAssignMode) onClick?.(e)
@@ -240,7 +293,6 @@ export const ClassWiseCell = memo(function ClassWiseCell({
       onDrop={isAssignMode ? onDrop : undefined}
       onMouseEnter={(e) => showTimetableTooltip(unassignedTooltip, e.currentTarget)}
       onMouseLeave={hideTimetableTooltip}
-      aria-label={unassignedTooltip}
       className={cn(
         "group relative flex items-center justify-center h-full w-full min-w-0 select-none",
         density === "compact" ? "min-h-[38px] py-1 px-1 text-[11px]" : "min-h-[44px] py-1.5 px-1.5 text-xs",

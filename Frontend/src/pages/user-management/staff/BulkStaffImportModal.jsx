@@ -28,11 +28,11 @@ import {
 import {
   validateXlsxFileClient,
   generateSampleStaffXlsx,
-  downloadBlob,
   exportErrorReportXlsx,
   exportResultsXlsx,
 } from "@/utils/staffImportUtils"
 import { cn } from "@/lib/utils"
+import { downloadBlob } from "@/lib/download"
 
 export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
   // Wizard steps: 1 = Upload, 2 = Review, 3 = Complete
@@ -92,7 +92,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
       }
 
       // 2. Client-side fallback with genuine Excel Blob
-      generateSampleStaffXlsx("staff_bulk_import_sample.xlsx")
+      await generateSampleStaffXlsx("staff_bulk_import_sample.xlsx")
       toast.success("Sample template downloaded successfully!")
     } catch (err) {
       console.error("Failed to download sample template:", err)
@@ -104,26 +104,10 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
   }
 
   // Handle File Selection
-  const handleFileChange = async (file) => {
+  const handleFileChange = (file) => {
     if (!file) return
-
     setSelectedFile(file)
-    setIsAnalyzing(true)
-
-    try {
-      const validation = await validateXlsxFileClient(file)
-      setClientValidation(validation)
-    } catch (err) {
-      setClientValidation({
-        isValid: false,
-        error: err.message || "Failed to validate file structure.",
-        missingColumns: [],
-        unexpectedColumns: [],
-        rowCount: 0,
-      })
-    } finally {
-      setIsAnalyzing(false)
-    }
+    setClientValidation(validateXlsxFileClient(file))
   }
 
   const handleDrop = (e) => {
@@ -402,39 +386,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                     </p>
 
                     <div className="my-2.5 space-y-2 max-w-lg w-full">
-                      {clientValidation.missingColumns?.length > 0 && (
-                        <div className="space-y-1">
-                          <span className="text-xs font-semibold text-foreground/80 block">Missing columns</span>
-                          <div className="flex flex-wrap items-center justify-center gap-1.5">
-                            {clientValidation.missingColumns.map((col) => (
-                              <span
-                                key={col}
-                                className="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-destructive/15 text-destructive border border-destructive/30 shadow-2xs"
-                              >
-                                {col}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {clientValidation.unexpectedColumns?.length > 0 && (
-                        <div className="space-y-1">
-                          <span className="text-xs font-semibold text-foreground/80 block">Unexpected columns</span>
-                          <div className="flex flex-wrap items-center justify-center gap-1.5">
-                            {clientValidation.unexpectedColumns.map((col) => (
-                              <span
-                                key={col}
-                                className="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 shadow-2xs"
-                              >
-                                {col}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {!clientValidation.missingColumns?.length && !clientValidation.unexpectedColumns?.length && clientValidation.error && (
+                      {clientValidation.error && (
                         <p className="text-xs text-destructive whitespace-pre-line max-w-md mx-auto">
                           {clientValidation.error}
                         </p>
@@ -477,7 +429,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                     <div className="space-y-1">
                       <p className="text-sm font-bold text-foreground font-mono">{selectedFile.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {(selectedFile.size / 1024).toFixed(1)} KB • {clientValidation.rowCount} staff record{clientValidation.rowCount === 1 ? "" : "s"} found
+                        {(selectedFile.size / 1024).toFixed(1)} KB • Ready for review
                       </p>
                     </div>
 
@@ -668,7 +620,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => exportErrorReportXlsx(previewData.rows)}
+                      onClick={() => exportErrorReportXlsx(previewData.rows).catch(() => toast.error("Could not download the error report."))}
                       className="h-8 px-3 text-xs font-medium gap-1.5 cursor-pointer shadow-2xs border-border"
                     >
                       <Download className="size-3.5" />
@@ -882,7 +834,7 @@ export function BulkStaffImportModal({ isOpen, onClose, onImportSuccess }) {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => exportResultsXlsx(creationResult.results)}
+                        onClick={() => exportResultsXlsx(creationResult.results).catch(() => toast.error("Could not download the import results."))}
                         className="h-8 px-3 text-xs font-semibold gap-1.5 cursor-pointer shadow-2xs border-border"
                       >
                         <Download className="size-3.5" />

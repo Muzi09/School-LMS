@@ -36,8 +36,11 @@ export const chatService = {
   /**
    * Send a message via REST API (fallback / direct send)
    */
-  async sendMessage(conversationId, content) {
-    return apiClient.post(`chat/conversations/${conversationId}/messages`, { content })
+  async sendMessage(conversationId, content, clientMessageId) {
+    return apiClient.post(`chat/conversations/${conversationId}/messages`, {
+      content,
+      client_message_id: clientMessageId,
+    })
   },
 
   /**

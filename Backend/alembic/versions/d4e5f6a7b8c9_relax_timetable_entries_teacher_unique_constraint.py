@@ -32,6 +32,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("""
+        DO $migration$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM timetable_entries
+                WHERE deleted_at IS NULL AND teacher_user_id IS NOT NULL AND timetable_id IS NOT NULL
+                GROUP BY timetable_id, teacher_user_id, day_of_week, period_id
+                HAVING count(*) > 1
+            ) THEN
+                RAISE EXCEPTION 'Resolve duplicate teacher slots before restoring the older unique index.';
+            END IF;
+        END
+        $migration$;
+    """)
     op.execute("DROP INDEX IF EXISTS idx_timetable_entries_teacher_tt_slot")
     op.create_index(
         'uq_timetable_entries_teacher_with_tt',

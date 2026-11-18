@@ -1,5 +1,5 @@
-import React, { useState } from "react"
-import { Calendar, Split, CheckSquare, Square, Layers, Info, Clock } from "lucide-react"
+import { useState } from "react"
+import { Calendar, Split, CheckSquare, Square, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { format12h } from "./timeUtils"
@@ -17,14 +17,11 @@ const DAY_LABELS = {
 
 export function DayTabs({
   schedules = [],
-  allSchedules = [],
-  activeScheduleId,
+  activeScheduleId = undefined,
   showHeader = true,
   readOnly = false,
-  onSelectSchedule,
   onOpenSplitModal,
   onOpenMergeModal,
-  onMultiSelectSplit,
 }) {
   const [isSelectMode, setIsSelectMode] = useState(false)
   const [selectedDays, setSelectedDays] = useState([])

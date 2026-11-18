@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import {
   useReactTable,
   getCoreRowModel,
@@ -28,6 +28,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 
+/** @typedef {Partial<import("@tanstack/react-table").TableState> & { density?: "compact" | "default" | "comfortable", globalFilter?: string }} TableViewState */
+
 /**
  * Modern, accessible TanStack Table (v8) component.
  * Features:
@@ -47,18 +49,18 @@ export function DataTable({
   isFetching = false,
   isError = false,
   errorMessage = "An error occurred while loading data",
-  rowCount,
-  state: externalState = {},
-  onPaginationChange,
-  onGlobalFilterChange,
-  onSortingChange,
-  onColumnVisibilityChange,
-  onColumnOrderChange,
+  rowCount = undefined,
+  state: externalState = /** @type {TableViewState} */ ({}),
+  onPaginationChange = undefined,
+  onGlobalFilterChange = undefined,
+  onSortingChange = undefined,
+  onColumnVisibilityChange = undefined,
+  onColumnOrderChange = undefined,
   manualPagination = false,
   manualFiltering = false,
   manualSorting = false,
-  renderTopToolbarCustomActions,
-  renderRowActions,
+  renderTopToolbarCustomActions = undefined,
+  renderRowActions = undefined,
   enableRowActions = false,
   positionActionsColumn = "last",
   enableColumnOrdering = true,
@@ -68,11 +70,12 @@ export function DataTable({
   enableHiding = true,
   enableDensityToggle = true,
   enableFullScreenToggle = false,
-  initialState = {},
+  initialState = /** @type {TableViewState} */ ({}),
   searchPlaceholder = "Search records...",
   emptyMessage = "No records found",
   className = "",
 }) {
+  "use no memo"
   // Density state: "compact" | "default" | "comfortable"
   const [density, setDensity] = useState(
     initialState.density || "default"
@@ -206,7 +209,8 @@ export function DataTable({
     }
   }, [defaultColumnOrder, externalState.columnOrder])
 
-  // Set up TanStack Table instance
+  // The component opts out of compiler memoization because TanStack Table returns stateful callbacks.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns: normalizedColumns,
@@ -418,7 +422,7 @@ export function DataTable({
                   <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
                     Row Density
                   </div>
-                  {["compact", "default", "comfortable"].map((d) => (
+                  {(/** @type {const} */ (["compact", "default", "comfortable"])).map((d) => (
                     <button
                       key={d}
                       type="button"

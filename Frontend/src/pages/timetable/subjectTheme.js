@@ -2,7 +2,6 @@ import {
   BookOpen,
   Calculator,
   Compass,
-  Dumbbell,
   FlaskConical,
   Globe,
   GraduationCap,
@@ -135,7 +134,7 @@ export const SUBJECT_PALETTES = {
 /**
  * Returns deterministic color token palette for any subject by name or category.
  */
-export function getSubjectTheme(subjectName = "", category = "") {
+export function getSubjectTheme(subjectName = "") {
   if (!subjectName) return SUBJECT_PALETTES.neutral
 
   const name = subjectName.toLowerCase()

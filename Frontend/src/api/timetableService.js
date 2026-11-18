@@ -11,6 +11,7 @@ export const getTimetableApi = async (sectionId) => {
   return await apiClient.get(`/timetable?section_id=${sectionId}`)
 }
 
+/** @param {{ timetable_id?: string, section_id: string, period_id: string, day_of_week: string, subject_id: string, teacher_user_id?: string | null, overwrite?: boolean }} payload */
 export const createTimetableEntryApi = async (payload) => {
   return await apiClient.post("/timetable", payload)
 }
@@ -73,6 +74,7 @@ export const getActiveTimetableApi = async () => {
   return await apiClient.get("/timetable/timetables/active")
 }
 
+/** @param {{ name: string, academic_year: string, description?: string | null, type?: string, start_option?: string, source_timetable_id?: string | null, is_active?: boolean }} payload */
 export const createTimetableApi = async (payload) => {
   return await apiClient.post("/timetable/timetables", payload)
 }
@@ -93,8 +95,10 @@ export const getTimetablePublishDiffApi = async (timetableId) => {
   return await apiClient.get(`/timetable/timetables/${timetableId}/publish-diff`)
 }
 
-export const publishTimetableApi = async (timetableId) => {
-  return await apiClient.post(`/timetable/timetables/${timetableId}/publish`)
+export const publishTimetableApi = async (timetableId, expectedVersion) => {
+  return await apiClient.post(`/timetable/timetables/${timetableId}/publish`, null, {
+    params: { expected_version: expectedVersion },
+  })
 }
 
 export const duplicateTimetableApi = async (timetableId, name = null) => {
@@ -131,6 +135,7 @@ export const previewSetupsImpactApi = async (payload) => {
   return await apiClient.post("/timetable/setups/preview-impact", payload)
 }
 
+/** @param {{ timetable_id: string, timetable_version?: number | null, setups: { name: string }[], assignments: { setup_id: string }[] }} payload */
 export const batchSaveSetupsApi = async (payload) => {
   return await apiClient.post("/timetable/setups/batch-save", payload)
 }
@@ -160,17 +165,17 @@ export const checkConflictApi = async (payload) => {
   return await apiClient.post("/timetable/check-conflict", payload)
 }
 
+/** @param {{ timetable_id: string, section_id: string, day_of_week: string, period_id: string, subject_id?: string | null, teacher_user_id?: string | null, scope?: string, kind?: string, overwrite?: boolean, apply_days?: string[] }} payload */
 export const bulkAssignSlotApi = async (payload) => {
   return await apiClient.post("/timetable/entries/bulk", payload)
 }
 
-export const exportTimetableExcelApi = async ({ timetableId, payload }) => {
-  const response = await apiClient.post(
-    `/timetable/${timetableId}/export-excel`,
-    payload,
-    { responseType: "blob" }
-  )
-  return response.data
+/**
+ * @param {{ timetableId: string, payload: Record<string, unknown> }} request
+ * @returns {Promise<Blob>}
+ */
+export const exportTimetableExcelApi = ({ timetableId, payload }) => {
+  return apiClient.post(`/timetable/${timetableId}/export-excel`, payload, { responseType: "blob" })
 }
 
 export const timetableService = {

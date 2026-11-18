@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useMemo } from "react"
 import {
   Clock,
   Trash2,
@@ -21,13 +21,16 @@ import {
   PERIOD_TYPE_LABELS,
   formatPeriodShortLabel,
   MIN_PERIOD_DURATION_MINUTES,
-  MAX_PERIOD_DURATION_MINUTES,
 } from "./validators"
 import { renumberPeriods } from "./scheduleReducer"
 import { cn } from "@/lib/utils"
 
-export function PeriodModal({
-  isOpen,
+export function PeriodModal(props) {
+  if (!props.isOpen) return null
+  return <PeriodEditor {...props} />
+}
+
+function PeriodEditor({
   onClose,
   mode = "add", // "add" | "edit"
   periodData = null,
@@ -40,52 +43,15 @@ export function PeriodModal({
   const [activeMode, setActiveMode] = useState(mode)
   const [activePeriodIndex, setActivePeriodIndex] = useState(periodIndex)
 
-  // Form states
-  const [type, setType] = useState(PERIOD_TYPES.CLASS)
-  const [startTime, setStartTime] = useState("08:30")
-  const [endTime, setEndTime] = useState("09:15")
-
-  const isInitializedRef = useRef(false)
-
-  // Sync state when modal opens or initial props change
-  useEffect(() => {
-    if (!isOpen) {
-      isInitializedRef.current = false
-      return
-    }
-
-    if (!isInitializedRef.current) {
-      isInitializedRef.current = true
-      setActiveMode(mode)
-      setActivePeriodIndex(periodIndex)
-
-      if (mode === "edit" && (periodData || schedule?.periods?.[periodIndex])) {
-        const targetP = schedule?.periods?.[periodIndex] || periodData
-        const pType = targetP.type || (targetP.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
-        setType(pType)
-        setStartTime(targetP.start_time || "08:30")
-        setEndTime(targetP.end_time || "09:15")
-      } else {
-        // Add mode: derive sensible defaults from neighbors
-        const prevPeriod = insertAfterIndex >= 0 && schedule?.periods?.[insertAfterIndex] ? schedule.periods[insertAfterIndex] : null
-        const nextPeriod = schedule?.periods?.[insertAfterIndex + 1] || null
-
-        let defaultStart = "08:30"
-        if (prevPeriod) {
-          defaultStart = prevPeriod.end_time
-        } else if (nextPeriod) {
-          defaultStart = "08:00"
-        }
-
-        const defaultDur = prevPeriod ? calculateDuration(prevPeriod.start_time, prevPeriod.end_time) : 45
-        const defaultEnd = addMinutesToTime(defaultStart, defaultDur > 0 ? defaultDur : 45)
-
-        setType(PERIOD_TYPES.CLASS)
-        setStartTime(defaultStart)
-        setEndTime(defaultEnd)
-      }
-    }
-  }, [isOpen, mode, periodData, periodIndex, insertAfterIndex])
+  const periods = schedule?.periods
+  const existingPeriod = mode === "edit" ? periods?.[periodIndex] || periodData : null
+  const previous = insertAfterIndex >= 0 ? periods?.[insertAfterIndex] : null
+  const following = periods?.[insertAfterIndex + 1]
+  const defaultStart = previous?.end_time ?? (following ? "08:00" : "08:30")
+  const previousDuration = previous ? calculateDuration(previous.start_time, previous.end_time) : 45
+  const [type, setType] = useState(existingPeriod?.type || (existingPeriod?.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS))
+  const [startTime, setStartTime] = useState(existingPeriod ? existingPeriod.start_time || "08:30" : defaultStart)
+  const [endTime, setEndTime] = useState(existingPeriod ? existingPeriod.end_time || "09:15" : addMinutesToTime(defaultStart, previousDuration > 0 ? previousDuration : 45))
 
   const isEdit = activeMode === "edit"
   const currentTargetPeriod = isEdit && schedule?.periods?.[activePeriodIndex] ? schedule.periods[activePeriodIndex] : periodData
@@ -193,7 +159,6 @@ export function PeriodModal({
     return renumberPeriods(periods)
   }, [schedule, validationError, isEdit, activePeriodIndex, insertAfterIndex, type, startTime, endTime])
 
-  if (!isOpen) return null
 
   // Switch to another period when clicked in the list
   const handleSelectOtherPeriod = (targetIdx) => {
@@ -283,7 +248,7 @@ export function PeriodModal({
   }
 
   // Dynamic modal title
-  let modalTitle = "Edit Period"
+  let modalTitle
   if (isEdit) {
     modalTitle = `Edit ${currentTargetPeriod?.label || `P${activePeriodIndex + 1}`}`
   } else {

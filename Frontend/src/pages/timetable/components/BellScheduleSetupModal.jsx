@@ -1,9 +1,8 @@
-import React, { useReducer, useState, useEffect, useMemo, useCallback, useRef } from "react"
+import { useReducer, useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   Clock,
   Plus,
   X,
-  Layers,
   Send,
   Loader2,
   AlertTriangle,
@@ -59,7 +58,7 @@ function extractSectionsFromWings(wings = []) {
   return list
 }
 
-export function mapSetupsToState(rawSetups, allSections = []) {
+function mapSetupsToState(rawSetups, allSections = []) {
   if (!rawSetups || rawSetups.length === 0) {
     const defaultSetup = createDefaultSetup("Setup 1", 1)
     const assignments = {}
@@ -131,10 +130,46 @@ export function mapSetupsToState(rawSetups, allSections = []) {
   }
 }
 
-export function BellScheduleSetupModal({
+function collectSetupValidationErrors(setups, sectionAssignments, sections) {
+  const errors = []
+
+  setups.forEach((setup) => {
+    // Day invariant check
+    const dayInv = validateSetupDayInvariants(setup)
+    if (!dayInv.isValid) {
+      errors.push(...dayInv.errors)
+    }
+
+    // Period sequence check
+    setup.schedules?.forEach((sch, sIdx) => {
+      const valRes = validateSchedule(sch)
+      if (!valRes.isValid) {
+        valRes.errors.forEach((err) => {
+          errors.push(`${setup.name} Schedule ${sIdx + 1}: ${err}`)
+        })
+      }
+    })
+  })
+
+  // Class assignments completeness check
+  const assignVal = validateAssignments(sections, sectionAssignments, setups)
+  if (!assignVal.isValid) {
+    errors.push(...assignVal.errors)
+  }
+
+  return errors
+}
+
+export function BellScheduleSetupModal(props) {
+  if (!props.isOpen) return null
+  return <BellScheduleEditor key={props.timetableId} {...props} />
+}
+
+function BellScheduleEditor({
   isOpen,
   onClose,
   timetableId,
+  timetableVersion,
   wings = [],
   initialSetups = null,
   onSaved,
@@ -150,6 +185,7 @@ export function BellScheduleSetupModal({
     initialData: initialSetups && initialSetups.length > 0 ? initialSetups : undefined,
   })
 
+  const openedTimetableVersion = useState(timetableVersion)[0]
   const batchSaveMutation = useBatchSaveSetups()
   const queryClient = useQueryClient()
 
@@ -182,9 +218,6 @@ export function BellScheduleSetupModal({
     }
   })
 
-  const currentRevisionRef = useRef(0)
-  currentRevisionRef.current = state?.revision || 0
-
   // Multi-select sections state
   const [selectedSectionIds, setSelectedSectionIds] = useState([])
 
@@ -192,6 +225,7 @@ export function BellScheduleSetupModal({
   const [modalState, setModalState] = useState(null)
   const [duplicateGroupsToMerge, setDuplicateGroupsToMerge] = useState(null)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+  const [saveConflict, setSaveConflict] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
   const initialPayloadRef = useRef(
     initialSetups && initialSetups.length > 0
@@ -199,21 +233,6 @@ export function BellScheduleSetupModal({
       : null
   )
   const hasInitializedRef = useRef(Boolean(initialSetups && initialSetups.length > 0))
-  const stateRef = useRef(state)
-  stateRef.current = state
-
-  useEffect(() => {
-    if (isOpen) {
-      setIsSaving(false)
-      setShowDiscardConfirm(false)
-      // Only refetch if initial data was completely absent
-      if (!initialSetups || initialSetups.length === 0) {
-        hasInitializedRef.current = false
-        refetch()
-      }
-    }
-  }, [timetableId, isOpen, initialSetups, refetch])
-
   // Initialize or re-sync reducer state when API data arrives (only if not pre-populated)
   useEffect(() => {
     if (!isOpen || hasInitializedRef.current) return
@@ -257,7 +276,7 @@ export function BellScheduleSetupModal({
     if (!targetSetup) return
 
     const assignedSectionIds = Object.entries(state.sectionAssignments)
-      .filter(([_, sId]) => sId === setupId)
+      .filter(([, sId]) => sId === setupId)
       .map(([secId]) => secId)
 
     setModalState({
@@ -272,7 +291,7 @@ export function BellScheduleSetupModal({
   const handleConfirmDeleteSetup = ({ setupId, targetSetupId }) => {
     const targetSetup = state.setups.find((s) => s.id === setupId)
     const assignedSectionIds = Object.entries(state.sectionAssignments)
-      .filter(([_, sId]) => sId === setupId)
+      .filter(([, sId]) => sId === setupId)
       .map(([secId]) => secId)
 
     if (assignedSectionIds.length > 0 && targetSetupId) {
@@ -531,6 +550,31 @@ export function BellScheduleSetupModal({
     toast.success(`Created ${newName} and moved ${label}`)
   }
 
+  // Request close: if dirty, prompt to confirm discard; if clean, close immediately
+  const handleRequestClose = useCallback(() => {
+    if (isSaving) return
+
+    // If there is an active sub-modal, close that first
+    if (modalState) {
+      setModalState(null)
+      return
+    }
+
+    // If duplicate merge prompt is open, close that first
+    if (duplicateGroupsToMerge) {
+      setDuplicateGroupsToMerge(null)
+      return
+    }
+
+    // If user has unsaved changes, prompt before discarding!
+    if (state.isDirty) {
+      setShowDiscardConfirm(true)
+      return
+    }
+
+    onClose()
+  }, [isSaving, modalState, duplicateGroupsToMerge, state.isDirty, onClose])
+
   // Keyboard Shortcuts & Escape Key
   useEffect(() => {
     if (!isOpen) return
@@ -557,32 +601,7 @@ export function BellScheduleSetupModal({
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isOpen, modalState, duplicateGroupsToMerge, isSaving, showDiscardConfirm])
-
-  // Request close: if dirty, prompt to confirm discard; if clean, close immediately
-  const handleRequestClose = () => {
-    if (isSaving) return
-
-    // If there is an active sub-modal, close that first
-    if (modalState) {
-      setModalState(null)
-      return
-    }
-
-    // If duplicate merge prompt is open, close that first
-    if (duplicateGroupsToMerge) {
-      setDuplicateGroupsToMerge(null)
-      return
-    }
-
-    // If user has unsaved changes, prompt before discarding!
-    if (state.isDirty) {
-      setShowDiscardConfirm(true)
-      return
-    }
-
-    onClose()
-  }
+  }, [isOpen, modalState, duplicateGroupsToMerge, isSaving, showDiscardConfirm, handleRequestClose])
 
   // Discard all changes made in this session and restore initial state
   const handleDiscard = () => {
@@ -612,6 +631,7 @@ export function BellScheduleSetupModal({
 
       const payload = {
         timetable_id: timetableId,
+        timetable_version: openedTimetableVersion,
         setups: stateToSave.setups.map((s, idx) => ({
           id: s.id,
           name: s.name,
@@ -651,7 +671,7 @@ export function BellScheduleSetupModal({
 
       return setupsToCache
     },
-    [batchSaveMutation, queryClient, readOnly, timetableId]
+    [batchSaveMutation, queryClient, readOnly, timetableId, openedTimetableVersion]
   )
 
   const executeSaveAndClose = async (stateToSave) => {
@@ -665,14 +685,13 @@ export function BellScheduleSetupModal({
       }
       onClose()
     } catch (err) {
-      console.error("Save error:", err)
       const is409 =
         err?.status === 409 ||
         err?.data?.detail?.includes("modified by another user") ||
         err?.message?.includes("modified by another user")
 
       if (is409) {
-        toast.error("Bell setup was modified in another session. Please reload.")
+        setSaveConflict(err?.message || "The bell schedule changed while you were editing.")
       } else {
         const msg = err?.response?.data?.message || err?.message || "Failed to save bell schedule changes."
         toast.error(msg)
@@ -684,6 +703,7 @@ export function BellScheduleSetupModal({
 
   const handleExplicitSave = async () => {
     if (isSaving || !state.isDirty || readOnly) return
+    setSaveConflict(null)
     if (validationErrors.length > 0) {
       toast.error(validationErrors[0] || "Please resolve validation errors before saving.")
       return
@@ -704,7 +724,7 @@ export function BellScheduleSetupModal({
       return
     }
 
-    let mergedSetups = stateRef.current.setups
+    let mergedSetups = state.setups
     duplicateGroupsToMerge.forEach((group) => {
       dispatch({
         type: "MERGE_DAYS",
@@ -732,7 +752,7 @@ export function BellScheduleSetupModal({
 
     setDuplicateGroupsToMerge(null)
     const mergedStateToSave = {
-      ...stateRef.current,
+      ...state,
       setups: mergedSetups,
     }
     await executeSaveAndClose(mergedStateToSave)
@@ -742,36 +762,7 @@ export function BellScheduleSetupModal({
     setDuplicateGroupsToMerge(null)
   }
 
-  // Validation checks across setups and assignments
-  const validationErrors = useMemo(() => {
-    const errors = []
-
-    state.setups.forEach((setup) => {
-      // Day invariant check
-      const dayInv = validateSetupDayInvariants(setup)
-      if (!dayInv.isValid) {
-        errors.push(...dayInv.errors)
-      }
-
-      // Period sequence check
-      setup.schedules?.forEach((sch, sIdx) => {
-        const valRes = validateSchedule(sch)
-        if (!valRes.isValid) {
-          valRes.errors.forEach((err) => {
-            errors.push(`${setup.name} Schedule ${sIdx + 1}: ${err}`)
-          })
-        }
-      })
-    })
-
-    // Class assignments completeness check
-    const assignVal = validateAssignments(allSections, state.sectionAssignments, state.setups)
-    if (!assignVal.isValid) {
-      errors.push(...assignVal.errors)
-    }
-
-    return errors
-  }, [state.setups, state.sectionAssignments, allSections])
+  const validationErrors = collectSetupValidationErrors(state.setups, state.sectionAssignments, allSections)
 
   if (!isOpen) return null
 
@@ -892,9 +883,7 @@ export function BellScheduleSetupModal({
                 wings={wings}
                 sectionAssignments={state.sectionAssignments}
                 selectedSectionIds={selectedSectionIds}
-                activeScheduleId={state.activeScheduleId}
                 readOnly={readOnly}
-                onSelectSchedule={(schedId) => dispatch({ type: "SELECT_SCHEDULE", payload: { scheduleId: schedId } })}
                 onRenameSetup={handleRenameSetup}
                 onDuplicateSetup={handleDuplicateSetup}
                 onDeleteSetup={handleDeleteSetup}
@@ -1063,7 +1052,6 @@ export function BellScheduleSetupModal({
           <DaySplitModal
             isOpen={true}
             onClose={() => setModalState(null)}
-            schedule={modalState.schedule}
             daysToSplit={modalState.daysToSplit}
             onConfirmSplit={(days) => {
               handleConfirmSplit(modalState.setupId, modalState.schedule.id, days)
@@ -1122,6 +1110,21 @@ export function BellScheduleSetupModal({
           onCancel={isSaving ? undefined : handleCancelDuplicateMerge}
           isMerging={isSaving}
         />
+      )}
+
+      {saveConflict && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-border bg-muted p-4 text-sm">
+          <div className="mr-auto">
+            <p className="font-semibold">Bell schedule could not be saved</p>
+            <p>{saveConflict} Your edits are still here.</p>
+          </div>
+          <Button variant="outline" onClick={() => setSaveConflict(null)}>Keep editing</Button>
+          <Button variant="outline" onClick={() => {
+            queryClient.invalidateQueries({ queryKey: timetableKeys.setups(timetableId) })
+            queryClient.invalidateQueries({ queryKey: ["timetable", "class-wise"] })
+            onClose()
+          }}>Discard edits and close</Button>
+        </div>
       )}
 
       {/* Unsaved Changes Discard Confirmation Dialog */}

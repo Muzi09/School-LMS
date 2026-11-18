@@ -77,6 +77,7 @@ class TransferOwnershipRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=5000, description="Message text content")
+    client_message_id: UUID | None = None
 
 
 class MessageRead(BaseModel):
@@ -84,6 +85,7 @@ class MessageRead(BaseModel):
 
     id: UUID
     conversation_id: UUID
+    client_message_id: UUID | None = None
     sender_id: UUID
     sender_name: str | None = None
     sender_role: str | None = None

@@ -9,7 +9,6 @@ import {
   isNonTeachingPeriod,
   sortDays,
   sortSchedules,
-  getScheduleMinDayIndex,
   areSchedulesTimingEqual,
   findIdenticalSchedulesInSetups,
   MIN_PERIOD_DURATION_MINUTES,

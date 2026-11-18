@@ -6,38 +6,26 @@ import bcrypt
 import jwt
 
 from app.core.config import settings
+from app.core.exceptions import BadRequestException
 
 
 def hash_password(password: str) -> str:
     """Hash a plaintext password using bcrypt with automatically generated salt."""
+    encoded = password.encode("utf-8")
+    if len(encoded) > 72:
+        raise BadRequestException("Passwords must be at most 72 bytes in UTF-8.")
     salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    return bcrypt.hashpw(encoded, salt).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str | None) -> bool:
     """Verify a plaintext password against a stored bcrypt hash."""
     if not hashed_password:
         return False
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"),
-        hashed_password.encode("utf-8"),
-    )
-
-
-def hash_pin(pin: str) -> str:
-    """Hash a plaintext PIN using bcrypt."""
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(pin.encode("utf-8"), salt).decode("utf-8")
-
-
-def verify_pin(plain_pin: str, hashed_pin: str | None) -> bool:
-    """Verify a plaintext PIN against a stored bcrypt hash."""
-    if not hashed_pin:
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except ValueError:
         return False
-    return bcrypt.checkpw(
-        plain_pin.encode("utf-8"),
-        hashed_pin.encode("utf-8"),
-    )
 
 
 def create_access_token(
@@ -59,7 +47,10 @@ def create_access_token(
 
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode and validate a signed JWT access token."""
-    return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.ALGORITHM])
+    return jwt.decode(
+        token, settings.JWT_SECRET, algorithms=[settings.ALGORITHM],
+        options={"require": ["sub", "exp"]},
+    )
 
 
 def generate_onboarding_token() -> tuple[str, str]:
@@ -78,25 +69,25 @@ def hash_token(raw_token: str) -> str:
 
 
 def _get_fernet():
-    import base64
     from cryptography.fernet import Fernet
-    key_bytes = hashlib.sha256(settings.JWT_SECRET.encode("utf-8")).digest()
-    fernet_key = base64.urlsafe_b64encode(key_bytes)
-    return Fernet(fernet_key)
+
+    if settings.SMTP_ENCRYPTION_KEY is None:
+        raise BadRequestException("SMTP password encryption is not configured.")
+    try:
+        return Fernet(settings.SMTP_ENCRYPTION_KEY.get_secret_value())
+    except ValueError as exc:
+        raise BadRequestException("SMTP password encryption is not configured correctly.") from exc
+
+
+def smtp_password_is_configured(ciphertext: str | None) -> bool:
+    return bool(settings.SMTP_ENCRYPTION_KEY and ciphertext and ciphertext.startswith("v1:"))
 
 
 def encrypt_smtp_password(plain_password: str) -> str:
-    """Encrypt plaintext SMTP password using Fernet symmetric encryption."""
-    if not plain_password:
-        return ""
-    f = _get_fernet()
-    return f.encrypt(plain_password.encode("utf-8")).decode("utf-8")
+    return "v1:" + _get_fernet().encrypt(plain_password.encode("utf-8")).decode("ascii")
 
 
 def decrypt_smtp_password(encrypted_password: str) -> str:
-    """Decrypt stored Fernet encrypted SMTP password."""
-    if not encrypted_password:
-        return ""
-    f = _get_fernet()
-    return f.decrypt(encrypted_password.encode("utf-8")).decode("utf-8")
-
+    if not smtp_password_is_configured(encrypted_password):
+        raise BadRequestException("Save a new SMTP password before sending mail.")
+    return _get_fernet().decrypt(encrypted_password[3:].encode("ascii")).decode("utf-8")

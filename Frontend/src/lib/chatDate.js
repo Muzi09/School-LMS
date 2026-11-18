@@ -1,124 +1,92 @@
-export function formatChatTimestamp(dateString) {
-  if (!dateString) return ""
-  const date = new Date(dateString)
-  if (isNaN(date.getTime())) return ""
-  const now = new Date()
-  const isToday = date.toDateString() === now.toDateString()
-  if (isToday) {
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    })
-  }
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  if (date.toDateString() === yesterday.toDateString()) {
-    return "Yesterday"
-  }
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+/** @typedef {Date | string | null | undefined} ChatDate */
+
+const locale = () => globalThis.navigator?.language ?? "en-US"
+
+/** @param {ChatDate} value */
+function parseDate(value) {
+  if (!value) return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  const text = String(value).trim()
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)
+  const date = new Date(text.includes("T") && !hasZone ? text + "Z" : text)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
-export function formatMessageTime(dateString) {
-  if (!dateString) return ""
-  const d = new Date(dateString)
-  if (isNaN(d.getTime())) return ""
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
+/** @param {Date} now */
+function previousDay(now) {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
 }
 
-export function getDateDivider(dateString) {
-  if (!dateString) return ""
-  const date = new Date(dateString)
-  if (isNaN(date.getTime())) return ""
-  const now = new Date()
-  if (date.toDateString() === now.toDateString()) {
-    return "Today"
-  }
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  if (date.toDateString() === yesterday.toDateString()) {
-    return "Yesterday"
-  }
-  return date.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  })
+/** @param {number} offset
+ * @param {string} language
+ */
+function relativeDay(offset, language) {
+  const label = new Intl.RelativeTimeFormat(language, { numeric: "auto" }).format(offset, "day")
+  return label.charAt(0).toLocaleUpperCase(language) + label.slice(1)
 }
 
-function parseDate(dateString) {
-  if (!dateString) return null
-  if (dateString instanceof Date) return isNaN(dateString.getTime()) ? null : dateString
-  let str = String(dateString).trim()
-  if (str.includes("T") && !str.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(str)) {
-    str += "Z"
-  }
-  const d = new Date(str)
-  return isNaN(d.getTime()) ? null : d
+/** @param {Date} date
+ * @param {string} language
+ * @param {Intl.DateTimeFormatOptions["hour"]} hour
+ */
+function displayTime(date, language, hour = "numeric") {
+  return new Intl.DateTimeFormat(language, { hour, minute: "2-digit" }).format(date).replace(/\u202f/g, " ")
 }
 
-export function formatLastSeen(dateString, now = new Date()) {
-  const date = parseDate(dateString)
+/** @param {ChatDate} value */
+export function formatChatTimestamp(value, language = locale(), now = new Date()) {
+  const date = parseDate(value)
+  if (!date) return ""
+  if (date.toDateString() === now.toDateString()) return displayTime(date, language)
+  if (date.toDateString() === previousDay(now).toDateString()) return relativeDay(-1, language)
+  return new Intl.DateTimeFormat(language, { month: "short", day: "numeric" }).format(date)
+}
+
+/** @param {ChatDate} value */
+export function formatMessageTime(value, language = locale()) {
+  const date = parseDate(value)
+  return date ? displayTime(date, language) : ""
+}
+
+/** @param {ChatDate} value */
+export function getDateDivider(value, language = locale(), now = new Date()) {
+  const date = parseDate(value)
+  if (!date) return ""
+  if (date.toDateString() === now.toDateString()) return relativeDay(0, language)
+  if (date.toDateString() === previousDay(now).toDateString()) return relativeDay(-1, language)
+  return new Intl.DateTimeFormat(language, { weekday: "short", month: "short", day: "numeric" }).format(date)
+}
+
+/** @param {ChatDate} value */
+export function formatLastSeen(value, now = new Date(), language = locale()) {
+  const date = parseDate(value)
   if (!date) return ""
 
-  const diffMs = Math.max(0, now.getTime() - date.getTime())
-  const diffMinutes = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
+  const hindi = language.toLowerCase().split("-")[0] === "hi"
+  const label = hindi ? "पिछली बार ऑनलाइन" : "Last seen"
+  const elapsedMinutes = Math.max(1, Math.floor((now.getTime() - date.getTime()) / 60000))
+  const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "always" })
+  if (elapsedMinutes < 60) return `${label} ${relativeTime.format(-elapsedMinutes, "minute")}`
 
-  // 1. Less than 1 hour: Last seen X minutes ago
-  if (diffMinutes < 60) {
-    const mins = Math.max(1, diffMinutes)
-    return `Last seen ${mins} minute${mins === 1 ? "" : "s"} ago`
+  const elapsedHours = Math.floor(elapsedMinutes / 60)
+  if (elapsedHours < 24) return `${label} ${relativeTime.format(-elapsedHours, "hour")}`
+
+  if (date.toDateString() === previousDay(now).toDateString()) {
+    const yesterday = relativeTime.resolvedOptions().locale.startsWith("en")
+      ? "yesterday"
+      : new Intl.RelativeTimeFormat(language, { numeric: "auto" }).format(-1, "day")
+    return `${label} ${yesterday} ${displayTime(date, language, "2-digit")}`
   }
 
-  // 2. 1 to 23 hours: Last seen X hour(s) ago
-  if (diffHours < 24) {
-    return `Last seen ${diffHours} hour${diffHours === 1 ? "" : "s"} ago`
-  }
-
-  // Helper: check if same calendar day as yesterday
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-  const isYesterday =
-    date.getFullYear() === yesterday.getFullYear() &&
-    date.getMonth() === yesterday.getMonth() &&
-    date.getDate() === yesterday.getDate()
-
-  // 3. Previous calendar day: Last seen yesterday 02:24 PM
-  if (isYesterday) {
-    const timeStr = date
-      .toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
-      .replace(/\u202f/g, " ")
-    return `Last seen yesterday ${timeStr}`
-  }
-
-  // 4. Within the current week: Last seen on Tuesday
-  const dayOfWeek = (now.getDay() + 6) % 7 // Monday = 0, ..., Sunday = 6
-  const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek, 0, 0, 0, 0)
-
+  const mondayOffset = (now.getDay() + 6) % 7
+  const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset)
+  const on = hindi ? "" : " on"
   if (date >= startOfWeek) {
-    const weekday = date.toLocaleDateString("en-US", { weekday: "long" })
-    return `Last seen on ${weekday}`
+    return `${label}${on} ${new Intl.DateTimeFormat(language, { weekday: "long" }).format(date)}`
   }
 
-  // 5. Older than the current week: Last seen on 02 Aug 2023, 05:23 PM
-  const day = String(date.getDate()).padStart(2, "0")
-  const month = date.toLocaleDateString("en-US", { month: "short" })
-  const year = date.getFullYear()
-  const timeStr = date
-    .toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    })
-    .replace(/\u202f/g, " ")
-
-  return `Last seen on ${day} ${month} ${year}, ${timeStr}`
+  const dateParts = new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric" })
+    .formatToParts(date)
+  const labelParts = ["day", "month", "year"].map(type => dateParts.find(part => part.type === type)?.value)
+  return `${label}${on} ${labelParts.join(" ")}, ${displayTime(date, language, "2-digit")}`
 }

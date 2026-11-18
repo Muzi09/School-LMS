@@ -1,4 +1,4 @@
-import { PINCODE_REGEX, PIN_REGEX } from "./patterns"
+import { PINCODE_REGEX } from "./patterns"
 
 // Constraints
 export const MAX_EMBLEM_SIZE_BYTES = 5 * 1024 * 1024
@@ -173,20 +173,12 @@ export const validateHousesStep = (
 export const validateCredentialsStep = ({
   password = "",
   confirmPassword = "",
-  pin = "",
-  confirmPin = "",
 }) => {
   if (password.length < 8) {
     return "Password must be at least 8 characters."
   }
   if (password !== confirmPassword) {
     return "Password and Confirm Password do not match."
-  }
-  if (!PIN_REGEX.test(pin)) {
-    return "Quick Login PIN must be 4 to 10 numeric digits."
-  }
-  if (pin !== confirmPin) {
-    return "PIN and Confirm PIN do not match."
   }
   return null
 }
@@ -251,8 +243,6 @@ export const validateSetupWizardStep = (step, state) => {
       return validateCredentialsStep({
         password: state.password,
         confirmPassword: state.confirmPassword,
-        pin: state.pin,
-        confirmPin: state.confirmPin,
       })
     default:
       return null

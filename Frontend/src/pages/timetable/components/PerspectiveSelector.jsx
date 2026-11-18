@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Popover, PopoverTrigger, PopoverDialog } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
-export const PERSPECTIVES = [
+const PERSPECTIVES = [
   {
     id: "class-wise",
     shortLabel: "Class-wise",

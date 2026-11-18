@@ -16,9 +16,10 @@ import {
   Loader2,
 } from "lucide-react"
 import { authService } from "@/api/authService"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/context/authState"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { toast } from "sonner"
 import {
   validateEmblemFile,
@@ -44,11 +45,27 @@ import { Step6Houses } from "./Step6_Houses"
 import { Step7Security } from "./Step7_Security"
 import { Step8Review } from "./Step8_Review"
 
+function readSchoolDraft(key) {
+  if (!key) return {}
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(key) ?? "null")
+    return draft && typeof draft === "object" ? draft : {}
+  } catch {
+    return {}
+  }
+}
+
 export function SchoolSetupWizard() {
   const [searchParams] = useSearchParams()
+  const token = searchParams.get("token") || ""
+  return <SchoolSetupForm key={token} token={token} />
+}
+
+function SchoolSetupForm({ token }) {
   const navigate = useNavigate()
   const { logout } = useAuth()
-  const token = searchParams.get("token") || ""
+  const draftStorageKey = token ? `school_lms_onboarding_draft_${token.slice(0, 16)}` : null
+  const [draft] = useState(() => readSchoolDraft(draftStorageKey))
   const emblemInputRef = useRef(null)
   const houseEmblemInputRef = useRef(null)
 
@@ -64,26 +81,25 @@ export function SchoolSetupWizard() {
   const [lastSavedTime, setLastSavedTime] = useState(null)
 
   // Step 1: School Identity & Profile
-  const [emblemPreviewUrl, setEmblemPreviewUrl] = useState("")
-  const [emblemUploadedUrl, setEmblemUploadedUrl] = useState("")
+  const [emblemPreviewUrl, setEmblemPreviewUrl] = useState(draft.emblemUploadedUrl || "")
+  const [emblemUploadedUrl, setEmblemUploadedUrl] = useState(draft.emblemUploadedUrl || "")
   const [isUploadingEmblem, setIsUploadingEmblem] = useState(false)
-  const [emblemUploadError, setEmblemUploadError] = useState(null)
 
-  const [schoolName, setSchoolName] = useState("")
-  const [schoolCode, setSchoolCode] = useState("")
+  const [schoolName, setSchoolName] = useState(draft.schoolName || "")
+  const [schoolCode, setSchoolCode] = useState(draft.schoolCode || "")
   const [schoolEmail, setSchoolEmail] = useState("")
   const [schoolPhone, setSchoolPhone] = useState("")
 
-  const [addressStreet, setAddressStreet] = useState("")
-  const [addressLandmark, setAddressLandmark] = useState("")
-  const [addressCity, setAddressCity] = useState("")
-  const [addressState, setAddressState] = useState("Delhi")
-  const [addressPincode, setAddressPincode] = useState("")
+  const [addressStreet, setAddressStreet] = useState(draft.addressStreet || "")
+  const [addressLandmark, setAddressLandmark] = useState(draft.addressLandmark || "")
+  const [addressCity, setAddressCity] = useState(draft.addressCity || "")
+  const [addressState, setAddressState] = useState(draft.addressState || "Delhi")
+  const [addressPincode, setAddressPincode] = useState(draft.addressPincode || "")
 
-  const [primaryColor, setPrimaryColor] = useState("#FFFFFF")
+  const [primaryColor, setPrimaryColor] = useState(draft.primaryColor || "#FFFFFF")
 
   // Step 2: Classes
-  const [classesList, setClassesList] = useState(INITIAL_DEFAULT_CLASSES)
+  const [classesList, setClassesList] = useState(Array.isArray(draft.classesList) && draft.classesList.length ? draft.classesList : INITIAL_DEFAULT_CLASSES)
   const [editingClassIdx, setEditingClassIdx] = useState(null)
   const [editingClassName, setEditingClassName] = useState("")
   const [isAddingClass, setIsAddingClass] = useState(false)
@@ -121,8 +137,8 @@ export function SchoolSetupWizard() {
   // Step 3: Sections (Per-Class Management & Horizontal Drag-and-Drop)
   const [classSectionMap, setClassSectionMap] = useState(() => {
     const map = {}
-    INITIAL_DEFAULT_CLASSES.forEach((c) => {
-      map[c] = getDefaultSectionsForClass(c)
+    classesList.forEach((c) => {
+      map[c] = draft.classSectionMap?.[c] ?? getDefaultSectionsForClass(c)
     })
     return map
   })
@@ -165,9 +181,7 @@ export function SchoolSetupWizard() {
 
   // Step 4: Class-first Subject Management State
   const [classSubjectConfig, setClassSubjectConfig] = useState(() =>
-    getInitialClassSubjectConfig(INITIAL_DEFAULT_CLASSES, {
-      ...INITIAL_DEFAULT_CLASSES.reduce((acc, c) => ({ ...acc, [c]: getDefaultSectionsForClass(c) }), {})
-    })
+    draft.classSubjectConfig ?? getInitialClassSubjectConfig(classesList, classSectionMap)
   )
   const [subjectSearchQuery, setSubjectSearchQuery] = useState("")
   const [collapsedClassMap, setCollapsedClassMap] = useState({}) // { [className]: boolean }
@@ -176,7 +190,6 @@ export function SchoolSetupWizard() {
   const [editingSubjectNameVal, setEditingSubjectNameVal] = useState("")
   const [addingSubjectInline, setAddingSubjectInline] = useState(null) // { className, sectionName, category } | null
   const [addingSubjectInputVal, setAddingSubjectInputVal] = useState("")
-  const [addingSubjectCategoryVal, setAddingSubjectCategoryVal] = useState("academic")
   const [copyClassModal, setCopyClassModal] = useState(null) // { targetClass, selectedSourceClass } | null
   const [subjectFeedbackMessage, setSubjectFeedbackMessage] = useState(null)
 
@@ -185,8 +198,15 @@ export function SchoolSetupWizard() {
   const [dragOverCategory, setDragOverCategory] = useState(null) // { className, sectionName, category, index }
 
   // Step 5: Wings
-  const [useWings, setUseWings] = useState(true)
-  const [wingsList, setWingsList] = useState(() => getInitialWingsForClasses(INITIAL_DEFAULT_CLASSES))
+  const [useWings, setUseWings] = useState(typeof draft.useWings === "boolean" ? draft.useWings : true)
+  const [wingsList, setWingsList] = useState(() => {
+    if (!Array.isArray(draft.wingsList) || !draft.wingsList.length) return getInitialWingsForClasses(classesList)
+    return draft.wingsList.map((wing, index) => ({
+      id: wing.id || `wing-${index}`,
+      name: wing.name,
+      classes: Array.isArray(wing.classes) ? wing.classes.filter((name) => classesList.includes(name)) : [],
+    })).filter((wing) => wing.classes.length > 0)
+  })
   const [editingWingIdx, setEditingWingIdx] = useState(null)
   const [editingWingNameVal, setEditingWingNameVal] = useState("")
   const [isAddingCustomWing, setIsAddingCustomWing] = useState(false)
@@ -195,8 +215,8 @@ export function SchoolSetupWizard() {
   const [dragOverArea, setDragOverArea] = useState(null)
 
   // Step 6: Houses (Optional, Max 4)
-  const [useHouses, setUseHouses] = useState(true)
-  const [housesList, setHousesList] = useState(INITIAL_DEFAULT_HOUSES)
+  const [useHouses, setUseHouses] = useState(typeof draft.useHouses === "boolean" ? draft.useHouses : true)
+  const [housesList, setHousesList] = useState(Array.isArray(draft.housesList) ? draft.housesList : INITIAL_DEFAULT_HOUSES)
   const [editingHouseIdx, setEditingHouseIdx] = useState(null)
   const [houseFormName, setHouseFormName] = useState("")
   const [houseFormColor, setHouseFormColor] = useState("#EF4444")
@@ -204,29 +224,24 @@ export function SchoolSetupWizard() {
   const [isUploadingHouseEmblem, setIsUploadingHouseEmblem] = useState(false)
   const [houseEmblemError, setHouseEmblemError] = useState(null)
 
-  // Step 7: Password & PIN
+  // Step 7: Password
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [pin, setPin] = useState("")
-  const [confirmPin, setConfirmPin] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [showPin, setShowPin] = useState(false)
-  const [showConfirmPin, setShowConfirmPin] = useState(false)
 
-  // Sync wingsList with classesList: prune deleted classes & remove wings that have become empty
-  useEffect(() => {
-    setWingsList((prev) => {
-      const updated = prev.map((w) => ({
-        ...w,
-        classes: (w.classes || []).filter((c) => classesList.includes(c)),
-      }))
-      return updated.filter((w) => w.classes.length > 0)
-    })
-  }, [classesList])
+  const [previousClasses, setPreviousClasses] = useState(classesList)
+  if (previousClasses !== classesList) {
+    setPreviousClasses(classesList)
+    setWingsList(wingsList.map((wing) => ({
+      ...wing,
+      classes: (wing.classes || []).filter((name) => classesList.includes(name)),
+    })).filter((wing) => wing.classes.length > 0))
+  }
 
-  // Synchronize classSubjectConfig with classesList & classSectionMap
-  useEffect(() => {
+  const [previousPlacement, setPreviousPlacement] = useState({ classesList, classSectionMap })
+  if (previousPlacement.classesList !== classesList || previousPlacement.classSectionMap !== classSectionMap) {
+    setPreviousPlacement({ classesList, classSectionMap })
     setClassSubjectConfig((prev) => {
       const next = { ...prev }
       let changed = false
@@ -310,66 +325,13 @@ export function SchoolSetupWizard() {
 
       return changed ? next : prev
     })
-  }, [classesList, classSectionMap])
+  }
 
   const unassignedClasses = classesList.filter(
     (c) => !wingsList.some((w) => w.classes && w.classes.includes(c))
   )
 
-  // 1. LocalStorage Draft Key
-  const draftStorageKey = token ? `school_lms_onboarding_draft_${token.slice(0, 16)}` : null
-
-  // Restore draft from LocalStorage on mount
-  useEffect(() => {
-    if (!draftStorageKey) return
-    try {
-      const saved = localStorage.getItem(draftStorageKey)
-      if (saved) {
-        const data = JSON.parse(saved)
-        if (data.schoolName) setSchoolName(data.schoolName)
-        if (data.schoolCode) setSchoolCode(data.schoolCode)
-        if (data.addressStreet) setAddressStreet(data.addressStreet)
-        if (data.addressLandmark) setAddressLandmark(data.addressLandmark)
-        if (data.addressCity) setAddressCity(data.addressCity)
-        if (data.addressState) setAddressState(data.addressState)
-        if (data.addressPincode) setAddressPincode(data.addressPincode)
-        if (data.primaryColor) setPrimaryColor(data.primaryColor)
-        if (data.emblemUploadedUrl) {
-          setEmblemUploadedUrl(data.emblemUploadedUrl)
-          setEmblemPreviewUrl(data.emblemUploadedUrl)
-        }
-        if (Array.isArray(data.classesList) && data.classesList.length > 0) setClassesList(data.classesList)
-        if (data.classSectionMap) setClassSectionMap(data.classSectionMap)
-        if (data.classSubjectConfig) {
-          setClassSubjectConfig(data.classSubjectConfig)
-        } else if (Array.isArray(data.classesList) && data.classesList.length > 0) {
-          setClassSubjectConfig(getInitialClassSubjectConfig(data.classesList, data.classSectionMap || {}))
-        }
-        if (typeof data.useWings === "boolean") setUseWings(data.useWings)
-        if (Array.isArray(data.wingsList) && data.wingsList.length > 0) {
-          const loadedWings = data.wingsList.map((w, idx) => {
-            if (Array.isArray(w.classes)) {
-              return { id: w.id || `wing-${idx}`, name: w.name, classes: w.classes }
-            }
-            return {
-              id: `wing-${idx}`,
-              name: w.name,
-              classes: [],
-            }
-          })
-          setWingsList(loadedWings)
-        } else if (Array.isArray(data.classesList) && data.classesList.length > 0) {
-          setWingsList(getInitialWingsForClasses(data.classesList))
-        }
-        if (typeof data.useHouses === "boolean") setUseHouses(data.useHouses)
-        if (Array.isArray(data.housesList)) setHousesList(data.housesList)
-      }
-    } catch (e) {
-      console.warn("Failed to load onboarding draft from localStorage:", e)
-    }
-  }, [draftStorageKey])
-
-  // Save draft to LocalStorage when important fields change
+  // Save draft to sessionStorage when important fields change
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!draftStorageKey) return
@@ -392,7 +354,7 @@ export function SchoolSetupWizard() {
           useHouses,
           housesList,
         }
-        localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+        sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
         setLastSavedTime(new Date())
       } catch (e) {
         console.warn("Failed to save onboarding draft:", e)
@@ -443,12 +405,11 @@ export function SchoolSetupWizard() {
     validate()
   }, [token])
 
-  const handleProceedToLogin = useCallback(() => {
+  const handleProceedToLogin = useCallback(async () => {
     if (draftStorageKey) {
-      localStorage.removeItem(draftStorageKey)
+      sessionStorage.removeItem(draftStorageKey)
     }
-    logout()
-    navigate("/login", { replace: true })
+    if (await logout()) navigate("/login", { replace: true })
   }, [draftStorageKey, logout, navigate])
 
   // 7-second countdown auto-redirect after successful setup
@@ -476,7 +437,6 @@ export function SchoolSetupWizard() {
     const file = e.target.files?.[0]
     if (!file) return
 
-    setEmblemUploadError(null)
 
     const fileValidation = validateEmblemFile(file)
     if (!fileValidation.isValid) {
@@ -504,7 +464,6 @@ export function SchoolSetupWizard() {
   const handleRemoveEmblem = () => {
     setEmblemPreviewUrl("")
     setEmblemUploadedUrl("")
-    setEmblemUploadError(null)
     if (emblemInputRef.current) {
       emblemInputRef.current.value = ""
     }
@@ -1923,7 +1882,7 @@ export function SchoolSetupWizard() {
     // Instant local preview via FileReader
     const reader = new FileReader()
     reader.onload = (loadEvt) => {
-      if (loadEvt.target?.result) {
+      if (typeof loadEvt.target?.result === "string") {
         setHouseFormEmblem(loadEvt.target.result)
       }
     }
@@ -1966,8 +1925,6 @@ export function SchoolSetupWizard() {
       normalizeHexColor,
       password,
       confirmPassword,
-      pin,
-      confirmPin,
     })
 
     if (stepError) {
@@ -2087,12 +2044,10 @@ export function SchoolSetupWizard() {
         houses: housesPayload,
         password,
         confirm_password: confirmPassword,
-        pin,
-        confirm_pin: confirmPin,
       })
 
       if (draftStorageKey) {
-        localStorage.removeItem(draftStorageKey)
+        sessionStorage.removeItem(draftStorageKey)
       }
       setSetupSuccess(true)
     } catch (err) {
@@ -2165,10 +2120,6 @@ export function SchoolSetupWizard() {
             <div className="flex justify-between">
               <span className="text-muted-foreground">General Login:</span>
               <span className="text-foreground">Email + Password</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Quick PIN Login:</span>
-              <span className="text-foreground">Email + PIN</span>
             </div>
           </div>
 
@@ -2289,7 +2240,6 @@ export function SchoolSetupWizard() {
           {/* ========================================== */}
           {currentStep === 1 && (
             <Step1Profile
-              emblemUploadError={emblemUploadError}
               emblemInputRef={emblemInputRef}
               handleEmblemFileChange={handleEmblemFileChange}
               emblemPreviewUrl={emblemPreviewUrl}
@@ -2391,8 +2341,6 @@ export function SchoolSetupWizard() {
               setAddingSubjectInline={setAddingSubjectInline}
               addingSubjectInputVal={addingSubjectInputVal}
               setAddingSubjectInputVal={setAddingSubjectInputVal}
-              addingSubjectCategoryVal={addingSubjectCategoryVal}
-              setAddingSubjectCategoryVal={setAddingSubjectCategoryVal}
               copyClassModal={copyClassModal}
               setCopyClassModal={setCopyClassModal}
               subjectFeedbackMessage={subjectFeedbackMessage}
@@ -2474,7 +2422,7 @@ export function SchoolSetupWizard() {
           )}
 
           {/* ========================================== */}
-          {/* STEP 7: PASSWORD & PIN */}
+          {/* STEP 7: PASSWORD */}
           {/* ========================================== */}
           {currentStep === 7 && (
             <Step7Security
@@ -2482,18 +2430,10 @@ export function SchoolSetupWizard() {
               setPassword={setPassword}
               confirmPassword={confirmPassword}
               setConfirmPassword={setConfirmPassword}
-              pin={pin}
-              setPin={setPin}
-              confirmPin={confirmPin}
-              setConfirmPin={setConfirmPin}
               showPassword={showPassword}
               setShowPassword={setShowPassword}
               showConfirmPassword={showConfirmPassword}
               setShowConfirmPassword={setShowConfirmPassword}
-              showPin={showPin}
-              setShowPin={setShowPin}
-              showConfirmPin={showConfirmPin}
-              setShowConfirmPin={setShowConfirmPin}
             />
           )}
 

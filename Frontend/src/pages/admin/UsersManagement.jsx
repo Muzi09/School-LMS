@@ -37,7 +37,7 @@ export function PlatformUsersManagement() {
   })
 
   const createMutation = useMutation({
-    mutationFn: ({ values, role }) => adminService.createPlatformUser(values, role),
+    mutationFn: (/** @type {{ values: Record<string, unknown>, role: number | string }} */ { values, role }) => adminService.createPlatformUser(values, role),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["adminPlatformUsers"] })
       queryClient.invalidateQueries({ queryKey: ["adminStats"] })

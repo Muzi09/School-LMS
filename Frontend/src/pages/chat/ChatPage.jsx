@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/context/authState"
 import { chatService } from "@/api/chatService"
 import { useChatSocket } from "@/hooks/useChatSocket"
 import { ConversationList } from "@/components/chat/ConversationList"
@@ -180,7 +180,7 @@ export function ChatPage() {
     setMessages((prev) =>
       prev.map((m) => {
         if (m.temp_id === tempId || m.id === tempId) {
-          return { ...m, status: "failed" }
+          return { ...m, status: "failed", error }
         }
         return m
       })
@@ -342,7 +342,6 @@ export function ChatPage() {
   // Initialize persistent chat socket
   const {
     status: socketStatus,
-    sendMessage: socketSend,
     markRead: socketMarkRead,
     startTyping: socketStartTyping,
     stopTyping: socketStopTyping,
@@ -374,12 +373,21 @@ export function ChatPage() {
     }
   }, [activeConversationId, socketStopTyping])
 
-  // Send message handler with optimistic UI
+  const persistMessage = useCallback(async (conversationId, content, clientId) => {
+    try {
+      const message = await chatService.sendMessage(conversationId, content, clientId)
+      handleMessageSent(message, clientId)
+    } catch (error) {
+      handleMessageFailed(error.message, clientId)
+    }
+  }, [handleMessageSent, handleMessageFailed])
+
+  // Use one persistence path for new messages and retries.
   const handleSendMessage = useCallback(
     async (content) => {
       if (!activeConversationId || !user) return
 
-      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+      const tempId = crypto.randomUUID()
       const optimisticMsg = {
         id: tempId,
         temp_id: tempId,
@@ -398,20 +406,9 @@ export function ChatPage() {
       // Add optimistic message to list immediately
       setMessages((prev) => [...prev, optimisticMsg])
 
-      // Try sending via WebSocket
-      const sentViaWs = socketSend(activeConversationId, content, tempId)
-      if (!sentViaWs) {
-        // Fallback to REST API
-        try {
-          const persisted = await chatService.sendMessage(activeConversationId, content)
-          handleMessageSent(persisted, tempId)
-        } catch (err) {
-          console.error("REST fallback send failed:", err)
-          handleMessageFailed(err.message, tempId)
-        }
-      }
+      await persistMessage(activeConversationId, content, tempId)
     },
-    [activeConversationId, user, socketSend, handleMessageSent, handleMessageFailed]
+    [activeConversationId, user, persistMessage]
   )
 
   // Retry sending a failed message
@@ -420,15 +417,9 @@ export function ChatPage() {
       setMessages((prev) =>
         prev.map((m) => (m.id === msg.id ? { ...m, status: "sending" } : m))
       )
-      const sent = socketSend(msg.conversation_id, msg.content, msg.temp_id || msg.id)
-      if (!sent) {
-        chatService
-          .sendMessage(msg.conversation_id, msg.content)
-          .then((res) => handleMessageSent(res, msg.temp_id || msg.id))
-          .catch((err) => handleMessageFailed(err.message, msg.temp_id || msg.id))
-      }
+      void persistMessage(msg.conversation_id, msg.content, msg.temp_id || msg.id)
     },
-    [socketSend, handleMessageSent, handleMessageFailed]
+    [persistMessage]
   )
 
   // Starting a direct conversation from user search

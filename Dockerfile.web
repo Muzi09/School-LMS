@@ -1,0 +1,10 @@
+FROM node:24.15.0-bookworm-slim AS frontend
+WORKDIR /web
+COPY Frontend/package.json Frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY Frontend/ ./
+RUN npm run build
+
+FROM caddy:2.11.9-alpine
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=frontend /web/dist /srv/dist

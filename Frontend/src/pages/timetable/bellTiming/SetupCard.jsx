@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react"
+import { useState, useMemo } from "react"
 import {
   CheckCircle2,
   Copy,
@@ -6,7 +6,6 @@ import {
   Edit2,
   Check,
   AlertTriangle,
-  Layers,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -24,9 +23,7 @@ export function SetupCard({
   wings = [],
   sectionAssignments = {},
   selectedSectionIds = [],
-  activeScheduleId,
   readOnly = false,
-  onSelectSchedule,
   onRenameSetup,
   onDuplicateSetup,
   onDeleteSetup,
@@ -46,12 +43,11 @@ export function SetupCard({
 
   // Assigned sections in this setup
   const assignedSectionIds = Object.entries(sectionAssignments)
-    .filter(([_, sId]) => sId === setup.id)
+    .filter(([, sId]) => sId === setup.id)
     .map(([secId]) => secId)
 
   const assignedCount = assignedSectionIds.length
   const schedules = useMemo(() => sortSchedules(setup.schedules || []), [setup.schedules])
-  const activeSchedule = schedules.find((s) => s.id === activeScheduleId) || schedules[0]
 
   const handleSaveName = () => {
     const trimmed = nameVal.trim()
@@ -63,7 +59,6 @@ export function SetupCard({
     setIsEditingName(false)
   }
 
-  const canDelete = !isOnlySetup
 
   return (
     <div
@@ -196,7 +191,6 @@ export function SetupCard({
               <div key={schedule.id || sIdx} className="space-y-3">
                 <DayTabs
                   schedules={[schedule]}
-                  allSchedules={schedules}
                   showHeader={false}
                   readOnly={readOnly}
                   onOpenSplitModal={(sch, days) => onOpenSplitModal(setup.id, sch, days)}
@@ -205,7 +199,6 @@ export function SetupCard({
 
                 <BellTimeline
                   schedule={schedule}
-                  setupId={setup.id}
                   readOnly={readOnly}
                   onOpenPeriodModal={(period, idx) => onOpenPeriodModal(setup.id, schedule.id, period, idx)}
                   onInsertPeriodAtBoundary={(insertAfterIdx) =>

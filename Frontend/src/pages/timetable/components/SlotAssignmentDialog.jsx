@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   Clock,
@@ -26,7 +26,8 @@ import { toast } from "sonner"
 import { getSubjectTheme } from "../subjectTheme"
 import { formatTimingsInText } from "../timetableUtils"
 import { sortDays } from "../bellTiming/validators"
-import { useCheckConflict } from "@/hooks/useTimetable"
+import { useQuery } from "@tanstack/react-query"
+import { checkConflictApi } from "@/api/timetableService"
 import { cn } from "@/lib/utils"
 
 function formatTime12h(timeStr) {
@@ -70,7 +71,14 @@ function isAcademicSubject(sub) {
   return true
 }
 
-export function SlotAssignmentDialog({
+export function SlotAssignmentDialog(props) {
+  const cell = props.cellData
+  if (!props.isOpen || !cell) return null
+  const key = [cell.timetableId, cell.section?.id, cell.day, cell.period?.id].join(":")
+  return <SlotAssignmentEditor key={key} {...props} />
+}
+
+function SlotAssignmentEditor({
   isOpen,
   onClose,
   cellData, // { section, day, period, currentEntry, timetableId, scheduleDays, allDays }
@@ -84,91 +92,69 @@ export function SlotAssignmentDialog({
 }) {
   const navigate = useNavigate()
   const [search, setSearch] = useState("")
-  const [selectedSubjectId, setSelectedSubjectId] = useState("")
+  const [selectedSubjectId, setSelectedSubjectId] = useState(() => cellData.currentEntry?.subject?.id || "")
   const [selectedScope, setSelectedScope] = useState("SLOT") // "SLOT" | "WEEKDAYS" | "ALL_DAYS"
-  const [conflictWarning, setConflictWarning] = useState(null)
-  const [isCheckingConflict, setIsCheckingConflict] = useState(false)
   const [validationError, setValidationError] = useState("")
 
   const selectedItemRef = useRef(null)
-  const checkConflictMutation = useCheckConflict()
+
+  const scheduleDays = cellData.scheduleDays
+  const fullScheduleDays = cellData.allDays
 
   // Weekdays list (Mon-Fri or applicable weekdays)
   const weekdayDays = useMemo(() => {
-    if (cellData?.scheduleDays && Array.isArray(cellData.scheduleDays) && cellData.scheduleDays.length > 0) {
-      const filtered = cellData.scheduleDays
+    if (scheduleDays && Array.isArray(scheduleDays) && scheduleDays.length > 0) {
+      const filtered = scheduleDays
         .map((d) => String(d).toUpperCase())
         .filter((d) => d !== "SATURDAY" && d !== "SUNDAY")
       if (filtered.length > 0) return sortDays(filtered)
     }
     return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-  }, [cellData?.scheduleDays])
+  }, [scheduleDays])
 
   // All days list (Mon-Sat or full applicable days)
   const allScheduleDays = useMemo(() => {
-    if (cellData?.allDays && Array.isArray(cellData.allDays) && cellData.allDays.length > 0) {
-      return sortDays(cellData.allDays.map((d) => String(d).toUpperCase()))
+    if (fullScheduleDays && Array.isArray(fullScheduleDays) && fullScheduleDays.length > 0) {
+      return sortDays(fullScheduleDays.map((d) => String(d).toUpperCase()))
     }
-    if (cellData?.scheduleDays && Array.isArray(cellData.scheduleDays) && cellData.scheduleDays.length > 0) {
-      const days = cellData.scheduleDays.map((d) => String(d).toUpperCase())
+    if (scheduleDays && Array.isArray(scheduleDays) && scheduleDays.length > 0) {
+      const days = scheduleDays.map((d) => String(d).toUpperCase())
       if (!days.includes("SATURDAY")) {
         return sortDays([...days, "SATURDAY"])
       }
       return sortDays(days)
     }
     return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-  }, [cellData?.allDays, cellData?.scheduleDays])
+  }, [fullScheduleDays, scheduleDays])
 
-  // Initialize selected values from cellData
-  useEffect(() => {
-    if (!isOpen || !cellData) return
-    const current = cellData.currentEntry
-    if (current?.subject) {
-      setSelectedSubjectId(current.subject.id || "")
-    } else {
-      setSelectedSubjectId("")
-    }
-    setSearch("")
-    setSelectedScope("SLOT")
-    setConflictWarning(null)
-    setValidationError("")
-  }, [isOpen, cellData])
-
-  // Combined subjects list (ensuring current entry subject is present)
+  const currentEntry = cellData.currentEntry ?? null
+  const currentSubject = currentEntry?.subject
+  const currentTeacher = currentEntry?.teacher
   const allSubjects = useMemo(() => {
-    const list = [...availableSubjects]
-    const cur = cellData?.currentEntry?.subject
-    if (cur && cur.id && !list.some((s) => String(s.id) === String(cur.id))) {
-      list.push({
-        id: cur.id,
-        name: cur.name,
-        code: cur.code,
-        category: cur.category || "academic",
-        is_academic: cur.is_academic !== undefined ? cur.is_academic : true,
-        assigned: 1,
-        target: cur.is_academic === false ? 3 : 6,
-        target_weekly: cur.is_academic === false ? 3 : 6,
-        current_assigned: 1,
-        teacher: cellData?.currentEntry?.teacher || null,
-        teacher_id: cellData?.currentEntry?.teacher?.id || null,
-      })
+    if (!currentSubject?.id || availableSubjects.some((subject) => String(subject.id) === String(currentSubject.id))) {
+      return availableSubjects
     }
-    return list
-  }, [availableSubjects, cellData?.currentEntry])
+    const weeklyTarget = currentSubject.is_academic === false ? 3 : 6
+    return [...availableSubjects, {
+      id: currentSubject.id,
+      name: currentSubject.name,
+      code: currentSubject.code,
+      category: currentSubject.category || "academic",
+      is_academic: currentSubject.is_academic ?? true,
+      assigned: 1,
+      target: weeklyTarget,
+      target_weekly: weeklyTarget,
+      current_assigned: 1,
+      teacher: currentTeacher ?? null,
+      teacher_id: currentTeacher?.id ?? null,
+    }]
+  }, [availableSubjects, currentSubject, currentTeacher])
 
   // Matched subject and resolved teacher
   const matchedSubject = useMemo(() => {
     if (!selectedSubjectId) return null
     return allSubjects.find((s) => String(s.id) === String(selectedSubjectId)) || null
   }, [allSubjects, selectedSubjectId])
-
-  const selectedSubjectName = useMemo(() => {
-    if (matchedSubject?.name) return matchedSubject.name
-    if (cellData?.currentEntry?.subject?.id === selectedSubjectId) {
-      return cellData.currentEntry.subject.name || ""
-    }
-    return ""
-  }, [matchedSubject, cellData, selectedSubjectId])
 
   const assignedTeacher = useMemo(() => {
     if (!matchedSubject) return null
@@ -304,58 +290,28 @@ export function SlotAssignmentDialog({
     return null
   }
 
-  // Check teacher conflict whenever assigned teacher or time changes
-  useEffect(() => {
-    const teacherId = assignedTeacher?.id || assignedTeacher?.user_id
-    if (!teacherId || !cellData?.period || !cellData?.day || !cellData?.timetableId) {
-      setConflictWarning(null)
-      setIsCheckingConflict(false)
-      return
-    }
-
-    // Immediate 0 ms synchronous pre-check
-    const localConflict = checkInstantConflict(assignedTeacher, cellData, existingEntries, eligibleTeachers, periodMap)
-    if (localConflict) {
-      setConflictWarning(localConflict)
-      setIsCheckingConflict(false)
-      return
-    }
-
-    setConflictWarning(null)
-
-    let isMounted = true
-    setIsCheckingConflict(true)
-
-    const check = async () => {
-      try {
-        const res = await checkConflictMutation.mutateAsync({
-          timetable_id: cellData.timetableId,
-          teacher_user_id: teacherId,
-          day_of_week: cellData.day,
-          period_id: cellData.period.id,
-          start_time: cellData.period.start_time,
-          end_time: cellData.period.end_time,
-          exclude_entry_id: cellData.currentEntry?.id || null,
-        })
-        if (isMounted) {
-          if (res.has_conflict) {
-            setConflictWarning(formatTimingsInText(res.message))
-          } else {
-            setConflictWarning(null)
-          }
-        }
-      } catch {
-        // Fall back gracefully to local pre-check result
-      } finally {
-        if (isMounted) setIsCheckingConflict(false)
-      }
-    }
-
-    check()
-    return () => {
-      isMounted = false
-    }
-  }, [assignedTeacher?.id, assignedTeacher?.user_id, cellData, existingEntries, eligibleTeachers, periodMap])
+  const teacherId = assignedTeacher?.id || assignedTeacher?.user_id
+  const canCheckConflict = Boolean(teacherId && cellData.period && cellData.day && cellData.timetableId)
+  const localConflict = canCheckConflict
+    ? checkInstantConflict(assignedTeacher, cellData, existingEntries, eligibleTeachers, periodMap)
+    : null
+  const conflictRequest = {
+    timetable_id: cellData.timetableId,
+    teacher_user_id: teacherId,
+    day_of_week: cellData.day,
+    period_id: cellData.period?.id,
+    start_time: cellData.period?.start_time,
+    end_time: cellData.period?.end_time,
+    exclude_entry_id: cellData.currentEntry?.id ?? null,
+  }
+  const { data: conflictResult, isFetching: isCheckingConflict } = useQuery({
+    queryKey: ["timetable", "slot-conflict", conflictRequest],
+    queryFn: () => checkConflictApi(conflictRequest),
+    enabled: canCheckConflict && !localConflict,
+    retry: false,
+    gcTime: 0,
+  })
+  const conflictWarning = localConflict || (conflictResult?.has_conflict ? formatTimingsInText(conflictResult.message) : null)
 
   // Scroll to selected item when dialog opens
   useEffect(() => {
@@ -372,7 +328,6 @@ export function SlotAssignmentDialog({
   const section = cellData?.section || cellData?.currentEntry?.section || {}
   const day = cellData?.day || cellData?.currentEntry?.day_of_week || ""
   const period = cellData?.period || cellData?.currentEntry?.period || {}
-  const currentEntry = cellData?.currentEntry || null
 
   const className =
     section?.className ||
@@ -517,7 +472,7 @@ export function SlotAssignmentDialog({
   const renderSubjectItem = (sub) => {
     const isSelected = String(selectedSubjectId) === String(sub.id)
     const isAcademic = isAcademicSubject(sub)
-    const theme = getSubjectTheme(sub.name, sub.category)
+    const theme = getSubjectTheme(sub.name)
     const teacher = resolveTeacherForSubject(sub)
     const hasTeacher = Boolean(teacher?.name)
 

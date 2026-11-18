@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import {
   Printer,
   Layers,
@@ -6,14 +6,11 @@ import {
   UserCheck,
   Check,
   Search,
-  Filter,
   CheckSquare,
   Square,
   Eye,
   Settings,
   Layout,
-  Palette,
-  FileText,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -175,19 +172,12 @@ export function PrintTimetableModal({
       return
     }
 
-    // Extract tailwind stylesheets & injected styles
-    const styles = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
-      .map((el) => el.outerHTML)
-      .join("\n")
-
-    doc.open()
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${timetable?.name || "Timetable"} - Print</title>
-          ${styles}
-          <style>
+    doc.title = `${timetable?.name || "Timetable"} - Print`
+    for (const styleSheet of document.querySelectorAll("style, link[rel='stylesheet']")) {
+      doc.head.append(doc.importNode(styleSheet, true))
+    }
+    const printStyles = doc.createElement("style")
+    printStyles.textContent = `
             @page {
               size: ${orientation};
               margin: 8mm;
@@ -216,16 +206,12 @@ export function PrintTimetableModal({
             th, td {
               border: 1px solid #94a3b8 !important;
             }
-          </style>
-        </head>
-        <body>
-          <div style="padding: 10px;">
-            ${printElement.innerHTML}
-          </div>
-        </body>
-      </html>
-    `)
-    doc.close()
+    `
+    doc.head.append(printStyles)
+    const content = doc.createElement("div")
+    content.style.padding = "10px"
+    content.append(...Array.from(printElement.childNodes, node => doc.importNode(node, true)))
+    doc.body.replaceChildren(content)
 
     iframe.contentWindow?.focus()
     setTimeout(() => {

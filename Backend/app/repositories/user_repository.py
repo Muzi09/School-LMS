@@ -18,7 +18,14 @@ class UserRepository(BaseRepository[User]):
     def __init__(self, db: Session):
         super().__init__(model=User, db=db)
 
-    def get_by_id_with_profiles(self, user_id: UUID, include_deleted: bool = False) -> User | None:
+    def get_by_id_with_profiles(
+        self,
+        user_id: UUID,
+        include_deleted: bool = False,
+        *,
+        school_scope: tuple[UUID, UserRole] | None = None,
+        lock: bool = False,
+    ) -> User | None:
         """Retrieve user with all profiles eager-loaded."""
         stmt = (
             select(User)
@@ -31,7 +38,17 @@ class UserRepository(BaseRepository[User]):
         )
         if not include_deleted:
             stmt = stmt.where(User.deleted_at.is_(None))
-
+        if school_scope is not None:
+            school_id, role = school_scope
+            if role == UserRole.STAFF:
+                profile_matches = User.staff_profile.has(StaffProfile.school_id == school_id)
+            elif role == UserRole.STUDENT:
+                profile_matches = User.student_profile.has(StudentProfile.school_id == school_id)
+            else:
+                raise ValueError("Unsupported school account role")
+            stmt = stmt.where(User.role == role, profile_matches)
+        if lock:
+            stmt = stmt.with_for_update(of=User)
         return self.db.scalars(stmt).first()
 
     def get_by_email(self, email: str, exclude_user_id: UUID | None = None) -> User | None:
@@ -109,6 +126,8 @@ class UserRepository(BaseRepository[User]):
 
     def list_staff(
         self,
+        *,
+        school_id: UUID,
         is_active: bool | None = None,
         status: str | None = None,
         search: str | None = None,
@@ -116,13 +135,14 @@ class UserRepository(BaseRepository[User]):
         limit: int = 20,
     ) -> tuple[list[User], int]:
         """List Staff users only."""
-        stmt = select(User).where(User.deleted_at.is_(None), User.role == UserRole.STAFF)
+        stmt = select(User).join(User.staff_profile).where(
+            User.deleted_at.is_(None),
+            User.role == UserRole.STAFF,
+            StaffProfile.school_id == school_id,
+        )
 
         if is_active is not None:
             stmt = stmt.where(User.is_active == is_active)
-
-        if status or search:
-            stmt = stmt.outerjoin(User.staff_profile)
 
         if status:
             stmt = stmt.where(StaffProfile.status == status)
@@ -156,6 +176,8 @@ class UserRepository(BaseRepository[User]):
 
     def list_students(
         self,
+        *,
+        school_id: UUID,
         is_active: bool | None = None,
         class_name: str | None = None,
         section: str | None = None,
@@ -164,12 +186,14 @@ class UserRepository(BaseRepository[User]):
         limit: int = 20,
     ) -> tuple[list[User], int]:
         """List Student users only."""
-        stmt = select(User).where(User.deleted_at.is_(None), User.role == UserRole.STUDENT)
+        stmt = select(User).join(User.student_profile).where(
+            User.deleted_at.is_(None),
+            User.role == UserRole.STUDENT,
+            StudentProfile.school_id == school_id,
+        )
 
         if is_active is not None:
             stmt = stmt.where(User.is_active == is_active)
-
-        stmt = stmt.outerjoin(User.student_profile)
 
         if class_name:
             stmt = stmt.where(StudentProfile.class_name == class_name)
@@ -182,15 +206,11 @@ class UserRepository(BaseRepository[User]):
                 or_(
                     User.first_name.ilike(search_term),
                     User.last_name.ilike(search_term),
-                    User.email.ilike(search_term),
-                    User.login_mobile.ilike(search_term),
                     StudentProfile.middle_name.ilike(search_term),
                     StudentProfile.roll_no.ilike(search_term),
                     StudentProfile.class_name.ilike(search_term),
                     StudentProfile.section.ilike(search_term),
                     StudentProfile.house.ilike(search_term),
-                    StudentProfile.father_first_name.ilike(search_term),
-                    StudentProfile.father_last_name.ilike(search_term),
                 )
             )
 

@@ -1,34 +1,26 @@
-import React, { useState } from "react"
+import { useState } from "react"
 import {
   Send,
   AlertTriangle,
-  CheckCircle2,
   Users,
-  Clock,
   Loader2,
-  Check,
   ChevronDown,
   ChevronUp,
   ShieldAlert,
   Sparkles,
-  ArrowRight,
   Plus,
   Minus,
   RefreshCw,
 } from "lucide-react"
 import {
   Dialog,
-  DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
-  DialogClose,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useTimetablePublishDiff, usePublishTimetable } from "@/hooks/useTimetable"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
 
 export function PublishTimetableModal({
   isOpen,
@@ -54,21 +46,22 @@ export function PublishTimetableModal({
   const effectiveConflictCount = Math.max(conflictsCount, diffData?.conflict_count || 0)
 
   const handlePublish = async () => {
-    if (!timetable?.id) return
+    if (!timetable?.id || !diffData) return
     if (hasConflicts) {
       toast.error("Cannot publish timetable with active schedule conflicts.")
       return
     }
 
     try {
-      const res = await publishMutation.mutateAsync(timetable.id)
+      const res = await publishMutation.mutateAsync({ timetableId: timetable.id, expectedVersion: diffData.current_version })
       toast.success(
         res.message || `Timetable published successfully as Version ${res.version}!`
       )
       onPublished?.(res)
       onClose?.()
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || "Failed to publish timetable."
+      if (err.status === 409) void refetchDiff()
+      const msg = err.message || "Failed to publish timetable."
       toast.error(msg)
     }
   }

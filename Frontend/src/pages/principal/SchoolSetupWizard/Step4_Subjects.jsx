@@ -42,7 +42,6 @@ export function Step4Subjects({
   setAddingSubjectInline,
   addingSubjectInputVal,
   setAddingSubjectInputVal,
-  setAddingSubjectCategoryVal,
   copyClassModal,
   setCopyClassModal,
   subjectFeedbackMessage,
@@ -99,7 +98,7 @@ export function Step4Subjects({
           }
         }}
         onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) {
+          if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) {
             if (
               dragOverCategory?.className === className &&
               dragOverCategory?.sectionName === sectionName &&
@@ -159,7 +158,6 @@ export function Step4Subjects({
             onClick={() => {
               setAddingSubjectInline({ className, sectionName, category })
               setAddingSubjectInputVal("")
-              setAddingSubjectCategoryVal(category)
             }}
             className="text-[11px] font-semibold text-primary hover:text-primary/80 flex items-center gap-1 cursor-pointer transition-colors"
           >

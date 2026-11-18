@@ -41,6 +41,10 @@ class StudentProfile(Base):
         nullable=True,
     )
 
+    section_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("sections.id", name="fk_student_profiles_section", ondelete="SET NULL"), index=True,
+    )
+
     middle_name: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,

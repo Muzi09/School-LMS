@@ -3,6 +3,7 @@ import apiClient from "./client"
 /**
  * Fetch paginated and filtered users list.
  */
+/** @param {{ schoolId?: string, role?: number | string | null, isActive?: boolean | string | null, search?: string, page?: number, pageSize?: number }} [filters] */
 export async function getUsersApi({ schoolId, role, isActive, search, page = 1, pageSize = 10 } = {}) {
   const params = {}
   if (schoolId) params.school_id = schoolId

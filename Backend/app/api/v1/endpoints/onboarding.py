@@ -1,6 +1,4 @@
-import os
 import re
-import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
@@ -8,7 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import hash_password, hash_pin, hash_token
+from app.core.security import hash_password, hash_token
 from app.models.enums import UserRole
 from app.models.house import House
 from app.models.onboarding_token import PrincipalOnboardingToken
@@ -28,14 +26,6 @@ from app.schemas.onboarding import (
 router = APIRouter(prefix="/principal/onboarding", tags=["Principal Onboarding"])
 
 # Ensure uploads directory exists
-UPLOAD_DIR = os.path.join(os.getcwd(), "uploads", "emblems")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
-ALLOWED_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
-
-
 def _find_and_verify_token(token: str, db: Session) -> tuple[PrincipalOnboardingToken, User]:
     """Helper to verify onboarding token validity and unexpired status."""
     token_clean = token.strip()
@@ -120,46 +110,8 @@ async def upload_school_emblem(
     Upload and store school emblem during onboarding wizard.
     Validates token, file type, extension, and size.
     """
-    # 1. Verify token
     _find_and_verify_token(token, db)
-
-    # 2. Validate MIME type
-    if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type '{file.content_type}'. Supported formats: PNG, JPG, JPEG, WEBP.",
-        )
-
-    # 3. Validate Extension
-    _, ext = os.path.splitext(file.filename or "")
-    ext = ext.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file extension '{ext}'. Allowed extensions: .png, .jpg, .jpeg, .webp",
-        )
-
-    # 4. Read contents and validate size
-    contents = await file.read()
-    if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File size exceeds maximum limit of 5 MB.",
-        )
-
-    if len(contents) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file is empty.",
-        )
-
-    # 5. Save securely with unique name
-    unique_filename = f"emblem_{uuid.uuid4().hex[:12]}{ext}"
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)
-
-    with open(file_path, "wb") as f:
-        f.write(contents)
-
+    unique_filename = await save_emblem(file)
     emblem_relative_url = f"/uploads/emblems/{unique_filename}"
 
     return {
@@ -185,18 +137,6 @@ def complete_school_setup(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password and Confirm Password do not match.",
-        )
-
-    if payload.pin != payload.confirm_pin:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="PIN and Confirm PIN do not match.",
-        )
-
-    if not payload.pin.isdigit() or len(payload.pin) < 4 or len(payload.pin) > 10:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="PIN must be 4 to 10 numeric digits.",
         )
 
     # 3. Check School Code Uniqueness
@@ -388,13 +328,13 @@ def complete_school_setup(
             principal.principal_profile = PrincipalProfile(
                 user_id=principal.id,
                 school_id=school.id,
-                pin_hash=hash_pin(payload.pin),
+                pin_hash=None,
                 school_setup_completed=True,
             )
             db.add(principal.principal_profile)
         else:
             principal.principal_profile.school_id = school.id
-            principal.principal_profile.pin_hash = hash_pin(payload.pin)
+            principal.principal_profile.pin_hash = None
             principal.principal_profile.school_setup_completed = True
 
         principal.password_hash = hash_password(payload.password)

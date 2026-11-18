@@ -2,10 +2,10 @@ import * as Yup from "yup"
 import { EMAIL_REGEX, PHONE_REGEX } from "./patterns"
 
 /**
- * Creates Yup validation schema for Staff form (Create / Edit mode)
+ * Creates the Yup validation schema for the staff form.
  * In Staff form, everything is required.
  */
-export const getStaffValidationSchema = (isEdit = false, hasWings = false) => {
+export const getStaffValidationSchema = (hasWings = false) => {
   return Yup.object().shape({
     first_name: Yup.string()
       .trim()

@@ -1,17 +1,11 @@
-import React, { useMemo, useRef, memo, Fragment } from "react"
-import {
-  AlertTriangle,
-  CheckCircle2,
-} from "lucide-react"
+import React, { useMemo, useRef, memo } from "react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
-import { formatPeriodShortLabel, isNonTeachingPeriod, DAY_ORDER, sortDays } from "../bellTiming/validators"
+import { formatPeriodShortLabel, isNonTeachingPeriod, DAY_ORDER } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
 
-const WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
 const DAY_LABELS = {
   MONDAY: "MON",
   TUESDAY: "TUE",
@@ -42,7 +36,33 @@ function calculateDuration(startTime, endTime) {
   return diff > 0 ? `${diff}m` : ""
 }
 
-export const ClassWiseCard = memo(function ClassWiseCard({
+/** @typedef {import("./ClassWiseCell").TimetableSection} TimetableSection */
+/** @typedef {import("./ClassWiseCell").TimetableSetup} TimetableSetup */
+/** @typedef {import("./ClassWiseCell").TimetableEntry} TimetableEntry */
+/** @typedef {import("./ClassWiseCell").TimetableSlot} TimetableSlot */
+
+/**
+ * @typedef {object} ClassWiseCardProps
+ * @property {TimetableSection} section
+ * @property {TimetableSetup | null} setup
+ * @property {TimetableEntry[]} [entries]
+ * @property {Record<string, string>} [conflictMap]
+ * @property {boolean} [isAssignMode]
+ * @property {string | null} [selectedSlot]
+ * @property {TimetableSlot | null} [copiedSlot]
+ * @property {(slotKey: string, slot: TimetableSlot) => void} [onSelectSlot]
+ * @property {(slot: Omit<TimetableSlot, 'entry'> & { currentEntry?: TimetableEntry | null }) => void} [onOpenAssignDialog]
+ * @property {(source: TimetableSlot, target: TimetableSlot, isCopy: boolean) => void} [onMoveSlot]
+ * @property {(entryId: string) => void} [onClearSlot]
+ * @property {(entry: TimetableEntry, section: TimetableSection, slot: Pick<TimetableSlot, 'day' | 'period'>) => void} [onQuickUnassign]
+ * @property {string} [density]
+ * @property {number} [zoom]
+ * @property {string} [searchQuery]
+ * @property {boolean} [unassignedOnly]
+ * @property {boolean} [conflictsOnly]
+ */
+
+export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCardProps} */ {
   section,
   setup,
   entries = [],
@@ -70,7 +90,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
   const parsedQuery = useMemo(() => parseTimetableQuery(searchQuery), [searchQuery])
 
   // Setup schedules & period groups (supports arbitrary day schedule splits)
-  const { scheduleGroups, weekdayPeriods, saturdayPeriods, hasSaturday, totalSlotsCount } = useMemo(() => {
+  const { scheduleGroups, totalSlotsCount } = useMemo(() => {
     if (!setup) {
       return { scheduleGroups: [], weekdayPeriods: [], saturdayPeriods: [], hasSaturday: false, totalSlotsCount: 0 }
     }
@@ -95,11 +115,15 @@ export const ClassWiseCard = memo(function ClassWiseCard({
     if (!rawSchedules && setup.schedules_json) {
       try {
         rawSchedules = JSON.parse(setup.schedules_json)
-      } catch {}
+      } catch {
+        rawSchedules = null
+      }
     } else if (typeof rawSchedules === "string") {
       try {
         rawSchedules = JSON.parse(rawSchedules)
-      } catch {}
+      } catch {
+        rawSchedules = null
+      }
     }
 
     const orderedAppDays = DAY_ORDER.filter((d) => appDays.includes(d))
@@ -219,7 +243,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
 
   // Aggregate stats
   const assignedSlotsCount = entries.filter((e) => Boolean(e.subject_id || e.subject)).length
-  const unassignedSlotsCount = Math.max(0, totalSlotsCount - assignedSlotsCount)
   const completionPct = (totalSlotsCount > 0 && assignedSlotsCount > 0) ? Math.round((assignedSlotsCount / totalSlotsCount) * 100) : 0
 
   const isDraggingRef = useRef(false)
@@ -335,7 +358,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
               {section.class_name}
             </span>
             <Badge
-              variant="outlined"
+              variant="outline"
               className="bg-primary/90 text-primary-foreground font-bold px-2 py-0.5 text-xs rounded-md shadow-xs"
             >
               {section.name}
@@ -346,7 +369,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
         {/* Right: Subjects Targets Strip (Right-aligned, expands to take available width) */}
         <div className="flex-1 min-w-0 flex items-center justify-end gap-1.5 overflow-x-auto py-0.5 ml-auto scrollbar-none">
           {section.subject_stats?.map((stat) => {
-            const theme = getSubjectTheme(stat.name, stat.category)
+            const theme = getSubjectTheme(stat.name)
             const isUnder = stat.assigned < stat.target
             const isOver = stat.assigned > stat.target
             const isMet = stat.assigned === stat.target
@@ -429,7 +452,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                       )
                     }
 
-                    const isBreak = Boolean(period.is_break)
                     const isNonTeaching = isNonTeachingPeriod(period)
                     const startFmt = formatTime12h(period.start_time)
                     const endFmt = formatTime12h(period.end_time)
@@ -595,7 +617,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                               isHighlighted={isHighlighted}
                               isDimmed={isDimmed}
                               density={density}
-                              isToday={isToday}
                               isCurrentPeriod={isCurrentPeriod}
                               onClick={() => {
                                 handleCellClick(slotKey, {

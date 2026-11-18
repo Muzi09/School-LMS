@@ -1,11 +1,8 @@
-import React, { useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import {
   Plus,
   Clock,
   Sparkles,
-  BookOpen,
-  Users,
-  ChevronRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -15,26 +12,25 @@ import {
   format12h,
   formatMinutes,
   calculateDuration,
-  formatDurationHuman,
   toMinutes,
 } from "./timeUtils"
 import { PERIOD_TYPES, formatPeriodShortLabel, MIN_PERIOD_DURATION_MINUTES } from "./validators"
 import { cn } from "@/lib/utils"
 
+const EMPTY_PERIODS = []
+
 export function BellTimeline({
   schedule,
-  setupId,
   isTodaySchedule = false,
-  isAmber = false,
   readOnly = false,
   onOpenPeriodModal,
   onInsertPeriodAtBoundary,
   onEditBoundaryTime,
   onApplyTemplate,
   otherSetups = [],
-  onCopyFromOtherSetup,
+  onCopyFromOtherSetup = undefined,
 }) {
-  const periods = schedule?.periods || []
+  const periods = schedule?.periods ?? EMPTY_PERIODS
   const [liveDrag, setLiveDrag] = useState(null)
 
   // Compute live display periods during dragging: shifts all subsequent periods ahead and extends school end time
@@ -170,11 +166,6 @@ export function BellTimeline({
     )
   }
 
-  // Calculate total timeline minutes for proportional sizing
-  const totalMinutes = useMemo(() => {
-    return periods.reduce((acc, p) => acc + Math.max(MIN_PERIOD_DURATION_MINUTES, calculateDuration(p.start_time, p.end_time)), 0)
-  }, [periods])
-
   return (
     <div className="w-full space-y-2">
       {/* Accessible Summary Info */}
@@ -193,8 +184,6 @@ export function BellTimeline({
               <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex flex-col items-center gap-1 pointer-events-auto">
                 <DraggableBoundaryTimeChip
                   timeStr={displayPeriods[0].start_time}
-                  boundaryIndex={0}
-                  isFirst
                   minLimitMinutes={Math.max(0, (parseTime(displayPeriods[0].end_time)?.totalMinutes ?? 60) - 180)}
                   maxLimitMinutes={Math.max(0, (parseTime(displayPeriods[0].end_time)?.totalMinutes ?? 60) - MIN_PERIOD_DURATION_MINUTES)}
                   disabled={readOnly}
@@ -225,7 +214,6 @@ export function BellTimeline({
               const pType = period.type || (period.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
               const isRecess = pType === PERIOD_TYPES.RECESS
               const isRunning = period.id === currentRunningPeriodId
-              const isLast = idx === displayPeriods.length - 1
               // Compact width per minute (1px/min) reduces timeline footprint significantly,
               // while base 95px ensures 15m period (110px) displays "P1 15m" fully without clipping
               const cellWidth = 95 + duration * 1
@@ -273,8 +261,6 @@ export function BellTimeline({
                   <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex flex-col items-center gap-1 pointer-events-auto">
                     <DraggableBoundaryTimeChip
                       timeStr={period.end_time}
-                      boundaryIndex={idx + 1}
-                      isLast={isLast}
                       minLimitMinutes={(parseTime(period.start_time)?.totalMinutes ?? 0) + MIN_PERIOD_DURATION_MINUTES}
                       maxLimitMinutes={Math.min((parseTime(period.start_time)?.totalMinutes ?? 0) + 180, 1435)}
                       disabled={readOnly}

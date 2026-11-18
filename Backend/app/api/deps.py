@@ -1,12 +1,14 @@
 from typing import Annotated, Sequence
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import InvalidTokenError
 from sqlalchemy.orm import Session
 
+from app.core.browser_session import COOKIE_NAME, SAFE_METHODS, find_browser_user, require_frontend_origin
 from app.core.database import get_db
-from app.core.permissions import Permission, get_role_permissions, has_permission
+from app.core.permissions import Permission, has_permission
 from app.core.security import decode_access_token
 from app.models.enums import UserRole
 from app.models.user import User
@@ -62,34 +64,21 @@ def get_chat_service(
 # Authentication & Authorization Dependencies
 # ---------------------------------------------------------
 def get_current_user_optional(
+    request: Request,
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
     bearer: Annotated[HTTPAuthorizationCredentials | None, Depends(security_bearer)] = None,
-    x_user_id: Annotated[UUID | None, Header(
-        description="Authenticated User ID header for testing context")] = None,
 ) -> User | None:
-    """
-    Resolve current user context.
-    1. First checks Authorization: Bearer <JWT>
-    2. Fallback to X-User-Id header if present in testing
-    """
-    if bearer and bearer.credentials:
-        try:
-            payload = decode_access_token(bearer.credentials)
-            user_id_str = payload.get("sub")
-            if user_id_str:
-                user_id = UUID(user_id_str)
-                user = user_repo.get_by_id(user_id)
-                if user and user.is_active:
-                    return user
-        except Exception:
-            return None
-
-    if x_user_id:
-        user = user_repo.get_by_id(x_user_id)
-        if user and user.is_active:
-            return user
-
-    return None
+    if not bearer:
+        token = request.cookies.get(COOKIE_NAME)
+        if token and request.method not in SAFE_METHODS:
+            require_frontend_origin(request.headers.get("origin"))
+        return find_browser_user(user_repo.db, token)
+    try:
+        user_id = UUID(decode_access_token(bearer.credentials)["sub"])
+    except (InvalidTokenError, KeyError, ValueError, TypeError, AttributeError):
+        return None
+    user = user_repo.get_by_id(user_id)
+    return user if user and user.is_active else None
 
 
 def get_current_user(
@@ -100,8 +89,16 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required. Please provide a valid session token.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     return current_user
+
+
+def require_school_id(user: User) -> UUID:
+    school_id = user.school_id
+    if school_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "A school account is required.")
+    return school_id
 
 
 class RoleChecker:
@@ -184,6 +181,8 @@ require_view_staff = PermissionChecker(Permission.VIEW_STAFF)
 require_update_staff = PermissionChecker(Permission.UPDATE_STAFF)
 require_delete_staff = PermissionChecker(Permission.DELETE_STAFF)
 require_resend_staff_setup = PermissionChecker(Permission.RESEND_STAFF_SETUP)
+require_view_students = PermissionChecker(Permission.VIEW_STUDENTS)
+require_manage_students = PermissionChecker(Permission.MANAGE_STUDENTS)
 require_manage_email_setup = PermissionChecker(Permission.MANAGE_EMAIL_SETUP)
 require_view_timetable = PermissionChecker(Permission.VIEW_TIMETABLE)
 require_manage_timetable = PermissionChecker(Permission.MANAGE_TIMETABLE)

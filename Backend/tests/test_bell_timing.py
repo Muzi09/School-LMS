@@ -143,18 +143,14 @@ def test_unauthenticated_requests_rejected():
     assert resp.status_code == 401
 
 
-def test_service_validation_raises_422():
-    from app.core.database import SessionLocal
+def test_service_validation_raises_422(db, school):
     from app.services.timetable_service import TimetableService
     from app.schemas.timetable import BatchSetupAssignmentsRequest
     from app.models.timetable import Timetable
 
-    db = SessionLocal()
     service = TimetableService(db=db)
     tt = db.query(Timetable).filter(Timetable.deleted_at.is_(None)).first()
-    if not tt:
-        db.close()
-        return
+    assert tt is not None
 
     # Payload with overlapping periods
     payload = BatchSetupAssignmentsRequest(
@@ -180,39 +176,32 @@ def test_service_validation_raises_422():
     with pytest.raises(UnprocessableEntityException) as exc_info:
         service.batch_save_setups(school_id=tt.school_id, timetable_id=payload.timetable_id, data=payload, user_id=uuid4())
     assert exc_info.value.status_code == 422
-    db.close()
 
 
-def test_preview_setups_impact():
-    from app.core.database import SessionLocal
+def test_preview_setups_impact(db, school):
     from app.services.timetable_service import TimetableService
     from app.schemas.timetable import BatchSetupAssignmentsRequest
 
-    db = SessionLocal()
     service = TimetableService(db=db)
+    timetable = service.get_active_timetable(school.id)
     payload = BatchSetupAssignmentsRequest(
-        timetable_id=uuid4(),
+        timetable_id=timetable.id,
         setups=[],
         assignments=[],
     )
-    res = service.preview_setups_impact(school_id=uuid4(), timetable_id=payload.timetable_id, data=payload)
+    res = service.preview_setups_impact(school_id=school.id, timetable_id=payload.timetable_id, data=payload)
     assert "affected_slots_count" in res
     assert res["affected_slots_count"] == 0
-    db.close()
 
 
-def test_concurrency_conflict_raises_409():
-    from app.core.database import SessionLocal
+def test_concurrency_conflict_raises_409(db, school):
     from app.services.timetable_service import TimetableService
     from app.models.timetable import TimetableSetup
     from app.schemas.timetable import TimetableSetupUpdate
 
-    db = SessionLocal()
     service = TimetableService(db=db)
     setup = db.query(TimetableSetup).filter(TimetableSetup.deleted_at.is_(None)).first()
-    if not setup:
-        db.close()
-        return
+    assert setup is not None
 
     # Pass an outdated version
     outdated_version = (setup.version or 1) - 1
@@ -229,16 +218,48 @@ def test_concurrency_conflict_raises_409():
         )
     assert exc_info.value.status_code == 409
     db.rollback()
-    db.close()
 
 
-def test_batch_save_concurrency_conflict_raises_409():
-    from app.core.database import SessionLocal
+def test_setup_update_waits_for_the_timetable_root(migrated_db):
+    from sqlalchemy import delete, select, text
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.orm import Session
+
+    from app.models import School
+    from app.models.timetable import TimetableSetup
+    from app.schemas.timetable import TimetableSetupUpdate
+    from app.services.timetable_service import TimetableService
+
+    with Session(migrated_db) as writer, Session(migrated_db) as concurrent:
+        school = School(name="Synthetic lock fixture", code=f"LOCK-{uuid4().hex[:8]}", setup_completed=True)
+        writer.add(school)
+        writer.commit()
+        school_id = school.id
+        try:
+            service = TimetableService(writer)
+            timetable_id = service.get_active_timetable(school_id).id
+            setup_id = writer.scalar(select(TimetableSetup.id).where(TimetableSetup.timetable_id == timetable_id))
+            assert setup_id is not None
+            service._lock_timetable(school_id, timetable_id)
+
+            concurrent.execute(text("SET LOCAL lock_timeout = '300ms'"))
+            with pytest.raises(OperationalError) as blocked:
+                TimetableService(concurrent).update_setup(
+                    school_id, setup_id, TimetableSetupUpdate(name="Edited", version=1), uuid4(),
+                )
+            assert blocked.value.orig.sqlstate == "55P03"
+        finally:
+            concurrent.rollback()
+            writer.rollback()
+            writer.execute(delete(School).where(School.id == school_id))
+            writer.commit()
+
+
+def test_batch_save_concurrency_conflict_raises_409(db, school):
     from app.services.timetable_service import TimetableService
     from app.models.timetable import TimetableSetup, Timetable
     from app.schemas.timetable import BatchSetupAssignmentsRequest
 
-    db = SessionLocal()
     service = TimetableService(db=db)
     setup = (
         db.query(TimetableSetup)
@@ -246,9 +267,7 @@ def test_batch_save_concurrency_conflict_raises_409():
         .filter(TimetableSetup.deleted_at.is_(None), Timetable.deleted_at.is_(None))
         .first()
     )
-    if not setup:
-        db.close()
-        return
+    assert setup is not None
 
     # Pass an outdated version for the setup in batch save
     stale_version = (setup.version or 1) - 1
@@ -282,52 +301,33 @@ def test_batch_save_concurrency_conflict_raises_409():
     assert exc_info.value.status_code == 409
     assert "has been modified by another user" in str(exc_info.value.message)
     db.rollback()
-    db.close()
 
 
-def test_aggregate_timetable_version_bumping():
-    from app.core.database import SessionLocal
+def test_aggregate_timetable_version_bumping(db, school):
     from app.services.timetable_service import TimetableService
     from app.models.timetable import Timetable
 
-    db = SessionLocal()
     service = TimetableService(db=db)
     tt = db.query(Timetable).filter(Timetable.deleted_at.is_(None)).first()
-    if not tt:
-        db.close()
-        return
+    assert tt is not None
 
     prev_version = tt.version or 1
     touched = service._touch_timetable(school_id=tt.school_id, timetable_id=tt.id, user_id=uuid4())
     db.commit()
     db.refresh(tt)
     assert tt.version == prev_version + 1
-    db.close()
 
 
-def test_atomic_move_classes():
-    from app.core.database import SessionLocal
+def test_atomic_move_classes(db, school, school_actor):
     from app.services.timetable_service import TimetableService
     from app.models.timetable import TimetableSetup, TimetableSetupAssignment
     from app.models.section import Section
     from app.schemas.timetable import MoveClassesRequest
 
-    db = SessionLocal()
     service = TimetableService(db=db)
-    from app.models.timetable import Timetable
-    setups = (
-        db.query(TimetableSetup)
-        .join(Timetable, Timetable.id == TimetableSetup.timetable_id)
-        .filter(TimetableSetup.deleted_at.is_(None), Timetable.deleted_at.is_(None))
-        .limit(2)
-        .all()
-    )
-    section = db.query(Section).filter(Section.deleted_at.is_(None)).first()
-    if len(setups) < 2 or not section:
-        db.close()
-        return
-
-    target_setup = setups[1]
+    original = db.query(TimetableSetup).filter(TimetableSetup.school_id == school.id).one()
+    target_setup = service.duplicate_setup(school.id, original.id, school_actor.id)
+    section = db.query(Section).filter(Section.school_id == school.id, Section.deleted_at.is_(None)).one()
     req = MoveClassesRequest(
         timetable_id=target_setup.timetable_id,
         target_setup_id=target_setup.id,
@@ -336,7 +336,7 @@ def test_atomic_move_classes():
     res = service.move_classes(
         school_id=target_setup.school_id,
         data=req,
-        user_id=target_setup.created_by,
+        user_id=school_actor.id,
     )
     assert "Moved" in res["message"]
 
@@ -348,20 +348,15 @@ def test_atomic_move_classes():
     ).first()
     assert assign is not None
     assert assign.setup_id == target_setup.id
-    db.close()
 
 
-def test_duplicate_setup_independent_copy():
-    from app.core.database import SessionLocal
+def test_duplicate_setup_independent_copy(db, school):
     from app.services.timetable_service import TimetableService
     from app.models.timetable import TimetableSetup
 
-    db = SessionLocal()
     service = TimetableService(db=db)
     setup = db.query(TimetableSetup).filter(TimetableSetup.deleted_at.is_(None)).first()
-    if not setup:
-        db.close()
-        return
+    assert setup is not None
 
     duplicated = service.duplicate_setup(
         school_id=setup.school_id,
@@ -374,14 +369,12 @@ def test_duplicate_setup_independent_copy():
     # Clean up duplicated setup
     db.delete(duplicated)
     db.commit()
-    db.close()
 
 
-def test_migration_schema_and_idempotency():
-    from app.core.database import engine
+def test_migration_schema_and_idempotency(migrated_db):
     from sqlalchemy import inspect
 
-    inspector = inspect(engine)
+    inspector = inspect(migrated_db)
     setup_cols = {col["name"] for col in inspector.get_columns("timetable_setups")}
     assert "version" in setup_cols
     assert "order_index" in setup_cols
@@ -445,19 +438,15 @@ def test_setup_period_item_accepts_uuid_and_string():
     assert p2.id == "p-temp-1"
 
 
-def test_class_wise_and_setups_response_models():
-    from app.core.database import SessionLocal
+def test_class_wise_and_setups_response_models(db, school):
     from app.services.timetable_service import TimetableService
     from app.models.timetable import Timetable
     from app.schemas.timetable import ClassWiseTimetableResponse, TimetableSetupRead
     from pydantic import TypeAdapter
 
-    db = SessionLocal()
     service = TimetableService(db=db)
     tt = db.query(Timetable).filter(Timetable.deleted_at.is_(None)).first()
-    if not tt:
-        db.close()
-        return
+    assert tt is not None
 
     # Verify get_class_wise_timetable serializes against ClassWiseTimetableResponse
     res = service.get_class_wise_timetable(school_id=tt.school_id, timetable_id=tt.id)
@@ -469,8 +458,3 @@ def test_class_wise_and_setups_response_models():
     adapter = TypeAdapter(list[TimetableSetupRead])
     validated_setups = adapter.validate_python(setups)
     assert len(validated_setups) == len(setups)
-
-    db.close()
-
-
-

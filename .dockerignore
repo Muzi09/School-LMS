@@ -1,0 +1,10 @@
+**
+!Caddyfile
+!Dockerfile.web
+!Frontend/
+!Frontend/**
+Frontend/node_modules
+Frontend/dist
+Frontend/coverage
+Frontend/.env*
+Frontend/.agents

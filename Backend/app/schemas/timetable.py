@@ -1,5 +1,5 @@
 from datetime import datetime, time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -301,7 +301,7 @@ class TimetableSetupRead(BaseModel):
 
 class SetupAssignmentTarget(BaseModel):
     setup_id: str | UUID
-    target_type: str = Field(..., description="'WING', 'CLASS', or 'SECTION'")
+    target_type: Literal["WING", "CLASS", "SECTION"]
     target_id: UUID
 
 
@@ -331,7 +331,7 @@ class BatchSetupItem(BaseModel):
     description: Optional[str] = None
     is_default: Optional[bool] = False
     order_index: Optional[int] = 0
-    version: Optional[int] = 1
+    version: int | None = None
     applicable_days: Optional[List[str]] = None
     periods: Optional[List[SetupPeriodItem]] = None
     schedules: Optional[List[SetupScheduleItem]] = None
@@ -341,6 +341,7 @@ class BatchSetupItem(BaseModel):
 
 class BatchSetupAssignmentsRequest(BaseModel):
     timetable_id: UUID
+    timetable_version: int | None = Field(default=None, ge=1)
     setups: List[BatchSetupItem] = Field(..., description="List of setups with day schedules and periods")
     assignments: List[SetupAssignmentTarget] = Field(..., description="Mapping of sections/classes/wings to setup IDs")
 

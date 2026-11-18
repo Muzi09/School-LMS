@@ -1,27 +1,22 @@
-import React, { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef } from "react"
 import { ArrowUp, Navigation } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 export function JumpToRail({
   classes = [],
-  onJumpToClass,
-  onJumpToSection,
+  onJumpToClass = undefined,
+  onJumpToSection = undefined,
   activeClassId = null,
 }) {
-  const [activeId, setActiveId] = useState(activeClassId)
+  const [selectedId, setActiveId] = useState(activeClassId)
+  const activeId = activeClassId ?? selectedId
   const [activeSectionId, setActiveSectionId] = useState(null)
   const [hoveredClass, setHoveredClass] = useState(null)
-  const lastHoveredClassRef = useRef(null)
+  const [displayClass, setDisplayClass] = useState(null)
 
   const hoverTimerRef = useRef(null)
   const leaveTimerRef = useRef(null)
-
-  // Keep track of the last hovered class so exit animation still renders its sections smoothly
-  if (hoveredClass) {
-    lastHoveredClassRef.current = hoveredClass
-  }
-  const displayClass = hoveredClass || lastHoveredClassRef.current
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -30,13 +25,6 @@ export function JumpToRail({
       if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current)
     }
   }, [])
-
-  // Sync activeClassId if changed externally
-  useEffect(() => {
-    if (activeClassId) {
-      setActiveId(activeClassId)
-    }
-  }, [activeClassId])
 
   // Abbreviate class names for rail chips:
   // "Nursery" -> "NUR", "Lower Kindergarten" -> "LKG", "Upper Kindergarten" -> "UKG", "Class 1" -> "1"
@@ -71,6 +59,7 @@ export function JumpToRail({
     // Start 500ms (half a second) timer
     hoverTimerRef.current = setTimeout(() => {
       if (cls.sections && cls.sections.length > 0) {
+        setDisplayClass(cls)
         setHoveredClass(cls)
       } else {
         setHoveredClass(null)
@@ -116,7 +105,7 @@ export function JumpToRail({
     const stickyHeaders = document.querySelectorAll("header.sticky")
     let totalHeaderHeight = 0
     stickyHeaders.forEach((h) => {
-      totalHeaderHeight += h.offsetHeight
+      if (h instanceof HTMLElement) totalHeaderHeight += h.offsetHeight
     })
     const headerHeight = totalHeaderHeight > 0 ? totalHeaderHeight : 128
     // Comfortable padding buffer above the target element so the card header is fully visible

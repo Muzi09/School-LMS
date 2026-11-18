@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Generic, Sequence, Type, TypeVar
 from uuid import UUID
 
@@ -96,7 +96,7 @@ class BaseRepository(Generic[ModelType]):
         autocommit: bool = True,
     ) -> ModelType:
         """Soft delete a record by setting deleted_at timestamp."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if hasattr(instance, "deleted_at"):
             setattr(instance, "deleted_at", now)
         if hasattr(instance, "deleted_by") and deleted_by_id:

@@ -7,8 +7,9 @@
  */
 export function getIsMac() {
   if (typeof window === "undefined") return false
-  if (navigator.userAgentData?.platform) {
-    return navigator.userAgentData.platform.toLowerCase().includes("mac")
+  const clientHints = "userAgentData" in navigator ? navigator.userAgentData : null
+  if (clientHints && typeof clientHints === "object" && "platform" in clientHints && typeof clientHints.platform === "string" && clientHints.platform) {
+    return clientHints.platform.toLowerCase().includes("mac")
   }
   return /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent || navigator.platform || "")
 }

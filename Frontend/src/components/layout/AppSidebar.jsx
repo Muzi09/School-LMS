@@ -2,7 +2,6 @@ import React from "react"
 import { useLocation, useNavigate, Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import {
-  Sparkles,
   ChevronDown,
   LogOut,
   UserCheck,
@@ -24,7 +23,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  useSidebar,
 } from "@/components/ui/sidebar"
 import {
   DropdownMenu,
@@ -36,7 +34,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { sidebarNavGroups } from "@/constants/nav-items"
-import { useAuth } from "@/context/AuthContext"
+import { useSidebar } from "@/context/sidebarState"
+import { useAuth } from "@/context/authState"
 import { hasPermission } from "@/lib/permissions"
 import { useQuery } from "@tanstack/react-query"
 import { getPrincipalEmailSetupApi } from "@/api/principalEmailService"
@@ -217,7 +216,7 @@ export function AppSidebar({ ...props }) {
       <SidebarFooter className="p-2 border-t border-sidebar-border/60">
         <SidebarMenu>
           <SidebarMenuItem>
-            <DropdownMenuTrigger className="w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
+            <DropdownMenuTrigger>
               <SidebarMenuButton
                 size="lg"
                 className="w-full justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
@@ -300,9 +299,8 @@ export function AppSidebar({ ...props }) {
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onAction={() => {
-                    logout()
-                    window.location.href = "/login"
+                  onAction={async () => {
+                    if (await logout()) window.location.assign("/login")
                   }}
                   className="cursor-pointer gap-2 py-1.5 text-destructive focus:bg-destructive/10 focus:text-destructive"
                 >

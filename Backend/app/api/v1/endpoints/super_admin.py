@@ -3,15 +3,18 @@ from app.api.v1.endpoints.admin import router as admin_router
 
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin, require_super_admin
 from app.core.config import settings
+from app.core.smtp_policy import validate_smtp_target
+from app.services.principal_directory import get_principal_page
 from app.core.database import get_db
 from app.core.security import (
     decrypt_smtp_password,
+    smtp_password_is_configured,
     encrypt_smtp_password,
     generate_onboarding_token,
     hash_password,
@@ -102,15 +105,8 @@ def get_smtp_configuration(
     if not smtp_config:
         return SmtpConfigResponse(is_configured=False)
 
-    plain_password = None
-    if smtp_config.smtp_password_encrypted:
-        try:
-            plain_password = decrypt_smtp_password(smtp_config.smtp_password_encrypted)
-        except Exception:
-            plain_password = None
-
     return SmtpConfigResponse(
-        is_configured=bool(smtp_config.smtp_host and smtp_config.from_email),
+        is_configured=bool(smtp_config.smtp_host and smtp_config.from_email and smtp_password_is_configured(smtp_config.smtp_password_encrypted)),
         smtp_host=smtp_config.smtp_host,
         smtp_port=smtp_config.smtp_port,
         smtp_username=smtp_config.smtp_username,
@@ -118,8 +114,7 @@ def get_smtp_configuration(
         from_name=smtp_config.from_name,
         security=smtp_config.security,
         is_active=smtp_config.is_active,
-        is_password_set=bool(smtp_config.smtp_password_encrypted),
-        smtp_password=plain_password,
+        is_password_set=smtp_password_is_configured(smtp_config.smtp_password_encrypted),
         created_at=smtp_config.created_at,
         updated_at=smtp_config.updated_at,
     )
@@ -140,11 +135,18 @@ def save_super_admin_smtp_configuration(
         .first()
     )
 
+    smtp_host = validate_smtp_target(payload.smtp_host, payload.smtp_port, payload.security)
     email_clean = str(payload.from_email).strip().lower()
     username_clean = payload.smtp_username.strip().lower() if payload.smtp_username else email_clean
 
     if smtp_config:
-        smtp_config.smtp_host = payload.smtp_host.strip()
+        if not (payload.smtp_password or "").strip() and (
+            smtp_config.smtp_host != smtp_host or smtp_config.smtp_port != payload.smtp_port
+            or smtp_config.smtp_username != username_clean or smtp_config.security != payload.security
+            or not smtp_password_is_configured(smtp_config.smtp_password_encrypted)
+        ):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter a password for the selected SMTP account.")
+        smtp_config.smtp_host = smtp_host
         smtp_config.smtp_port = payload.smtp_port
         smtp_config.smtp_username = username_clean
         smtp_config.from_email = email_clean
@@ -165,7 +167,7 @@ def save_super_admin_smtp_configuration(
         encrypted_pwd = encrypt_smtp_password(payload.smtp_password.strip())
         smtp_config = SmtpConfiguration(
             admin_id=current_user.id,
-            smtp_host=payload.smtp_host.strip(),
+            smtp_host=smtp_host,
             smtp_port=payload.smtp_port,
             smtp_username=username_clean,
             smtp_password_encrypted=encrypted_pwd,
@@ -180,15 +182,8 @@ def save_super_admin_smtp_configuration(
     db.commit()
     db.refresh(smtp_config)
 
-    plain_password = None
-    if smtp_config.smtp_password_encrypted:
-        try:
-            plain_password = decrypt_smtp_password(smtp_config.smtp_password_encrypted)
-        except Exception:
-            plain_password = None
-
     return SmtpConfigResponse(
-        is_configured=True,
+        is_configured=smtp_password_is_configured(smtp_config.smtp_password_encrypted),
         smtp_host=smtp_config.smtp_host,
         smtp_port=smtp_config.smtp_port,
         smtp_username=smtp_config.smtp_username,
@@ -196,8 +191,7 @@ def save_super_admin_smtp_configuration(
         from_name=smtp_config.from_name,
         security=smtp_config.security,
         is_active=smtp_config.is_active,
-        is_password_set=bool(smtp_config.smtp_password_encrypted),
-        smtp_password=plain_password,
+        is_password_set=smtp_password_is_configured(smtp_config.smtp_password_encrypted),
         created_at=smtp_config.created_at,
         updated_at=smtp_config.updated_at,
     )
@@ -209,6 +203,10 @@ def test_super_admin_smtp_configuration_endpoint(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    email_user = payload.from_email or payload.smtp_username or current_user.email
+    email_clean = str(email_user).strip().lower()
+    username_clean = payload.smtp_username.strip().lower() if payload.smtp_username else email_clean
+    smtp_host = validate_smtp_target(payload.smtp_host, payload.smtp_port, payload.security)
     password_to_test = payload.smtp_password
     if not password_to_test or not password_to_test.strip():
         smtp_config = (
@@ -219,7 +217,11 @@ def test_super_admin_smtp_configuration_endpoint(
             )
             .first()
         )
-        if smtp_config and smtp_config.smtp_password_encrypted:
+        if (
+            smtp_config and smtp_password_is_configured(smtp_config.smtp_password_encrypted)
+            and smtp_config.smtp_host == smtp_host and smtp_config.smtp_port == payload.smtp_port
+            and smtp_config.smtp_username == username_clean and smtp_config.security == payload.security
+        ):
             password_to_test = decrypt_smtp_password(smtp_config.smtp_password_encrypted)
         else:
             raise HTTPException(
@@ -227,12 +229,9 @@ def test_super_admin_smtp_configuration_endpoint(
                 detail="SMTP password is required to perform connection test.",
             )
 
-    email_user = payload.from_email or payload.smtp_username or current_user.email
-    email_clean = str(email_user).strip().lower()
-    username_clean = payload.smtp_username.strip().lower() if payload.smtp_username else email_clean
 
     success, error_msg = test_smtp_connection(
-        smtp_host=payload.smtp_host or "smtp.gmail.com",
+        smtp_host=smtp_host,
         smtp_port=payload.smtp_port or 587,
         smtp_username=username_clean,
         smtp_password=password_to_test,
@@ -255,69 +254,10 @@ def test_super_admin_smtp_configuration_endpoint(
 def list_principals(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
-    principals = (
-        db.query(User)
-        .filter(
-            User.role == UserRole.PRINCIPAL,
-            User.deleted_at.is_(None),
-        )
-        .order_by(User.created_at.desc())
-        .all()
-    )
-
-    now_utc = datetime.now(timezone.utc)
-    result: List[PrincipalListItem] = []
-    for p in principals:
-        school_name = None
-        school_code = None
-        if p.school_id:
-            school = db.query(School).filter(School.id == p.school_id, School.deleted_at.is_(None)).first()
-            if school:
-                school_name = school.name
-                school_code = school.code
-
-        onboarding_link_expired = False
-        onboarding_token_expires_at = None
-        can_regenerate_onboarding = False
-
-        if not p.school_setup_completed:
-            latest_token = (
-                db.query(PrincipalOnboardingToken)
-                .filter(PrincipalOnboardingToken.user_id == p.id)
-                .order_by(PrincipalOnboardingToken.created_at.desc())
-                .first()
-            )
-            if not latest_token:
-                onboarding_link_expired = True
-                can_regenerate_onboarding = True
-            else:
-                onboarding_token_expires_at = latest_token.expires_at
-                is_expired = latest_token.expires_at < now_utc or latest_token.used_at is not None
-                onboarding_link_expired = is_expired
-                can_regenerate_onboarding = is_expired
-
-        result.append(
-            PrincipalListItem(
-                id=p.id,
-                first_name=p.first_name,
-                last_name=p.last_name,
-                email=p.email,
-                login_mobile=p.login_mobile,
-                role=p.role,
-                is_active=p.is_active,
-                school_setup_completed=p.school_setup_completed,
-                school_id=p.school_id,
-                school_name=school_name,
-                school_code=school_code,
-                created_at=p.created_at,
-                onboarding_link_expired=onboarding_link_expired,
-                onboarding_token_expires_at=onboarding_token_expires_at,
-                can_regenerate_onboarding=can_regenerate_onboarding,
-            )
-        )
-
-    return result
+    return get_principal_page(db, page, page_size).items
 
 
 @router.post("/principals", response_model=PrincipalListItem, status_code=status.HTTP_201_CREATED)
@@ -416,7 +356,7 @@ def create_principal(
     db.commit()
     db.refresh(principal)
 
-    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
+    onboarding_url = f"{settings.public_frontend_url}/principal/setup-school?token={raw_token}"
 
     return PrincipalListItem(
         id=principal.id,
@@ -525,7 +465,7 @@ def regenerate_principal_onboarding(
     db.commit()
     db.refresh(principal)
 
-    onboarding_url = f"{settings.FRONTEND_URL}/principal/setup-school?token={raw_token}"
+    onboarding_url = f"{settings.public_frontend_url}/principal/setup-school?token={raw_token}"
 
     school_name = None
     school_code = None

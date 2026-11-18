@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useFormik } from "formik"
 import {
@@ -17,7 +17,7 @@ import {
   savePrincipalEmailSetupApi,
   testPrincipalEmailSetupApi,
 } from "@/api/principalEmailService"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/context/authState"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
@@ -41,7 +41,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
   const [showPassword, setShowPassword] = useState(false)
   const [showInstructions, setShowInstructions] = useState(false)
 
-  const savedPassword = existingConfig?.app_password || existingConfig?.smtp_password || ""
+  const savedPassword = ""
   const isConfigured = Boolean(existingConfig?.is_configured)
 
   // Test states: 'idle' | 'testing' | 'succeeded' | 'failed'
@@ -98,8 +98,9 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
   })
 
   // Reset form and UI states back to the saved configuration
-  const resetToSavedState = () => {
-    formik.resetForm({
+  const { resetForm } = formik
+  const resetToSavedState = useCallback(() => {
+    resetForm({
       values: {
         email: defaultUserEmail,
         app_password: savedPassword,
@@ -109,7 +110,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
     setIsTestedSuccess(isConfigured)
     setShowInstructions(false)
     setShowPassword(false)
-  }
+  }, [resetForm, defaultUserEmail, savedPassword, isConfigured])
 
   // When modal is closed and then reopened, or when saved configuration updates, reset fields
   useEffect(() => {
@@ -117,8 +118,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
       // eslint-disable-next-line react-hooks/set-state-in-effect
       resetToSavedState()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, existingConfig, defaultUserEmail])
+  }, [isOpen, resetToSavedState])
 
   // Reset tested status whenever user changes any field
   const handleFieldChange = (field, value) => {
@@ -186,7 +186,7 @@ export function PrincipalEmailSetupModal({ isOpen, onClose, existingConfig = nul
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isOpen])
+  }, [isOpen, onClose, resetToSavedState])
 
   if (!isOpen) return null
 

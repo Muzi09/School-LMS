@@ -5,6 +5,7 @@ import { Button as ButtonPrimitive, Link as LinkPrimitive } from "react-aria-com
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
+import { SidebarContext, useSidebar } from "@/context/sidebarState"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -25,23 +26,12 @@ const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
-const SidebarContext = React.createContext(null)
-
-function useSidebar() {
-  const context = React.useContext(SidebarContext)
-  if (!context) {
-    throw new Error("useSidebar must be used within a SidebarProvider.")
-  }
-
-  return context
-}
-
 function SidebarProvider({
   defaultOpen = true,
-  open: openProp,
-  onOpenChange: setOpenProp,
-  className,
-  style,
+  open: openProp = undefined,
+  onOpenChange: setOpenProp = undefined,
+  className = undefined,
+  style = undefined,
   children,
   ...props
 }) {
@@ -125,9 +115,9 @@ function Sidebar({
   side = "left",
   variant = "sidebar",
   collapsible = "offcanvas",
-  className,
+  className = undefined,
   children,
-  dir,
+  dir = undefined,
   ...props
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
@@ -219,8 +209,8 @@ function Sidebar({
 }
 
 function SidebarTrigger({
-  className,
-  onPress,
+  className = undefined,
+  onPress = undefined,
   ...props
 }) {
   const { toggleSidebar } = useSidebar()
@@ -244,7 +234,7 @@ function SidebarTrigger({
 }
 
 function SidebarRail({
-  className,
+  className = undefined,
   ...props
 }) {
   const { toggleSidebar } = useSidebar()
@@ -271,7 +261,7 @@ function SidebarRail({
 }
 
 function SidebarInset({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -286,7 +276,7 @@ function SidebarInset({
 }
 
 function SidebarInput({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -299,7 +289,7 @@ function SidebarInput({
 }
 
 function SidebarHeader({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -312,7 +302,7 @@ function SidebarHeader({
 }
 
 function SidebarFooter({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -325,7 +315,7 @@ function SidebarFooter({
 }
 
 function SidebarSeparator({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -338,7 +328,7 @@ function SidebarSeparator({
 }
 
 function SidebarContent({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -354,7 +344,7 @@ function SidebarContent({
 }
 
 function SidebarGroup({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -367,8 +357,8 @@ function SidebarGroup({
 }
 
 function SidebarGroupLabel({
-  className,
-  elementType: Element = "div",
+  className = undefined,
+  elementType: Element = /** @type {React.ElementType<React.ComponentPropsWithoutRef<"div">>} */ ("div"),
   ...props
 }) {
   return (
@@ -384,7 +374,7 @@ function SidebarGroupLabel({
 }
 
 function SidebarGroupAction({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -400,7 +390,7 @@ function SidebarGroupAction({
 }
 
 function SidebarGroupContent({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -413,7 +403,7 @@ function SidebarGroupContent({
 }
 
 function SidebarMenu({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -426,7 +416,7 @@ function SidebarMenu({
 }
 
 function SidebarMenuItem({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -460,12 +450,14 @@ const sidebarMenuButtonVariants = cva(
   }
 )
 
+/** @typedef {import("class-variance-authority").VariantProps<typeof sidebarMenuButtonVariants>} SidebarMenuVariant */
+
 function SidebarMenuButton({
   isActive = false,
-  variant = "default",
-  size = "default",
-  tooltip,
-  className,
+  variant = /** @type {SidebarMenuVariant["variant"]} */ ("default"),
+  size = /** @type {SidebarMenuVariant["size"]} */ ("default"),
+  tooltip = undefined,
+  className = undefined,
   ...props
 }) {
   const { isMobile, state } = useSidebar()
@@ -507,7 +499,7 @@ function SidebarMenuButton({
 }
 
 function SidebarMenuAction({
-  className,
+  className = undefined,
   showOnHover = false,
   ...props
 }) {
@@ -526,7 +518,7 @@ function SidebarMenuAction({
 }
 
 function SidebarMenuBadge({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -542,7 +534,7 @@ function SidebarMenuBadge({
 }
 
 function SidebarMenuSkeleton({
-  className,
+  className = undefined,
   showIcon = false,
   ...props
 }) {
@@ -573,7 +565,7 @@ function SidebarMenuSkeleton({
 }
 
 function SidebarMenuSub({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -589,7 +581,7 @@ function SidebarMenuSub({
 }
 
 function SidebarMenuSubItem({
-  className,
+  className = undefined,
   ...props
 }) {
   return (
@@ -604,7 +596,7 @@ function SidebarMenuSubItem({
 function SidebarMenuSubButton({
   size = "md",
   isActive = false,
-  className,
+  className = undefined,
   ...props
 }) {
   return props.href !== undefined ? (
@@ -656,5 +648,4 @@ export {
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
-  useSidebar,
 }

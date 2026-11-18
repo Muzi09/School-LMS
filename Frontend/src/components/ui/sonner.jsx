@@ -1,9 +1,8 @@
-import React from "react"
 import { Toaster as Sonner } from "sonner"
-import { useTheme } from "@/context/ThemeContext"
+import { useTheme } from "@/context/themeState"
 
 const Toaster = ({ ...props }) => {
-  let resolvedTheme = "light"
+  let resolvedTheme
   try {
     const themeContext = useTheme()
     resolvedTheme = themeContext?.resolvedTheme || "light"
@@ -13,7 +12,7 @@ const Toaster = ({ ...props }) => {
 
   return (
     <Sonner
-      theme={resolvedTheme}
+      theme={resolvedTheme === "dark" ? "dark" : "light"}
       className="toaster group"
       position="bottom-right"
       toastOptions={{

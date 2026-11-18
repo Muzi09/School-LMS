@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
   renumberPeriods,
-  createDefaultPeriodsTemplate,
   createDefaultSetup,
   bellTimingReducer,
 } from "../scheduleReducer"

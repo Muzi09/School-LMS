@@ -1,3 +1,5 @@
+/** @typedef {string | number | null | undefined} TimeInput */
+
 /**
  * Bell Timing - Time Utility Functions
  * Pure, framework-agnostic time calculations and lenient parsing.
@@ -15,6 +17,7 @@
  * - "12 pm" / "12 PM" -> "12:00"
  * - "21:30" -> "21:30"
  * Returns null for invalid strings (e.g. "25:00", "abc", "").
+ * @param {string | null | undefined} input
  */
 export function parseTime(input) {
   if (!input || typeof input !== "string") return null
@@ -27,8 +30,8 @@ export function parseTime(input) {
   const clean = raw.replace(/[a-z. ]/g, "")
   if (!clean) return null
 
-  let hours = 0
-  let minutes = 0
+  let hours
+  let minutes
 
   if (clean.includes(":")) {
     const parts = clean.split(":")
@@ -83,6 +86,7 @@ export function parseTime(input) {
 
 /**
  * Converts total minutes from midnight (0..1439) into "HH:mm" 24h string.
+ * @param {number} totalMinutes
  */
 export function formatMinutes(totalMinutes) {
   const norm = ((totalMinutes % 1440) + 1440) % 1440
@@ -94,6 +98,7 @@ export function formatMinutes(totalMinutes) {
 /**
  * Returns total minutes from midnight for a "HH:mm" string or numeric minutes.
  * Ultra-fast path for standard "HH:mm" strings avoids regex and object allocation.
+ * @param {TimeInput} timeInput
  */
 export function toMinutes(timeInput) {
   if (typeof timeInput === "number") {
@@ -117,6 +122,8 @@ export function toMinutes(timeInput) {
 
 /**
  * Fast numeric comparison: checks if two times are identical in minutes.
+ * @param {TimeInput} timeA
+ * @param {TimeInput} timeB
  */
 export function areTimesEqual(timeA, timeB) {
   return toMinutes(timeA) === toMinutes(timeB)
@@ -124,6 +131,8 @@ export function areTimesEqual(timeA, timeB) {
 
 /**
  * Fast numeric difference: returns (timeB - timeA) in minutes.
+ * @param {TimeInput} timeA
+ * @param {TimeInput} timeB
  */
 export function timeDiffMinutes(timeA, timeB) {
   return toMinutes(timeB) - toMinutes(timeA)
@@ -132,6 +141,10 @@ export function timeDiffMinutes(timeA, timeB) {
 /**
  * Checks if interval [startA, endA) overlaps with interval [startB, endB).
  * Intervals touching flush (endA === startB) do NOT overlap.
+ * @param {TimeInput} startA
+ * @param {TimeInput} endA
+ * @param {TimeInput} startB
+ * @param {TimeInput} endB
  */
 export function doIntervalsOverlap(startA, endA, startB, endB) {
   const sA = toMinutes(startA)
@@ -143,6 +156,7 @@ export function doIntervalsOverlap(startA, endA, startB, endB) {
 
 /**
  * Formats "HH:mm" to 12-hour display string (e.g. "8:30 AM", "12:00 PM").
+ * @param {string | null | undefined} timeStr
  */
 export function format12h(timeStr) {
   const parsed = parseTime(timeStr)
@@ -156,6 +170,7 @@ export function format12h(timeStr) {
 
 /**
  * Formats "HH:mm" or minutes to 24-hour display string.
+ * @param {TimeInput} timeInput
  */
 export function format24h(timeInput) {
   if (typeof timeInput === "number") {
@@ -168,6 +183,8 @@ export function format24h(timeInput) {
 /**
  * Calculates duration in minutes between start and end times.
  * Operates purely on numeric minutes. Returns negative if end < start.
+ * @param {TimeInput} startTime
+ * @param {TimeInput} endTime
  */
 export function calculateDuration(startTime, endTime) {
   return toMinutes(endTime) - toMinutes(startTime)
@@ -175,6 +192,8 @@ export function calculateDuration(startTime, endTime) {
 
 /**
  * Adds minutes to a time input, returning formatted "HH:mm".
+ * @param {TimeInput} timeStr
+ * @param {number} minutesToAdd
  */
 export function addMinutesToTime(timeStr, minutesToAdd) {
   const nextMin = toMinutes(timeStr) + minutesToAdd
@@ -183,6 +202,7 @@ export function addMinutesToTime(timeStr, minutesToAdd) {
 
 /**
  * Formats duration in minutes to human readable string (e.g. "45m", "1h 15m").
+ * @param {number} minutes
  */
 export function formatDurationHuman(minutes) {
   if (!minutes || minutes <= 0) return "0m"
@@ -192,4 +212,3 @@ export function formatDurationHuman(minutes) {
   if (h > 0) return `${h}h`
   return `${m}m`
 }
-
