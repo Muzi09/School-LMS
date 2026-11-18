@@ -92,3 +92,8 @@ Branch `Bugs-fixed`, based on `4857de141f386cb9efcd67003b729b3b6d70ad23`. Findin
 - Fixed timetable Excel export to return the response body from the API client. The added regression test checks that the workbook blob reaches the caller intact.
 - The final full frontend type check reported zero diagnostics, down from 404 at the start of this follow-up. Added the full check to the verification workflow alongside the scoped strict check.
 - Local verification on Node 24.15.0 passed the scoped strict and full frontend type checks, ESLint with zero warnings, all 87 Vitest tests, the standalone chat-date check, and the Vite production build.
+
+## Hosted CI follow-up
+
+- Pinned the backend job to Ubuntu 24.04, which supplies Python 3.14.2, and targeted the configured PostgreSQL database in the health check.
+- Regenerated the frontend lockfile with npm 11.12.1 for Linux. The regenerated lock records the bundled Tailwind WebAssembly dependencies and passed the npm ci dry run for Linux x64.
