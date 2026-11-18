@@ -2,11 +2,13 @@ import React, { useMemo, useRef, memo, Fragment } from "react"
 import {
   AlertTriangle,
   CheckCircle2,
+  User,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
+import { getShortSubjectName, isAcademicSubject } from "../subjectShortName"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
 import { formatPeriodShortLabel, isNonTeachingPeriod, DAY_ORDER, sortDays } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
@@ -318,6 +320,39 @@ export const ClassWiseCard = memo(function ClassWiseCard({
     return dayColumnWidth + 48 + maxPeriodsCount * basePeriodWidth
   }, [dayColumnWidth, maxPeriodsCount, basePeriodWidth])
 
+  // Resolve Class Teacher Name
+  const classTeacherName = useMemo(() => {
+    if (section.class_teacher_name) return section.class_teacher_name
+    if (section.class_teacher?.name) return section.class_teacher.name
+    if (section.class_teacher && typeof section.class_teacher === "object") {
+      const fn = section.class_teacher.first_name || ""
+      const ln = section.class_teacher.last_name || ""
+      const full = `${fn} ${ln}`.trim()
+      if (full) return full
+    }
+    return null
+  }, [section.class_teacher_name, section.class_teacher])
+
+  // Adaptive 2-Row Micro-Tokens distribution
+  const { row1Tokens, row2Tokens } = useMemo(() => {
+    const stats = section.subject_stats || []
+    const academic = stats.filter(isAcademicSubject)
+    const nonAcademic = stats.filter((s) => !isAcademicSubject(s))
+
+    const list = []
+    academic.forEach((s) => list.push({ ...s, isAcademic: true }))
+    if (academic.length > 0 && nonAcademic.length > 0) {
+      list.push({ isDivider: true, id: "divider" })
+    }
+    nonAcademic.forEach((s) => list.push({ ...s, isAcademic: false }))
+
+    const mid = Math.ceil(list.length / 2)
+    return {
+      row1Tokens: list.slice(0, mid),
+      row2Tokens: list.slice(mid),
+    }
+  }, [section.subject_stats])
+
   return (
     <div
       id={`class-section-${section.id}`}
@@ -326,66 +361,191 @@ export const ClassWiseCard = memo(function ClassWiseCard({
         "hover:shadow-sm"
       )}
     >
-      {/* CARD HEADER */}
-      <div className="flex items-center justify-between gap-4 px-4 py-3 bg-muted/20 border-b border-border/60">
-        {/* Left: Class Section & Wing Title */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-base sm:text-lg font-bold text-foreground tracking-tight">
+      {/* CARD HEADER: Compact 3-Zone x 2-Line Architecture (~48px height) */}
+      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px] max-h-[52px]">
+        {/* Left Zone: Identity Stack (Class & Section on Line 1, Class Teacher on Line 2) */}
+        <div className="flex flex-col justify-center min-w-[150px] max-w-[240px] shrink-0 leading-tight gap-0.5">
+          {/* Line 1: Class Name & Section Badge */}
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="text-sm sm:text-base font-bold text-foreground tracking-tight truncate">
               {section.class_name}
             </span>
             <Badge
               variant="outlined"
-              className="bg-primary/90 text-primary-foreground font-bold px-2 py-0.5 text-xs rounded-md shadow-xs"
+              className="bg-primary/90 text-primary-foreground font-bold px-1.5 py-0.2 text-[11px] rounded-md shadow-xs shrink-0"
             >
               {section.name}
             </Badge>
           </div>
+
+          {/* Line 2: Class Teacher Name */}
+          <div className="flex items-center gap-1 text-[11px] text-muted-foreground truncate font-medium">
+            <User className="size-3 text-primary/70 shrink-0" />
+            <span className="truncate">
+              Class Teacher:{" "}
+              <strong className="text-foreground font-semibold">
+                {classTeacherName || "Unassigned"}
+              </strong>
+            </span>
+          </div>
         </div>
 
-        {/* Right: Subjects Targets Strip (Right-aligned, expands to take available width) */}
-        <div className="flex-1 min-w-0 flex items-center justify-end gap-1.5 overflow-x-auto py-0.5 ml-auto scrollbar-none">
-          {section.subject_stats?.map((stat) => {
-            const theme = getSubjectTheme(stat.name, stat.category)
-            const isUnder = stat.assigned < stat.target
-            const isOver = stat.assigned > stat.target
-            const isMet = stat.assigned === stat.target
-
-            return (
-              <span
-                key={stat.subject_id}
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border shrink-0 transition-colors",
-                  theme.chip,
-                  isUnder && "ring-1 ring-amber-500/40",
-                  isOver && "ring-1 ring-amber-500/60 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-500/40",
-                  isMet && "ring-1 ring-emerald-500/40"
-                )}
-                title={`${stat.name}: ${stat.assigned} assigned / ${stat.target} target weekly periods${isOver ? " (Over Target)" : isMet ? " (Target Met)" : ""}`}
-              >
-                <span className={cn("size-1.5 rounded-full", isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot)} />
-                <span className="font-semibold">{(stat?.name || "Subject").split(" ")[0]}</span>
-                <span className={cn("text-[10px] font-mono", isOver && "font-bold text-amber-700 dark:text-amber-300")}>
-                  {stat?.assigned || 0}/{stat?.target || 0}
-                </span>
-                {isOver && (
-                  <span className="text-[9px] font-bold px-1 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 uppercase">
-                    Over
+        {/* Center Zone: Adaptive 2-Row Micro-Tokens Matrix (No Badges, No Tooltips) */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1 px-3 border-x border-border/50 overflow-x-auto scrollbar-none">
+          {/* Row 1 */}
+          <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none">
+            {row1Tokens.map((item, idx) => {
+              if (item.isDivider) {
+                return (
+                  <span
+                    key={`r1-div-${idx}`}
+                    className="text-border/80 select-none text-xs font-light px-0.5"
+                  >
+                    │
                   </span>
-                )}
-              </span>
-            )
-          })}
+                )
+              }
+              const theme = getSubjectTheme(item.name, item.category)
+              const shortName = getShortSubjectName(item.name, item.code)
+              const isUnder = item.assigned < item.target
+              const isOver = item.assigned > item.target
+              const isMet = item.assigned === item.target
 
-          {/* Completion Progress Bar */}
-          <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground font-medium ml-2 shrink-0 border-l border-border/60 pl-3">
-            <span>{assignedSlotsCount}/{totalSlotsCount}</span>
-            <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
+              return (
+                <span
+                  key={`r1-${item.subject_id || idx}`}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium leading-none whitespace-nowrap shrink-0 select-none"
+                >
+                  {item.isAcademic ? (
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-full shrink-0",
+                        isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
+                      )}
+                    />
+                  ) : (
+                    <span
+                      className={cn(
+                        "text-[9px] leading-none shrink-0 font-bold",
+                        isOver
+                          ? "text-amber-500"
+                          : isMet
+                          ? "text-emerald-500"
+                          : "text-amber-600 dark:text-amber-400"
+                      )}
+                    >
+                      ✦
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "font-semibold text-foreground/90",
+                      isOver && "text-amber-700 dark:text-amber-300 font-bold"
+                    )}
+                  >
+                    {shortName}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[10px] font-mono text-muted-foreground",
+                      isOver && "font-bold text-amber-700 dark:text-amber-300"
+                    )}
+                  >
+                    {item.assigned || 0}/{item.target || 0}
+                  </span>
+                </span>
+              )
+            })}
+          </div>
+
+          {/* Row 2 */}
+          <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none">
+            {row2Tokens.map((item, idx) => {
+              if (item.isDivider) {
+                return (
+                  <span
+                    key={`r2-div-${idx}`}
+                    className="text-border/80 select-none text-xs font-light px-0.5"
+                  >
+                    │
+                  </span>
+                )
+              }
+              const theme = getSubjectTheme(item.name, item.category)
+              const shortName = getShortSubjectName(item.name, item.code)
+              const isUnder = item.assigned < item.target
+              const isOver = item.assigned > item.target
+              const isMet = item.assigned === item.target
+
+              return (
+                <span
+                  key={`r2-${item.subject_id || idx}`}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium leading-none whitespace-nowrap shrink-0 select-none"
+                >
+                  {item.isAcademic ? (
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-full shrink-0",
+                        isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
+                      )}
+                    />
+                  ) : (
+                    <span
+                      className={cn(
+                        "text-[9px] leading-none shrink-0 font-bold",
+                        isOver
+                          ? "text-amber-500"
+                          : isMet
+                          ? "text-emerald-500"
+                          : "text-amber-600 dark:text-amber-400"
+                      )}
+                    >
+                      ✦
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "font-semibold text-foreground/90",
+                      isOver && "text-amber-700 dark:text-amber-300 font-bold"
+                    )}
+                  >
+                    {shortName}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[10px] font-mono text-muted-foreground",
+                      isOver && "font-bold text-amber-700 dark:text-amber-300"
+                    )}
+                  >
+                    {item.assigned || 0}/{item.target || 0}
+                  </span>
+                </span>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Right Zone: Progress Stack (Assigned Count on Line 1, Progress Bar on Line 2) */}
+        <div className="flex flex-col items-end justify-center shrink-0 min-w-[125px] leading-tight gap-1 pl-1">
+          {/* Line 1: Monospace Assigned Ratio */}
+          <div className="text-[11px] font-mono text-muted-foreground font-medium">
+            Assigned:{" "}
+            <strong className="text-foreground font-semibold">
+              {assignedSlotsCount}/{totalSlotsCount}
+            </strong>
+          </div>
+
+          {/* Line 2: Slim Progress Bar + Percentage */}
+          <div className="flex items-center gap-1.5">
+            <div className="w-16 sm:w-20 h-1.5 rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-primary rounded-full transition-all duration-300"
                 style={{ width: `${completionPct}%` }}
               />
             </div>
+            <span className="text-[10px] font-mono font-medium text-muted-foreground">
+              {completionPct}%
+            </span>
           </div>
         </div>
       </div>
