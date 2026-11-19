@@ -345,7 +345,12 @@ export function TimeTable() {
           timetableData={timetableData}
           isLoading={isTimetablesLoading || isClassWiseLoading}
           isError={isClassWiseError}
+          onRetry={refetchClassWise}
+          selectedWingId={activeWingId || "ALL"}
           searchQuery={searchQuery}
+          isAssignMode={isAssignMode}
+          onToggleAssignMode={handleToggleAssignMode}
+          onAssignBarPropsChange={setAssignBarProps}
           zoom={zoomLevel}
         />
       ) : (

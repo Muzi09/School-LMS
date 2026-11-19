@@ -2271,6 +2271,7 @@ class TimetableService:
 
         all_sections = (
             self.db.query(Section)
+            .options(joinedload(Section.class_teacher).joinedload(User.staff_profile))
             .filter(Section.school_id == school_id, Section.deleted_at.is_(None))
             .order_by(Section.name.asc())
             .all()
@@ -2464,11 +2465,23 @@ class TimetableService:
                     unassigned_count = max(0, total_expected_slots - len(sec_entries))
                     total_unassigned_slots += unassigned_count
 
+                    ct_user = getattr(s, "class_teacher", None)
+                    ct_name = f"{ct_user.first_name} {ct_user.last_name}".strip() if ct_user else None
+
                     sections_summary.append({
                         "id": s.id,
                         "name": s.name,
                         "class_id": c.id,
                         "class_name": c.name,
+                        "class_teacher_id": s.class_teacher_id,
+                        "class_teacher_name": ct_name,
+                        "class_teacher": {
+                            "id": ct_user.id,
+                            "name": ct_name,
+                            "first_name": ct_user.first_name,
+                            "last_name": ct_user.last_name,
+                            "email": ct_user.email,
+                        } if ct_user else None,
                         "setup_id": setup_obj["id"] if setup_obj else None,
                         "assigned_slots": len(sec_entries),
                         "total_slots": total_expected_slots,
@@ -2583,6 +2596,29 @@ class TimetableService:
                 "updated_at": e.updated_at,
             })
 
+        # Map sections where each teacher is assigned as class teacher
+        teacher_ct_map: Dict[UUID, List[Dict[str, Any]]] = {}
+        for s in all_sections:
+            if s.class_teacher_id:
+                c_obj = class_map.get(s.class_id)
+                c_name = c_obj.name if c_obj else "Class"
+                s_name = s.name or ""
+                label = f"{c_name} {s_name}".strip()
+                teacher_ct_map.setdefault(s.class_teacher_id, []).append({
+                    "section_id": s.id,
+                    "section_name": s_name,
+                    "class_id": s.class_id,
+                    "class_name": c_name,
+                    "label": label,
+                })
+
+        enriched_eligible_teachers = []
+        for t_dict in eligible_teachers:
+            t_copy = dict(t_dict)
+            t_id = t_copy.get("id")
+            t_copy["class_teacher_of"] = teacher_ct_map.get(t_id, [])
+            enriched_eligible_teachers.append(t_copy)
+
         return {
             "timetable": {
                 "id": current_tt.id,
@@ -2611,7 +2647,7 @@ class TimetableService:
             "wings": wings_summary,
             "setups": setups_data,
             "entries": entries_read,
-            "eligible_teachers": eligible_teachers,
+            "eligible_teachers": enriched_eligible_teachers,
             "stats": {
                 "total_classes": total_classes_count,
                 "total_sections": total_sections_count,
