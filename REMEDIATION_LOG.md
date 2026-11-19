@@ -97,3 +97,8 @@ Branch `Bugs-fixed`, based on `4857de141f386cb9efcd67003b729b3b6d70ad23`. Findin
 
 - Pinned the backend job to Ubuntu 24.04, which supplies Python 3.14.2, and targeted the configured PostgreSQL database in the health check.
 - Regenerated the frontend lockfile with npm 11.12.1 for Linux. The regenerated lock records the bundled Tailwind WebAssembly dependencies and passed the npm ci dry run for Linux x64.
+
+## Classwise and Teacherwise timetable
+
+- Saving, moving, and removing lessons now uses the selected class’s bell schedule for that day. Both tabs show the same start and end times, including Saturday.
+- Verified both bell-editor regressions, covering explicit saves and the 15-minute minimum, alongside the tests for different class schedules.

@@ -8,11 +8,11 @@ import { showTimetableTooltip, hideTimetableTooltip } from "./timetableTooltipSt
 /** @typedef {{ id?: string, name?: string, first_name?: string, last_name?: string, email?: string, tag?: string, designation?: string, department?: string }} TimetableTeacher */
 /** @typedef {{ id?: string, name: string, code?: string }} TimetableSubject */
 /** @typedef {{ id?: string, subject_id: string, name: string, assigned: number, target: number, teacher?: TimetableTeacher }} TimetableSubjectStat */
-/** @typedef {{ id: string, class_name?: string, name?: string, subject_stats?: TimetableSubjectStat[], school_class?: { name: string } }} TimetableSection */
+/** @typedef {{ id: string, class_name?: string, name?: string, class_teacher_name?: string, class_teacher?: TimetableTeacher, subject_stats?: TimetableSubjectStat[], school_class?: { name: string } }} TimetableSection */
 /** @typedef {{ id?: string, label?: string, period_number: number, type?: string, period_type?: string, name?: string, start_time?: string, end_time?: string, is_break?: boolean }} TimetablePeriod */
 /** @typedef {{ id: string, days?: string[], periods?: TimetablePeriod[] }} TimetableSchedule */
 /** @typedef {{ assigned_section_ids?: string[] | string, applicable_days?: string[] | string, schedules?: TimetableSchedule[], schedules_json?: string, periods?: TimetablePeriod[] }} TimetableSetup */
-/** @typedef {{ id: string, section_id?: string, section?: TimetableSection, subject_id?: string, subject?: TimetableSubject, teacher_user_id?: string, teacher?: TimetableTeacher, period_id?: string, period_number?: number, period?: TimetablePeriod, day_of_week: string }} TimetableEntry */
+/** @typedef {{ id: string, class_name?: string, section_name?: string, section_id?: string, section?: TimetableSection, subject_id?: string, subject?: TimetableSubject, teacher_user_id?: string, teacher?: TimetableTeacher, period_id?: string, period_number?: number, period?: TimetablePeriod, day_of_week: string }} TimetableEntry */
 /** @typedef {{ section: TimetableSection, period: TimetablePeriod, day: string, entry?: TimetableEntry | null, scheduleDays?: string[] }} TimetableSlot */
 
 /**
@@ -174,7 +174,7 @@ export const ClassWiseCell = memo(function ClassWiseCell(/** @type {ClassWiseCel
     const teacherName = entry?.teacher?.name || fallbackTeacherName || "Unassigned"
     const hasTeacher = Boolean(entry?.teacher?.name || fallbackTeacherName)
 
-    const repeatInfo = sameDayRepeatCount >= 2 ? ` • Scheduled ${sameDayRepeatCount}x today` : ""
+    const repeatInfo = sameDayRepeatCount >= 2 ? ` • Scheduled ${sameDayRepeatCount}x` : ""
     const tooltipText = `${subjectName}${subjectCode ? ` (${subjectCode})` : ""} • ${teacherName} • ${day} ${periodLabel}${timePart}${repeatInfo}${conflictInfo ? ` • ${conflictInfo}` : ""}${isAssignMode ? " • Click to edit" : ""}`
 
     return (
@@ -234,9 +234,9 @@ export const ClassWiseCell = memo(function ClassWiseCell(/** @type {ClassWiseCel
               {sameDayRepeatCount >= 2 && !conflictInfo && (
                 <span
                   className="px-1 py-0.2 rounded text-[9px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 shrink-0"
-                  title={`${subjectName} is scheduled ${sameDayRepeatCount} times today for this class`}
+                  title={`${subjectName} is scheduled ${sameDayRepeatCount} times on this day`}
                 >
-                  {sameDayRepeatCount}x Today
+                  {sameDayRepeatCount}x
                 </span>
               )}
               {conflictInfo && (

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Send, Plus, X } from "lucide-react"
+import { Send, Plus, X, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -89,6 +89,14 @@ export function MoveScheduleModal({
           >
             <X className="size-4" />
           </button>
+        </div>
+
+        {/* Warning about resetting lecture assignments */}
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+          <div className="leading-relaxed">
+            <span className="font-semibold">Notice:</span> Moving {pluralClasses} to a different bell setup will empty and reset their current lecture slots in this timetable so you can reassign them cleanly under the new bell schedule.
+          </div>
         </div>
 
         {/* Setups List */}

@@ -29,6 +29,7 @@ import {
   getClassWiseTimetableApi,
   checkConflictApi,
   bulkAssignSlotApi,
+  moveLessonApi,
   exportTimetableExcelApi,
 } from "@/api/timetableService"
 
@@ -298,6 +299,10 @@ function applyOptimisticBulkAssign(oldData, payload) {
     ).map((d) => String(d).toUpperCase())
   )
 
+  // The server resolves each destination against its own bell schedule.
+  // Project only single-slot writes until multi-slot results are returned.
+  if (applyDays.size > 1 || !applyDays.has(payload.day_of_week) || payload.scope === "CLASS_SECTIONS") return oldData
+
   const targetSectionIds = new Set()
   if (payload.scope === "CLASS_SECTIONS" && payload._section?.class_id) {
     for (const w of oldData.wings || []) {
@@ -327,20 +332,57 @@ function applyOptimisticBulkAssign(oldData, payload) {
   // 2. If assigning, append optimistic entries
   if (!isUnassign) {
     for (const secId of targetSectionIds) {
+      let resolvedSection = payload._section
+      if (!resolvedSection || String(resolvedSection.id) !== String(secId)) {
+        for (const w of oldData.wings || []) {
+          for (const c of w.classes || []) {
+            for (const s of c.sections || []) {
+              if (String(s.id) === String(secId)) {
+                resolvedSection = { ...s, class_name: c.name, wing_name: w.name }
+                break
+              }
+            }
+            if (resolvedSection) break
+          }
+          if (resolvedSection) break
+        }
+      }
+
+      const allocatedTeacher =
+        payload._optimisticTeacher ||
+        payload.teacher ||
+        resolvedSection?.subject_stats?.find((s) => String(s.subject_id || s.id) === String(payload.subject_id))?.teacher ||
+        null
+
+      const allocatedTeacherId =
+        payload.teacher_user_id ||
+        allocatedTeacher?.id ||
+        resolvedSection?.subject_stats?.find((s) => String(s.subject_id || s.id) === String(payload.subject_id))?.teacher_id ||
+        null
+
       for (const day of applyDays) {
         updatedEntries.push({
           id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           school_id: oldData.timetable?.school_id,
           timetable_id: payload.timetable_id,
           section_id: secId,
+          section: resolvedSection
+            ? {
+                id: resolvedSection.id,
+                name: resolvedSection.name,
+                class_id: resolvedSection.class_id,
+                class_name: resolvedSection.class_name || resolvedSection.school_class?.name || "",
+                room_number: resolvedSection.room_number || null,
+              }
+            : null,
           period_id: payload.period_id,
-          period_number: payload._optimisticPeriod?.period_number || 0,
+          period_number: payload._optimisticPeriod?.period_number || payload.period?.period_number || 0,
           day_of_week: day,
           subject_id: payload.subject_id,
-          teacher_user_id: payload.teacher_user_id || payload._optimisticTeacher?.id || null,
-          subject: payload._optimisticSubject || null,
-          teacher: payload._optimisticTeacher || null,
-          period: payload._optimisticPeriod || null,
+          teacher_user_id: allocatedTeacherId,
+          subject: payload._optimisticSubject || payload.subject || null,
+          teacher: allocatedTeacher,
+          period: payload._optimisticPeriod || payload.period || null,
         })
       }
     }
@@ -479,6 +521,7 @@ export function useBulkAssignSlot() {
       const activeMutations = queryClient.isMutating({ mutationKey: ["bulk-assign-slot"] })
       if (activeMutations <= 1) {
         queryClient.invalidateQueries({ queryKey: ["timetable", "class-wise"] })
+        queryClient.refetchQueries({ queryKey: ["timetable", "class-wise"] })
       }
       queryClient.invalidateQueries({ queryKey: timetableKeys.timetables(), refetchType: "none" })
       queryClient.invalidateQueries({ queryKey: timetableKeys.activeTimetable(), refetchType: "none" })
@@ -597,3 +640,8 @@ export function useExportTimetableExcel() {
   })
 }
 
+
+export function useMoveLesson() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: moveLessonApi, onSuccess: () => client.invalidateQueries({ queryKey: ["timetable"] }) })
+}

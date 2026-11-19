@@ -384,10 +384,23 @@ class TimetableEntryRead(BaseModel):
     day_of_week: str
     subject: TimetableSubjectRead
     teacher: Optional[TimetableTeacherRead] = None
-    created_at: datetime
-    updated_at: datetime
+    section: Optional[Dict[str, Any]] = None
+    period: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MoveLessonRequest(BaseModel):
+    timetable_id: UUID
+    section_id: UUID
+    day_of_week: DayOfWeek
+    period_id: UUID
+    expected_target_id: Optional[UUID] = None
+    source_section_id: UUID
+    source_day: DayOfWeek
+    source_period_id: UUID
 
 
 class BulkSlotAssignRequest(BaseModel):
@@ -588,6 +601,8 @@ class MasterTimetableEntryRead(BaseModel):
     end_time: str
     subject: TimetableSubjectRead
     teacher: Optional[TimetableTeacherRead] = None
+    section: Optional[Dict[str, Any]] = None
+    period: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

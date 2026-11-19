@@ -86,6 +86,71 @@ export function formatTimingsInText(text) {
   )
 }
 
+/**
+ * Formats a class and section cleanly into standard representation (e.g. "6th A", "1st B", "Nursery Rose", "Class 6").
+ * Handles ordinal suffixes (1st, 2nd, 3rd, 4th... 11th, 12th, 13th, 21st...) and strips redundant "Section " or "Class " prefixes.
+ *
+ * @param {Object|string} sec - Section object, { class_name, name }, or raw string
+ * @param {string} [fallbackClassName] - Optional class name if not present on sec
+ * @returns {string} Formatted class and section string
+ */
+export function formatClassSection(sec, fallbackClassName = "") {
+  if (!sec) return "another section"
+
+  let rawClass = ""
+  let rawSec = ""
+
+  if (typeof sec === "string") {
+    const s = sec.trim()
+    if (!s) return "another section"
+    if (s.includes("-")) {
+      const parts = s.split("-")
+      rawClass = parts[0]?.trim() || fallbackClassName
+      rawSec = parts.slice(1).join("-").trim()
+    } else if (fallbackClassName) {
+      rawClass = fallbackClassName.trim()
+      rawSec = s
+    } else {
+      rawClass = s
+      rawSec = ""
+    }
+  } else if (typeof sec === "object") {
+    rawClass = (
+      sec.class_name ||
+      sec.className ||
+      sec.school_class?.name ||
+      sec.class?.name ||
+      fallbackClassName ||
+      ""
+    ).trim()
+    rawSec = (sec.name || sec.section_name || sec.section || "").trim()
+  }
+
+  if (!rawClass && !rawSec) return "another section"
+
+  const formatCls = (clsStr) => {
+    if (!clsStr) return ""
+    const match = clsStr.match(/^(?:class|grade)\s+(\d+)$/i)
+    if (match) {
+      const num = parseInt(match[1], 10)
+      const rem100 = num % 100
+      const suffix = (rem100 >= 11 && rem100 <= 13)
+        ? "th"
+        : (["th", "st", "nd", "rd"][num % 10] || "th")
+      return `${num}${suffix}`
+    }
+    return clsStr
+  }
+
+  const cleanSec = rawSec.replace(/^section\s+/i, "").trim()
+  const formattedCls = formatCls(rawClass)
+
+  if (!formattedCls) return cleanSec || "another section"
+  if (!cleanSec) return formattedCls
+
+  return `${formattedCls} ${cleanSec}`.trim()
+}
+
 const DAY_SHORT = {
   MONDAY: "Mon",
   TUESDAY: "Tue",

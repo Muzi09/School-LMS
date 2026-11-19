@@ -1,9 +1,14 @@
-import React, { useMemo, useRef, memo } from "react"
+import { scheduleGroups as groupsForSetup, lessonPeriod } from "../sectionSchedule"
+import React, { useMemo, useRef, memo, Fragment } from "react"
+import {
+  User,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
+import { getShortSubjectName, buildRowGroups } from "../subjectShortName"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
-import { formatPeriodShortLabel, isNonTeachingPeriod, DAY_ORDER } from "../bellTiming/validators"
+import { formatPeriodShortLabel, isNonTeachingPeriod } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
 
 const DAY_LABELS = {
@@ -13,17 +18,6 @@ const DAY_LABELS = {
   THURSDAY: "THU",
   FRIDAY: "FRI",
   SATURDAY: "SAT",
-}
-
-function formatTime12h(timeStr) {
-  if (!timeStr || typeof timeStr !== "string") return ""
-  const parts = timeStr.split(":")
-  if (parts.length < 2) return timeStr
-  const [h, m] = parts.map(Number)
-  if (isNaN(h)) return timeStr
-  const period = h >= 12 ? "PM" : "AM"
-  const hour12 = h % 12 === 0 ? 12 : h % 12
-  return m === 0 ? `${hour12} ${period}` : `${hour12}:${String(m || 0).padStart(2, "0")} ${period}`
 }
 
 function calculateDuration(startTime, endTime) {
@@ -54,7 +48,7 @@ function calculateDuration(startTime, endTime) {
  * @property {(slot: Omit<TimetableSlot, 'entry'> & { currentEntry?: TimetableEntry | null }) => void} [onOpenAssignDialog]
  * @property {(source: TimetableSlot, target: TimetableSlot, isCopy: boolean) => void} [onMoveSlot]
  * @property {(entryId: string) => void} [onClearSlot]
- * @property {(entry: TimetableEntry, section: TimetableSection, slot: Pick<TimetableSlot, 'day' | 'period'>) => void} [onQuickUnassign]
+ * @property {(entry: TimetableEntry, section: TimetableSection, slot?: Pick<TimetableSlot, 'day' | 'period'>) => void} [onQuickUnassign]
  * @property {string} [density]
  * @property {number} [zoom]
  * @property {string} [searchQuery]
@@ -90,143 +84,10 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
   const parsedQuery = useMemo(() => parseTimetableQuery(searchQuery), [searchQuery])
 
   // Setup schedules & period groups (supports arbitrary day schedule splits)
-  const { scheduleGroups, totalSlotsCount } = useMemo(() => {
-    if (!setup) {
-      return { scheduleGroups: [], weekdayPeriods: [], saturdayPeriods: [], hasSaturday: false, totalSlotsCount: 0 }
-    }
-    const rawAppDays = setup.applicable_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-    const appDays = (
-      Array.isArray(rawAppDays)
-        ? rawAppDays
-        : typeof rawAppDays === "string"
-        ? (() => {
-            try {
-              const p = JSON.parse(rawAppDays)
-              return Array.isArray(p) ? p : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-            } catch {
-              return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-            }
-          })()
-        : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-    ).map((d) => String(d).toUpperCase())
-    const hasSat = appDays.includes("SATURDAY")
-
-    let rawSchedules = setup.schedules
-    if (!rawSchedules && setup.schedules_json) {
-      try {
-        rawSchedules = JSON.parse(setup.schedules_json)
-      } catch {
-        rawSchedules = null
-      }
-    } else if (typeof rawSchedules === "string") {
-      try {
-        rawSchedules = JSON.parse(rawSchedules)
-      } catch {
-        rawSchedules = null
-      }
-    }
-
-    const orderedAppDays = DAY_ORDER.filter((d) => appDays.includes(d))
-
-    let groups = []
-    if (rawSchedules && Array.isArray(rawSchedules) && rawSchedules.length > 0) {
-      const dayScheduleMap = new Map()
-      for (const day of orderedAppDays) {
-        const matchingSched = rawSchedules.find((s) =>
-          (s.days || []).map((d) => String(d).toUpperCase()).includes(day)
-        )
-        if (matchingSched) {
-          dayScheduleMap.set(day, matchingSched)
-        } else {
-          dayScheduleMap.set(day, rawSchedules[0])
-        }
-      }
-
-      let currentGroup = null
-      for (const day of orderedAppDays) {
-        const sched = dayScheduleMap.get(day)
-        const schedId = sched?.id || "sched"
-
-        if (currentGroup && currentGroup.scheduleId === schedId) {
-          currentGroup.days.push(day)
-        } else {
-          const periods = [...(sched?.periods || [])].sort((a, b) => a.period_number - b.period_number)
-          const isAmber =
-            schedId === "saturday" ||
-            day === "SATURDAY" ||
-            (sched?.days || []).length === 1 ||
-            (sched?.days || []).some((d) => String(d).toUpperCase() === "SATURDAY")
-
-          currentGroup = {
-            id: `${schedId}_${day}`,
-            scheduleId: schedId,
-            days: [day],
-            periods,
-            isAmber,
-          }
-          groups.push(currentGroup)
-        }
-      }
-    }
-
-    if (groups.length === 0) {
-      // Fallback
-      const satSched = rawSchedules?.find?.((s) => s.id === "saturday" || (s.days || []).some((d) => String(d).toUpperCase() === "SATURDAY"))
-      const wkSched = rawSchedules?.find?.((s) => s.id !== "saturday" && !(s.days || []).every((d) => String(d).toUpperCase() === "SATURDAY"))
-      const rawWeekdayPeriods = wkSched?.periods || setup.schedules?.[0]?.periods || setup.periods || []
-      const rawSaturdayPeriods = satSched?.periods || setup.schedules?.[1]?.periods || setup.periods || []
-      const sortedWeekday = [...rawWeekdayPeriods].sort((a, b) => a.period_number - b.period_number)
-      const sortedSaturday = [...rawSaturdayPeriods].sort((a, b) => a.period_number - b.period_number)
-
-      groups = [
-        {
-          id: "weekdays",
-          days: orderedAppDays.filter((d) => d !== "SATURDAY"),
-          periods: sortedWeekday,
-          isAmber: false,
-        },
-      ]
-      if (hasSat) {
-        groups.push({
-          id: "saturday",
-          days: ["SATURDAY"],
-          periods: sortedSaturday,
-          isAmber: true,
-        })
-      }
-    }
-
-    const wkGroup = groups.find((g) => !g.isAmber) || groups[0]
-    const satGroup = groups.find((g) => g.days.includes("SATURDAY"))
-
-    let totalSlots = 0
-    groups.forEach((g) => {
-      const teachingCount = g.periods.filter((p) => !isNonTeachingPeriod(p)).length
-      totalSlots += teachingCount * g.days.length
-    })
-
-    return {
-      scheduleGroups: groups,
-      weekdayPeriods: wkGroup?.periods || [],
-      saturdayPeriods: satGroup?.periods || [],
-      hasSaturday: hasSat,
-      totalSlotsCount: totalSlots,
-    }
-  }, [setup])
-
-  // Entry lookup table: key = `${day}_${periodId}` or `${day}_${periodNumber}`
-  const entryLookup = useMemo(() => {
-    const map = new Map()
-    for (const e of entries) {
-      if (e.period_id) {
-        map.set(`${e.day_of_week}_${e.period_id}`, e)
-      }
-      if (e.period_number) {
-        map.set(`${e.day_of_week}_p${e.period_number}`, e)
-      }
-    }
-    return map
-  }, [entries])
+  const scheduleGroups = useMemo(() => groupsForSetup(setup), [setup])
+  const totalSlotsCount = scheduleGroups.reduce((n, g) => n + g.days.length * g.periods.filter(p => !isNonTeachingPeriod(p)).length, 0)
+  const review = entries.filter(e => !lessonPeriod(e, scheduleGroups))
+  const entryLookup = useMemo(() => new Map(entries.map(e => [e.day_of_week + "_" + e.period_id, e])), [entries])
 
   // Map same-day subject frequency for soft pedagogical indicators
   const daySubjectCounts = useMemo(() => {
@@ -341,6 +202,24 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
     return dayColumnWidth + 48 + maxPeriodsCount * basePeriodWidth
   }, [dayColumnWidth, maxPeriodsCount, basePeriodWidth])
 
+  // Resolve Class Teacher Name
+  const classTeacherName = useMemo(() => {
+    if (section.class_teacher_name) return section.class_teacher_name
+    if (section.class_teacher?.name) return section.class_teacher.name
+    if (section.class_teacher && typeof section.class_teacher === "object") {
+      const fn = section.class_teacher.first_name || ""
+      const ln = section.class_teacher.last_name || ""
+      const full = `${fn} ${ln}`.trim()
+      if (full) return full
+    }
+    return null
+  }, [section.class_teacher_name, section.class_teacher])
+
+  // 2-Row Micro-Tokens distribution with "Acad :" and "Non Acad :" headers
+  const { row1Groups, row2Groups } = useMemo(() => {
+    return buildRowGroups(section.subject_stats || [])
+  }, [section.subject_stats])
+
   return (
     <div
       id={`class-section-${section.id}`}
@@ -349,66 +228,202 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
         "hover:shadow-sm"
       )}
     >
-      {/* CARD HEADER */}
-      <div className="flex items-center justify-between gap-4 px-4 py-3 bg-muted/20 border-b border-border/60">
-        {/* Left: Class Section & Wing Title */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-base sm:text-lg font-bold text-foreground tracking-tight">
+      {review.map(e => <div key={e.id} className="flex items-center justify-between gap-2 border-b p-2 text-sm">
+        <span>Review {e.day_of_week.toLowerCase()} · {e.subject?.name} — its period is outside this section’s bell schedule.</span>
+        {isAssignMode && <button type="button" className="underline" onClick={() => onQuickUnassign?.(e, section)}>Remove lesson</button>}
+      </div>)}
+      {/* CARD HEADER: Compact 3-Zone x 2-Line Architecture (~48px height) */}
+      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px] max-h-[52px]">
+        {/* Left Zone: Identity Stack (Class & Section on Line 1, CT on Line 2) */}
+        <div className="flex flex-col justify-center min-w-[150px] max-w-[240px] shrink-0 leading-tight gap-0.5">
+          {/* Line 1: Class Name & Section Badge */}
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="text-sm sm:text-base font-bold text-foreground tracking-tight truncate">
               {section.class_name}
             </span>
             <Badge
               variant="outline"
-              className="bg-primary/90 text-primary-foreground font-bold px-2 py-0.5 text-xs rounded-md shadow-xs"
+              className="bg-primary/90 text-primary-foreground font-bold px-1.5 py-0.2 text-[11px] rounded-md shadow-xs shrink-0"
             >
               {section.name}
             </Badge>
           </div>
+
+          {/* Line 2: Class Teacher Name (Compact CT: <Name>, hovering gives full Class Teacher) */}
+          <div
+            className="flex items-center gap-1 text-[11px] text-muted-foreground truncate font-medium cursor-default"
+            title={classTeacherName ? `Class Teacher: ${classTeacherName}` : "Class Teacher: Not assigned"}
+          >
+            <User className="size-3 text-primary/70 shrink-0" />
+            <span className="truncate">
+              <span className="text-muted-foreground/75 font-normal">CT: </span>
+              <strong className={cn("font-medium", classTeacherName ? "text-foreground/90 font-semibold" : "text-muted-foreground/60 font-normal italic")}>
+                {classTeacherName || "Not assigned"}
+              </strong>
+            </span>
+          </div>
         </div>
 
-        {/* Right: Subjects Targets Strip (Right-aligned, expands to take available width) */}
-        <div className="flex-1 min-w-0 flex items-center justify-end gap-1.5 overflow-x-auto py-0.5 ml-auto scrollbar-none">
-          {section.subject_stats?.map((stat) => {
-            const theme = getSubjectTheme(stat.name)
-            const isUnder = stat.assigned < stat.target
-            const isOver = stat.assigned > stat.target
-            const isMet = stat.assigned === stat.target
-
-            return (
-              <span
-                key={stat.subject_id}
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border shrink-0 transition-colors",
-                  theme.chip,
-                  isUnder && "ring-1 ring-amber-500/40",
-                  isOver && "ring-1 ring-amber-500/60 bg-amber-500/10 text-amber-900 dark:text-amber-200 border-amber-500/40",
-                  isMet && "ring-1 ring-emerald-500/40"
-                )}
-                title={`${stat.name}: ${stat.assigned} assigned / ${stat.target} target weekly periods${isOver ? " (Over Target)" : isMet ? " (Target Met)" : ""}`}
-              >
-                <span className={cn("size-1.5 rounded-full", isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot)} />
-                <span className="font-semibold">{(stat?.name || "Subject").split(" ")[0]}</span>
-                <span className={cn("text-[10px] font-mono", isOver && "font-bold text-amber-700 dark:text-amber-300")}>
-                  {stat?.assigned || 0}/{stat?.target || 0}
-                </span>
-                {isOver && (
-                  <span className="text-[9px] font-bold px-1 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 uppercase">
-                    Over
+        {/* Center Zone: 2-Row Micro-Tokens Matrix (Acad : and Non Acad : headers, subtle subject names) */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1 px-3 border-x border-border/50 overflow-x-auto scrollbar-none">
+          {/* Row 1 */}
+          <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none">
+            {row1Groups.map((group, gIdx) => (
+              <Fragment key={`r1-group-${gIdx}`}>
+                {gIdx > 0 && (
+                  <span className="text-border/80 select-none text-xs font-light px-0.5">
+                    │
                   </span>
                 )}
-              </span>
-            )
-          })}
+                <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider shrink-0 select-none pr-0.5">
+                  {group.label}
+                </span>
+                {group.items.map((item, idx) => {
+                  const theme = getSubjectTheme(item.name)
+                  const shortName = getShortSubjectName(item.name, item.code)
 
-          {/* Completion Progress Bar */}
-          <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground font-medium ml-2 shrink-0 border-l border-border/60 pl-3">
-            <span>{assignedSlotsCount}/{totalSlotsCount}</span>
-            <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
+                  const isOver = item.assigned > item.target
+                  const isMet = item.assigned === item.target
+
+                  return (
+                    <span
+                      key={`r1-${item.subject_id || idx}`}
+                      className="inline-flex items-center gap-1 text-[11px] leading-none whitespace-nowrap shrink-0 select-none"
+                    >
+                      {group.isAcademic ? (
+                        <span
+                          className={cn(
+                            "size-1.5 rounded-full shrink-0",
+                            isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
+                          )}
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            "text-[9px] leading-none shrink-0 font-bold",
+                            isOver
+                              ? "text-amber-500"
+                              : isMet
+                              ? "text-emerald-500"
+                              : "text-amber-600/90 dark:text-amber-400/90"
+                          )}
+                        >
+                          ✦
+                        </span>
+                      )}
+                      <span
+                        className={cn(
+                          "font-normal text-muted-foreground/90 hover:text-foreground/90 transition-colors",
+                          isOver && "text-amber-700 dark:text-amber-300 font-medium"
+                        )}
+                      >
+                        {shortName}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-[10px] font-mono text-muted-foreground/75",
+                          isOver && "font-semibold text-amber-700 dark:text-amber-300"
+                        )}
+                      >
+                        {item.assigned || 0}/{item.target || 0}
+                      </span>
+                    </span>
+                  )
+                })}
+              </Fragment>
+            ))}
+          </div>
+
+          {/* Row 2 */}
+          <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none">
+            {row2Groups.map((group, gIdx) => (
+              <Fragment key={`r2-group-${gIdx}`}>
+                {gIdx > 0 && (
+                  <span className="text-border/80 select-none text-xs font-light px-0.5">
+                    │
+                  </span>
+                )}
+                <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider shrink-0 select-none pr-0.5">
+                  {group.label}
+                </span>
+                {group.items.map((item, idx) => {
+                  const theme = getSubjectTheme(item.name)
+                  const shortName = getShortSubjectName(item.name, item.code)
+
+                  const isOver = item.assigned > item.target
+                  const isMet = item.assigned === item.target
+
+                  return (
+                    <span
+                      key={`r2-${item.subject_id || idx}`}
+                      className="inline-flex items-center gap-1 text-[11px] leading-none whitespace-nowrap shrink-0 select-none"
+                    >
+                      {group.isAcademic ? (
+                        <span
+                          className={cn(
+                            "size-1.5 rounded-full shrink-0",
+                            isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
+                          )}
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            "text-[9px] leading-none shrink-0 font-bold",
+                            isOver
+                              ? "text-amber-500"
+                              : isMet
+                              ? "text-emerald-500"
+                              : "text-amber-600/90 dark:text-amber-400/90"
+                          )}
+                        >
+                          ✦
+                        </span>
+                      )}
+                      <span
+                        className={cn(
+                          "font-normal text-muted-foreground/90 hover:text-foreground/90 transition-colors",
+                          isOver && "text-amber-700 dark:text-amber-300 font-medium"
+                        )}
+                      >
+                        {shortName}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-[10px] font-mono text-muted-foreground/75",
+                          isOver && "font-semibold text-amber-700 dark:text-amber-300"
+                        )}
+                      >
+                        {item.assigned || 0}/{item.target || 0}
+                      </span>
+                    </span>
+                  )
+                })}
+              </Fragment>
+            ))}
+          </div>
+        </div>
+
+        {/* Right Zone: Progress Stack (Assigned Count on Line 1, Progress Bar on Line 2) */}
+        <div className="flex flex-col items-end justify-center shrink-0 min-w-[125px] leading-tight gap-1 pl-1">
+          {/* Line 1: Monospace Assigned Ratio */}
+          <div className="text-[11px] font-mono text-muted-foreground font-medium">
+            Assigned:{" "}
+            <strong className="text-foreground font-semibold">
+              {assignedSlotsCount}/{totalSlotsCount}
+            </strong>
+          </div>
+
+          {/* Line 2: Slim Progress Bar + Percentage */}
+          <div className="flex items-center gap-1.5">
+            <div className="w-16 sm:w-20 h-1.5 rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-primary rounded-full transition-all duration-300"
                 style={{ width: `${completionPct}%` }}
               />
             </div>
+            <span className="text-[10px] font-mono font-medium text-muted-foreground">
+              {completionPct}%
+            </span>
           </div>
         </div>
       </div>
@@ -453,8 +468,6 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
                     }
 
                     const isNonTeaching = isNonTeachingPeriod(period)
-                    const startFmt = formatTime12h(period.start_time)
-                    const endFmt = formatTime12h(period.end_time)
                     const duration = calculateDuration(period.start_time, period.end_time)
                     // Keep short label in header as requested: "(not the headers only body cells)"
                     const periodHeaderLabel = formatPeriodShortLabel(period, group.periods)
@@ -469,41 +482,10 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
                             : "bg-primary/5 dark:bg-primary/10"
                         )}
                       >
-                        {/* Period label & duration */}
-                        <div className="flex items-center justify-center min-w-0 max-w-full px-1 text-center truncate">
-                          <span
-                            className={cn(
-                              "text-xs font-semibold text-muted-foreground truncate",
-                              isNonTeaching && "font-bold tracking-wider"
-                            )}
-                            title={periodHeaderLabel}
-                          >
-                            {periodHeaderLabel}
-                          </span>
-                          {duration && (
-                            <span className="text-[10px] ml-1.5 font-normal text-muted-foreground shrink-0">
-                              {duration}
-                            </span>
-                          )}
+                        <div className="text-center text-xs leading-tight" title={duration}>
+                          <strong>{periodHeaderLabel}</strong>
+                          <div className="text-muted-foreground">{period.start_time}–{period.end_time}</div>
                         </div>
-
-                        {/* Start time pill for first column */}
-                        {index === 0 && startFmt && (
-                          <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 pointer-events-none">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background shadow-2xs whitespace-nowrap text-muted-foreground">
-                              {startFmt}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* End time pill on divider */}
-                        {endFmt && (
-                          <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 pointer-events-none">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background shadow-2xs whitespace-nowrap text-muted-foreground">
-                              {endFmt}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     )
                   })}
@@ -556,7 +538,6 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
 
                         const entry =
                           entryLookup.get(`${day}_${period.id}`) ||
-                          entryLookup.get(`${day}_p${period.period_number}`) ||
                           null
 
                         const isBreak = Boolean(period.is_break)
