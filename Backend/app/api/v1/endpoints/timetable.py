@@ -17,6 +17,7 @@ from app.schemas.common import MessageResponse
 from app.schemas.timetable import (
     BatchSetupAssignmentsRequest,
     BulkSlotAssignRequest,
+    MoveLessonRequest,
     ClassWiseTimetableResponse,
     ConflictCheckRequest,
     ConflictCheckResponse,
@@ -798,6 +799,17 @@ def check_conflict(
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
     return service.check_slot_conflict(school_id=school_id, data=data)
+
+
+@router.post("/entries/{entry_id}/move", summary="Move or swap lessons atomically")
+def move_lesson(
+    entry_id: UUID, data: MoveLessonRequest,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    if not current_user.school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.move_lesson(current_user.school_id, entry_id, data, current_user.id)
 
 
 @router.post(

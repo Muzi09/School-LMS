@@ -391,6 +391,17 @@ class TimetableEntryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MoveLessonRequest(BaseModel):
+    timetable_id: UUID
+    section_id: UUID
+    day_of_week: DayOfWeek
+    period_id: UUID
+    expected_target_id: Optional[UUID] = None
+    source_section_id: UUID
+    source_day: DayOfWeek
+    source_period_id: UUID
+
+
 class BulkSlotAssignRequest(BaseModel):
     timetable_id: UUID
     section_id: UUID

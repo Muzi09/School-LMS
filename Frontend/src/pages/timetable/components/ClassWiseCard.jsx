@@ -1,3 +1,4 @@
+import { scheduleGroups as groupsForSetup, lessonPeriod } from "../sectionSchedule"
 import React, { useMemo, useRef, memo, Fragment } from "react"
 import {
   AlertTriangle,
@@ -10,7 +11,7 @@ import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
 import { getShortSubjectName, isAcademicSubject, buildRowGroups } from "../subjectShortName"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
-import { formatPeriodShortLabel, isNonTeachingPeriod, DAY_ORDER, sortDays } from "../bellTiming/validators"
+import { formatPeriodShortLabel, isNonTeachingPeriod } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
 
 const WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
@@ -21,17 +22,6 @@ const DAY_LABELS = {
   THURSDAY: "THU",
   FRIDAY: "FRI",
   SATURDAY: "SAT",
-}
-
-function formatTime12h(timeStr) {
-  if (!timeStr || typeof timeStr !== "string") return ""
-  const parts = timeStr.split(":")
-  if (parts.length < 2) return timeStr
-  const [h, m] = parts.map(Number)
-  if (isNaN(h)) return timeStr
-  const period = h >= 12 ? "PM" : "AM"
-  const hour12 = h % 12 === 0 ? 12 : h % 12
-  return m === 0 ? `${hour12} ${period}` : `${hour12}:${String(m || 0).padStart(2, "0")} ${period}`
 }
 
 function calculateDuration(startTime, endTime) {
@@ -72,139 +62,10 @@ export const ClassWiseCard = memo(function ClassWiseCard({
   const parsedQuery = useMemo(() => parseTimetableQuery(searchQuery), [searchQuery])
 
   // Setup schedules & period groups (supports arbitrary day schedule splits)
-  const { scheduleGroups, weekdayPeriods, saturdayPeriods, hasSaturday, totalSlotsCount } = useMemo(() => {
-    if (!setup) {
-      return { scheduleGroups: [], weekdayPeriods: [], saturdayPeriods: [], hasSaturday: false, totalSlotsCount: 0 }
-    }
-    const rawAppDays = setup.applicable_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-    const appDays = (
-      Array.isArray(rawAppDays)
-        ? rawAppDays
-        : typeof rawAppDays === "string"
-        ? (() => {
-            try {
-              const p = JSON.parse(rawAppDays)
-              return Array.isArray(p) ? p : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-            } catch {
-              return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-            }
-          })()
-        : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-    ).map((d) => String(d).toUpperCase())
-    const hasSat = appDays.includes("SATURDAY")
-
-    let rawSchedules = setup.schedules
-    if (!rawSchedules && setup.schedules_json) {
-      try {
-        rawSchedules = JSON.parse(setup.schedules_json)
-      } catch {}
-    } else if (typeof rawSchedules === "string") {
-      try {
-        rawSchedules = JSON.parse(rawSchedules)
-      } catch {}
-    }
-
-    const orderedAppDays = DAY_ORDER.filter((d) => appDays.includes(d))
-
-    let groups = []
-    if (rawSchedules && Array.isArray(rawSchedules) && rawSchedules.length > 0) {
-      const dayScheduleMap = new Map()
-      for (const day of orderedAppDays) {
-        const matchingSched = rawSchedules.find((s) =>
-          (s.days || []).map((d) => String(d).toUpperCase()).includes(day)
-        )
-        if (matchingSched) {
-          dayScheduleMap.set(day, matchingSched)
-        } else {
-          dayScheduleMap.set(day, rawSchedules[0])
-        }
-      }
-
-      let currentGroup = null
-      for (const day of orderedAppDays) {
-        const sched = dayScheduleMap.get(day)
-        const schedId = sched?.id || "sched"
-
-        if (currentGroup && currentGroup.scheduleId === schedId) {
-          currentGroup.days.push(day)
-        } else {
-          const periods = [...(sched?.periods || [])].sort((a, b) => a.period_number - b.period_number)
-          const isAmber =
-            schedId === "saturday" ||
-            day === "SATURDAY" ||
-            (sched?.days || []).length === 1 ||
-            (sched?.days || []).some((d) => String(d).toUpperCase() === "SATURDAY")
-
-          currentGroup = {
-            id: `${schedId}_${day}`,
-            scheduleId: schedId,
-            days: [day],
-            periods,
-            isAmber,
-          }
-          groups.push(currentGroup)
-        }
-      }
-    }
-
-    if (groups.length === 0) {
-      // Fallback
-      const satSched = rawSchedules?.find?.((s) => s.id === "saturday" || (s.days || []).some((d) => String(d).toUpperCase() === "SATURDAY"))
-      const wkSched = rawSchedules?.find?.((s) => s.id !== "saturday" && !(s.days || []).every((d) => String(d).toUpperCase() === "SATURDAY"))
-      const rawWeekdayPeriods = wkSched?.periods || setup.schedules?.[0]?.periods || setup.periods || []
-      const rawSaturdayPeriods = satSched?.periods || setup.schedules?.[1]?.periods || setup.periods || []
-      const sortedWeekday = [...rawWeekdayPeriods].sort((a, b) => a.period_number - b.period_number)
-      const sortedSaturday = [...rawSaturdayPeriods].sort((a, b) => a.period_number - b.period_number)
-
-      groups = [
-        {
-          id: "weekdays",
-          days: orderedAppDays.filter((d) => d !== "SATURDAY"),
-          periods: sortedWeekday,
-          isAmber: false,
-        },
-      ]
-      if (hasSat) {
-        groups.push({
-          id: "saturday",
-          days: ["SATURDAY"],
-          periods: sortedSaturday,
-          isAmber: true,
-        })
-      }
-    }
-
-    const wkGroup = groups.find((g) => !g.isAmber) || groups[0]
-    const satGroup = groups.find((g) => g.days.includes("SATURDAY"))
-
-    let totalSlots = 0
-    groups.forEach((g) => {
-      const teachingCount = g.periods.filter((p) => !isNonTeachingPeriod(p)).length
-      totalSlots += teachingCount * g.days.length
-    })
-
-    return {
-      scheduleGroups: groups,
-      weekdayPeriods: wkGroup?.periods || [],
-      saturdayPeriods: satGroup?.periods || [],
-      hasSaturday: hasSat,
-      totalSlotsCount: totalSlots,
-    }
-  }, [setup])
-
-  // Entry lookup table: key = `${day}_${periodId}` or `${day}_${periodNumber}`
-  const entryLookup = useMemo(() => {
-    const map = new Map()
-    for (const e of entries) {
-      if (e.period_id) {
-        map.set(`${e.day_of_week}_${e.period_id}`, e)
-      }
-      if (e.period_number) {
-        map.set(`${e.day_of_week}_p${e.period_number}`, e)
-      }
-    }
-    return map
-  }, [entries])
+  const scheduleGroups = useMemo(() => groupsForSetup(setup), [setup])
+  const totalSlotsCount = scheduleGroups.reduce((n, g) => n + g.days.length * g.periods.filter(p => !isNonTeachingPeriod(p)).length, 0)
+  const review = entries.filter(e => !lessonPeriod(e, scheduleGroups))
+  const entryLookup = useMemo(() => new Map(entries.map(e => [e.day_of_week + "_" + e.period_id, e])), [entries])
 
   // Map same-day subject frequency for soft pedagogical indicators
   const daySubjectCounts = useMemo(() => {
@@ -346,6 +207,10 @@ export const ClassWiseCard = memo(function ClassWiseCard({
         "hover:shadow-sm"
       )}
     >
+      {review.map(e => <div key={e.id} className="flex items-center justify-between gap-2 border-b p-2 text-sm">
+        <span>Review {e.day_of_week.toLowerCase()} · {e.subject?.name} — its period is outside this section’s bell schedule.</span>
+        {isAssignMode && <button type="button" className="underline" onClick={() => onQuickUnassign?.(e, section)}>Remove lesson</button>}
+      </div>)}
       {/* CARD HEADER: Compact 3-Zone x 2-Line Architecture (~48px height) */}
       <div className="flex items-center justify-between gap-3 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px] max-h-[52px]">
         {/* Left Zone: Identity Stack (Class & Section on Line 1, CT on Line 2) */}
@@ -581,10 +446,7 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                       )
                     }
 
-                    const isBreak = Boolean(period.is_break)
                     const isNonTeaching = isNonTeachingPeriod(period)
-                    const startFmt = formatTime12h(period.start_time)
-                    const endFmt = formatTime12h(period.end_time)
                     const duration = calculateDuration(period.start_time, period.end_time)
                     // Keep short label in header as requested: "(not the headers only body cells)"
                     const periodHeaderLabel = formatPeriodShortLabel(period, group.periods)
@@ -599,41 +461,10 @@ export const ClassWiseCard = memo(function ClassWiseCard({
                             : "bg-primary/5 dark:bg-primary/10"
                         )}
                       >
-                        {/* Period label & duration */}
-                        <div className="flex items-center justify-center min-w-0 max-w-full px-1 text-center truncate">
-                          <span
-                            className={cn(
-                              "text-xs font-semibold text-muted-foreground truncate",
-                              isNonTeaching && "font-bold tracking-wider"
-                            )}
-                            title={periodHeaderLabel}
-                          >
-                            {periodHeaderLabel}
-                          </span>
-                          {duration && (
-                            <span className="text-[10px] ml-1.5 font-normal text-muted-foreground shrink-0">
-                              {duration}
-                            </span>
-                          )}
+                        <div className="text-center text-xs leading-tight" title={duration}>
+                          <strong>{periodHeaderLabel}</strong>
+                          <div className="text-muted-foreground">{period.start_time}–{period.end_time}</div>
                         </div>
-
-                        {/* Start time pill for first column */}
-                        {index === 0 && startFmt && (
-                          <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 pointer-events-none">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background shadow-2xs whitespace-nowrap text-muted-foreground">
-                              {startFmt}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* End time pill on divider */}
-                        {endFmt && (
-                          <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 pointer-events-none">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium border border-border/80 bg-background shadow-2xs whitespace-nowrap text-muted-foreground">
-                              {endFmt}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     )
                   })}
@@ -686,7 +517,6 @@ export const ClassWiseCard = memo(function ClassWiseCard({
 
                         const entry =
                           entryLookup.get(`${day}_${period.id}`) ||
-                          entryLookup.get(`${day}_p${period.period_number}`) ||
                           null
 
                         const isBreak = Boolean(period.is_break)

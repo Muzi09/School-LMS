@@ -218,3 +218,7 @@ export const timetableService = {
 }
 
 export default timetableService
+
+export function moveLessonApi({ entryId, ...target }) {
+  return apiClient.post(`/timetable/entries/${entryId}/move`, target)
+}

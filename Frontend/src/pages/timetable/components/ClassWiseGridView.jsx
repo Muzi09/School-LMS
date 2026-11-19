@@ -1,3 +1,4 @@
+import { setupForSection, scheduleGroups, periodsOn, lessonPeriod } from "../sectionSchedule"
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   CalendarDays,
@@ -34,9 +35,10 @@ import {
   useBulkAssignSlot,
   useCreateTimetableEntry,
   useDeleteTimetableEntry,
+  useMoveLesson,
 } from "@/hooks/useTimetable"
 import { parseTimetableQuery, sectionMatchesQuery } from "../searchUtils"
-import { isNonTeachingPeriod, sortDays } from "../bellTiming/validators"
+import { isNonTeachingPeriod } from "../bellTiming/validators"
 import { getIsMac, formatTime12, formatClassSection } from "../timetableUtils"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -82,6 +84,7 @@ export function ClassWiseGridView({
   }, [isAssignMode])
 
   const bulkAssignMutation = useBulkAssignSlot()
+  const moveLesson = useMoveLesson()
   const deleteEntryMutation = useDeleteTimetableEntry()
   const createEntryMutation = useCreateTimetableEntry()
 
@@ -139,119 +142,10 @@ export function ClassWiseGridView({
     return map
   }, [setups, entries])
 
-  // Helper to determine the split days group for a specific section and day
-  const getSplitDaysForSectionAndDay = useCallback(
-    (sec, day) => {
-      if (!sec) return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-      const secSetupId = sec.setup_id || sec.setupId
-      let setup = secSetupId ? setupMap.get(secSetupId) || setupMap.get(String(secSetupId)) : null
-      if (!setup) {
-        setup = setups.find((s) =>
-          (s.assigned_section_ids || []).some(
-            (id) => String(id) === String(sec.id)
-          )
-        )
-      }
-      if (!setup) {
-        setup = setups?.[0]
-      }
-      if (!setup) return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-
-      let rawSchedules = setup.schedules
-      if (!rawSchedules && setup.schedules_json) {
-        try {
-          rawSchedules = JSON.parse(setup.schedules_json)
-        } catch {}
-      } else if (typeof rawSchedules === "string") {
-        try {
-          rawSchedules = JSON.parse(rawSchedules)
-        } catch {}
-      }
-
-      const rawAppDays = setup.applicable_days || [
-        "MONDAY",
-        "TUESDAY",
-        "WEDNESDAY",
-        "THURSDAY",
-        "FRIDAY",
-      ]
-      const appDays = (
-        Array.isArray(rawAppDays)
-          ? rawAppDays
-          : typeof rawAppDays === "string"
-          ? (() => {
-              try {
-                const p = JSON.parse(rawAppDays)
-                return Array.isArray(p) ? p : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-              } catch {
-                return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-              }
-            })()
-          : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-      ).map((d) => String(d).toUpperCase())
-
-      const dayUpper = day ? String(day).toUpperCase() : ""
-
-      if (rawSchedules && Array.isArray(rawSchedules) && rawSchedules.length > 0) {
-        const matchingSched = rawSchedules.find((s) =>
-          (s.days || []).map((d) => String(d).toUpperCase()).includes(dayUpper)
-        )
-        if (matchingSched && matchingSched.days && matchingSched.days.length > 0) {
-          const matched = matchingSched.days.map((d) => String(d).toUpperCase())
-          const filtered = matched.filter((d) => appDays.length === 0 || appDays.includes(d))
-          return sortDays(filtered.length > 0 ? filtered : matched)
-        }
-      }
-
-      if (dayUpper === "SATURDAY") return ["SATURDAY"]
-      return sortDays(appDays.filter((d) => d !== "SATURDAY"))
-    },
-    [setupMap, setups]
-  )
-
-  // Get all active schedule days for a section (e.g. Mon-Sat)
-  const getAllDaysForSection = useCallback(
-    (sec) => {
-      let setup = null
-      if (sec?.id && setupMap.has(sec.id)) {
-        setup = setupMap.get(sec.id)
-      } else if (sec) {
-        setup = setups?.find((s) =>
-          (s.assigned_section_ids || []).some(
-            (id) => String(id) === String(sec.id)
-          )
-        )
-      }
-      if (!setup) setup = setups?.[0]
-      const rawAppDays = setup?.applicable_days || [
-        "MONDAY",
-        "TUESDAY",
-        "WEDNESDAY",
-        "THURSDAY",
-        "FRIDAY",
-        "SATURDAY",
-      ]
-      return sortDays(
-        (
-          Array.isArray(rawAppDays)
-            ? rawAppDays
-            : typeof rawAppDays === "string"
-            ? (() => {
-                try {
-                  const p = JSON.parse(rawAppDays)
-                  return Array.isArray(p)
-                    ? p
-                    : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-                } catch {
-                  return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-                }
-              })()
-            : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-        ).map((d) => String(d).toUpperCase())
-      )
-    },
-    [setupMap, setups]
-  )
+  const groupsFor = useCallback(section => scheduleGroups(setupForSection(section, setups)), [setups])
+  const getSplitDaysForSectionAndDay = useCallback((section, day) =>
+    groupsFor(section).find(group => group.days.includes(day))?.days || [], [groupsFor])
+  const getAllDaysForSection = useCallback(section => groupsFor(section).flatMap(group => group.days), [groupsFor])
 
   // Filter wings according to selectedWingId (when actively searching, search across all wings)
   const activeWings = useMemo(() => {
@@ -339,62 +233,7 @@ export function ClassWiseGridView({
       secObjMap.set(String(s.id), s)
     }
 
-    const getEffectivePeriod = (e) => {
-      if (!e) return null
-
-      // Fast-path: O(1) hash map lookup
-      const direct = periodMap.get(e.period_id) || periodMap.get(String(e.period_id)) || e.period
-      if (direct?.start_time && direct?.end_time) {
-        return direct
-      }
-
-      const sec = secObjMap.get(e.section_id) || secObjMap.get(String(e.section_id)) || e.section
-      const secSetup =
-        (sec?.setup_id && (setupMap.get(sec.setup_id) || setupMap.get(String(sec.setup_id)))) ||
-        setups.find((s) => (s.assigned_section_ids || []).some((id) => String(id) === String(sec?.id || e.section_id))) ||
-        setups[0]
-
-      if (secSetup) {
-        let rawSchedules = secSetup.schedules
-        if (!rawSchedules && secSetup.schedules_json) {
-          try {
-            rawSchedules = JSON.parse(secSetup.schedules_json)
-          } catch {}
-        }
-        const dayUpper = (e.day_of_week || "").toUpperCase()
-        const targetPNum = e.period_number ?? e.period?.period_number
-
-        if (Array.isArray(rawSchedules) && rawSchedules.length > 0) {
-          const matchingSched = rawSchedules.find((s) =>
-            (s.days || []).map((d) => String(d).toUpperCase()).includes(dayUpper)
-          ) || rawSchedules[0]
-
-          if (matchingSched?.periods) {
-            const foundInSched = matchingSched.periods.find(
-              (p) =>
-                (p.id && (p.id === e.period_id || String(p.id) === String(e.period_id))) ||
-                (targetPNum != null && p.period_number === targetPNum)
-            )
-            if (foundInSched && foundInSched.start_time && foundInSched.end_time) {
-              return foundInSched
-            }
-          }
-        }
-
-        if (secSetup.periods) {
-          const foundInSetup = secSetup.periods.find(
-            (p) =>
-              (p.id && (p.id === e.period_id || String(p.id) === String(e.period_id))) ||
-              (targetPNum != null && p.period_number === targetPNum)
-          )
-          if (foundInSetup && foundInSetup.start_time && foundInSetup.end_time) {
-            return foundInSetup
-          }
-        }
-      }
-
-      return direct
-    }
+    const getEffectivePeriod = e => lessonPeriod(e, groupsFor(secObjMap.get(e.section_id)))
 
     for (const [key, tEntries] of teacherDayMap.entries()) {
       if (tEntries.length < 2) continue
@@ -488,7 +327,7 @@ export function ClassWiseGridView({
     }
 
     return { conflictMap: conflicts, conflictIncidents: incidents }
-  }, [entries, periodMap, allFlattenedSections, setupMap, setups])
+  }, [entries, allFlattenedSections, groupsFor])
 
   // Filter classes & sections based on search query
   const filteredWings = useMemo(() => {
@@ -713,56 +552,20 @@ export function ClassWiseGridView({
   }, [conflictIncidents, allFlattenedSections, periodMap, timetable?.id])
 
   // Total expected slots across all active sections
-  const totalSlotsCount = useMemo(() => {
-    let total = 0
-    for (const sec of allFlattenedSections) {
-      if (sec.total_slots) {
-        total += sec.total_slots
-      } else {
-        const secSetupId = sec.setup_id || timetableData?.setups?.[0]?.id
-        const secSetup = setupMap.get(secSetupId) || timetableData?.setups?.[0]
-        if (secSetup) {
-          const appDays = (secSetup.applicable_days || [
-            "MONDAY",
-            "TUESDAY",
-            "WEDNESDAY",
-            "THURSDAY",
-            "FRIDAY",
-            "SATURDAY",
-          ]).filter((d) => !secSetup.break_days?.includes(d))
-          const secPeriods = secSetup.schedules?.[0]?.periods || secSetup.periods || []
-          const teachingCount = secPeriods.filter((p) => !isNonTeachingPeriod(p)).length
-          total += teachingCount * appDays.length
-        }
-      }
-    }
-    return total
-  }, [allFlattenedSections, setupMap, timetableData])
-
-  // Total unassigned count
-  const totalUnassignedCount = useMemo(() => {
-    return allFlattenedSections.reduce((acc, s) => acc + (s.unassigned_slots || 0), 0)
-  }, [allFlattenedSections])
+  const totalSlotsCount = useMemo(() => allFlattenedSections.reduce((count, section) =>
+    count + groupsFor(section).reduce((n, group) =>
+      n + group.days.length * group.periods.filter(p => !isNonTeachingPeriod(p)).length, 0), 0),
+  [allFlattenedSections, groupsFor])
 
   const totalAssignedSlotsCount = useMemo(() => {
-    const activeSectionIds = new Set(allFlattenedSections.map((s) => s.id))
-    return entries.filter((e) => {
-      if (!activeSectionIds.has(e.section_id)) return false
-      if (!e.subject_id && !e.subject) return false
-      const p = periodMap.get(e.period_id)
-      if (p && isNonTeachingPeriod(p)) return false
-      return true
+    const groupsBySection = new Map(allFlattenedSections.map(sec => [sec.id, groupsFor(sec)]))
+    return entries.filter(e => {
+      const period = lessonPeriod(e, groupsBySection.get(e.section_id) || [])
+      return (e.subject_id || e.subject) && period && !isNonTeachingPeriod(period)
     }).length
-  }, [allFlattenedSections, entries, periodMap])
-
-  const completionPct = useMemo(() => {
-    if (totalAssignedSlotsCount === 0) return 0
-    if (totalSlotsCount > 0) {
-      return Math.min(100, Math.round((totalAssignedSlotsCount / totalSlotsCount) * 100))
-    }
-    const total = totalAssignedSlotsCount + totalUnassignedCount
-    return total > 0 ? Math.min(100, Math.round((totalAssignedSlotsCount / total) * 100)) : 0
-  }, [totalSlotsCount, totalAssignedSlotsCount, totalUnassignedCount])
+  }, [allFlattenedSections, entries, groupsFor])
+  const totalUnassignedCount = Math.max(0, totalSlotsCount - totalAssignedSlotsCount)
+  const completionPct = totalSlotsCount ? Math.min(100, Math.round(100 * totalAssignedSlotsCount / totalSlotsCount)) : 0
 
   const totalConflictsCount = conflictIncidents.length
 
@@ -933,8 +736,7 @@ export function ClassWiseGridView({
         (e) =>
           String(e.section_id) === String(target.sectionId) &&
           String(e.day_of_week) === String(target.day) &&
-          (String(e.period_id) === String(target.periodId) ||
-            String(e.period_number) === String(target.periodNumber)) &&
+          String(e.period_id) === String(target.periodId) &&
           String(e.subject_id || e.subject?.id) === String(target.subjectId)
       )
 
@@ -1005,20 +807,16 @@ export function ClassWiseGridView({
       const unassignPromise = previousPromise
         .catch(() => {})
         .then(async () => {
-          // Send coordinate-based unassign to server so it cleans up the slot regardless of temporary or optimistic entry IDs
+          if (entryId && !String(entryId).startsWith("opt_")) {
+            return deleteEntryMutation.mutateAsync({ entryId, sectionId: secId })
+          }
+          if (entryId && !String(entryId).startsWith("opt_")) {
+            return deleteEntryMutation.mutateAsync({ entryId, sectionId: secId })
+          }
           if (timetable?.id && secId && targetDay && targetPeriodId) {
             return bulkAssignMutation.mutateAsync({
-              timetable_id: timetable.id,
-              section_id: secId,
-              day_of_week: targetDay,
-              period_id: targetPeriodId,
-              subject_id: null,
-              scope: "SLOT",
-            })
-          } else if (entryId && !String(entryId).startsWith("opt_")) {
-            return deleteEntryMutation.mutateAsync({
-              entryId,
-              sectionId: secId,
+              timetable_id: timetable.id, section_id: secId, day_of_week: targetDay,
+              period_id: targetPeriodId, subject_id: null, scope: "SLOT",
             })
           }
         })
@@ -1088,44 +886,19 @@ export function ClassWiseGridView({
           })
           toast.success("Slot copied")
         } else {
-          // Move or Swap
-          // 1. Assign source subject & teacher to target slot
-          await bulkAssignMutation.mutateAsync({
-            timetable_id: timetable.id,
-            section_id: targetSlot.section.id,
-            day_of_week: targetSlot.day,
-            period_id: targetSlot.period.id,
-            subject_id: srcEntry.subject.id,
-            teacher_user_id: srcEntry.teacher?.id || null,
-            scope: "SLOT",
+          await moveLesson.mutateAsync({
+            entryId: srcEntry.id, timetable_id: timetable.id,
+            source_section_id: sourceSlot.section.id, source_day: sourceSlot.day, source_period_id: sourceSlot.period.id,
+            section_id: targetSlot.section.id, day_of_week: targetSlot.day, period_id: targetSlot.period.id,
+            expected_target_id: tgtEntry?.id || null,
           })
-
-          if (tgtEntry) {
-            // Swap: assign target's old subject & teacher to source slot
-            await bulkAssignMutation.mutateAsync({
-              timetable_id: timetable.id,
-              section_id: sourceSlot.section.id,
-              day_of_week: sourceSlot.day,
-              period_id: sourceSlot.period.id,
-              subject_id: tgtEntry.subject.id,
-              teacher_user_id: tgtEntry.teacher?.id || null,
-              scope: "SLOT",
-            })
-            toast.success("Slots swapped")
-          } else {
-            // Delete original source entry
-            await deleteEntryMutation.mutateAsync({
-              entryId: srcEntry.id,
-              sectionId: sourceSlot.section.id,
-            })
-            toast.success("Slot moved")
-          }
+          toast.success(tgtEntry ? "Slots swapped" : "Slot moved")
         }
       } catch (err) {
         toast.error("Failed to move slot: " + (err.message || ""))
       }
     },
-    [timetable, bulkAssignMutation, deleteEntryMutation]
+    [timetable, bulkAssignMutation, moveLesson]
   )
 
   // Undo action
@@ -1230,55 +1003,11 @@ export function ClassWiseGridView({
   ])
 
   // Helper to get applicable days, sorted periods, and teaching-only periods (skipping non-teaching slots)
-  const getSectionScheduleAndTeachingPeriods = useCallback(
-    (sec, day) => {
-      const secSetupId = sec.setup_id || timetableData?.setups?.[0]?.id
-      const secSetup = setupMap.get(secSetupId) || timetableData?.setups?.[0]
-      if (!secSetup) return { appDays: [], periods: [], teachingPeriods: [] }
-
-      const appDays = secSetup.applicable_days || [
-        "MONDAY",
-        "TUESDAY",
-        "WEDNESDAY",
-        "THURSDAY",
-        "FRIDAY",
-      ]
-
-      let periods = []
-      if (secSetup.schedules && secSetup.schedules.length > 0) {
-        const matchedSched = secSetup.schedules.find((s) => s.days?.includes(day))
-        if (matchedSched) {
-          periods = [...(matchedSched.periods || [])].sort(
-            (a, b) => a.period_number - b.period_number
-          )
-        }
-      }
-
-      if (periods.length === 0) {
-        const isSat = day === "SATURDAY"
-        const satSched = secSetup.schedules?.find(
-          (s) => s.id === "saturday" || s.days?.includes("SATURDAY")
-        )
-        const wkSched = secSetup.schedules?.find(
-          (s) => s.id !== "saturday" && !s.days?.every((d) => d === "SATURDAY")
-        )
-        const rawWeekdayPeriods = wkSched?.periods || secSetup.periods || []
-        const rawSaturdayPeriods = satSched?.periods || secSetup.periods || []
-        const sortedWeekday = [...rawWeekdayPeriods].sort(
-          (a, b) => a.period_number - b.period_number
-        )
-        const sortedSaturday = [...rawSaturdayPeriods].sort(
-          (a, b) => a.period_number - b.period_number
-        )
-        periods = isSat ? sortedSaturday : sortedWeekday
-      }
-
-      // Explicitly skip Recess, Activity, Extra-curricular, Assembly, Break
-      const teachingPeriods = periods.filter((p) => !isNonTeachingPeriod(p))
-      return { appDays, periods, teachingPeriods }
-    },
-    [setupMap, timetableData]
-  )
+  const getSectionScheduleAndTeachingPeriods = useCallback((section, day) => {
+    const groups = groupsFor(section)
+    const periods = periodsOn(groups, day)
+    return { appDays: groups.flatMap(g => g.days), periods, teachingPeriods: periods.filter(p => !isNonTeachingPeriod(p)) }
+  }, [groupsFor])
 
   // Keyboard arrow and class jumping navigation between teaching slots
   const handleArrowNavigation = useCallback(
@@ -1297,8 +1026,7 @@ export function ClassWiseGridView({
               (e) =>
                 e.section_id === firstSec.id &&
                 e.day_of_week === firstDay &&
-                ((e.period_id && e.period_id === targetPeriod.id) ||
-                  e.period_number === targetPeriod.period_number)
+                String(e.period_id) === String(targetPeriod.id)
             ) || null
           const nextSlotKey = `${firstSec.id}_${firstDay}_${targetPeriod.id || targetPeriod.period_number}`
           setSelectedSlotKey(nextSlotKey)
@@ -1467,8 +1195,7 @@ export function ClassWiseGridView({
           (e) =>
             e.section_id === targetSec.id &&
             e.day_of_week === targetDay &&
-            ((e.period_id && e.period_id === targetPeriod.id) ||
-              e.period_number === targetPeriod.period_number)
+            String(e.period_id) === String(targetPeriod.id)
         ) || null
 
       const nextSlotKey = `${targetSec.id}_${targetDay}_${targetPeriod.id || targetPeriod.period_number}`
@@ -1513,14 +1240,14 @@ export function ClassWiseGridView({
       const isMac = getIsMac()
       const isAnyModifier = e.ctrlKey || e.metaKey
 
-      // 1. Undo: Windows Ctrl+Z | Mac ⌘+Z
+      // 1. Undo: Windows Ctrl+Z | Mac Ã¢Å’Ëœ+Z
       if (isAnyModifier && !e.shiftKey && e.key.toLowerCase() === "z") {
         e.preventDefault()
         handleUndo()
         return
       }
 
-      // 2. Redo: Windows Ctrl+Y (or Ctrl+Shift+Z) | Mac ⌘+Shift+Z (or ⌘+Y)
+      // 2. Redo: Windows Ctrl+Y (or Ctrl+Shift+Z) | Mac Ã¢Å’Ëœ+Shift+Z (or Ã¢Å’Ëœ+Y)
       if (
         (isAnyModifier && e.shiftKey && e.key.toLowerCase() === "z") ||
         (isAnyModifier && e.key.toLowerCase() === "y")
@@ -1530,19 +1257,19 @@ export function ClassWiseGridView({
         return
       }
 
-      // 3. Copy slot: Windows Ctrl+C | Mac ⌘+C
+      // 3. Copy slot: Windows Ctrl+C | Mac Ã¢Å’Ëœ+C
       if (isAnyModifier && !e.shiftKey && e.key.toLowerCase() === "c") {
         if (selectedSlotData?.entry) {
           e.preventDefault()
           setCopiedSlotData(selectedSlotData)
           toast.success(
-            `Copied ${selectedSlotData.entry.subject?.name || "slot"}. Press ${isMac ? "⌘V" : "Ctrl+V"} to paste.`
+            `Copied ${selectedSlotData.entry.subject?.name || "slot"}. Press ${isMac ? "Ã¢Å’ËœV" : "Ctrl+V"} to paste.`
           )
         }
         return
       }
 
-      // 4. Paste slot: Windows Ctrl+V | Mac ⌘+V
+      // 4. Paste slot: Windows Ctrl+V | Mac Ã¢Å’Ëœ+V
       if (isAnyModifier && !e.shiftKey && e.key.toLowerCase() === "v") {
         if (copiedSlotData?.entry && selectedSlotData) {
           e.preventDefault()
@@ -1551,7 +1278,7 @@ export function ClassWiseGridView({
         return
       }
 
-      // 5. Clear slot: Windows Delete | Mac Delete (⌫ / Backspace)
+      // 5. Clear slot: Windows Delete | Mac Delete (Ã¢Å’Â« / Backspace)
       if (
         e.key === "Delete" ||
         (isMac && e.key === "Backspace" && !isAnyModifier)
@@ -1738,10 +1465,7 @@ export function ClassWiseGridView({
                 return (
                   <div key={cls.id} id={`class-group-${cls.id}`} className="space-y-4 scroll-mt-32 sm:scroll-mt-36">
                     {cls.sections?.map((section) => {
-                      const secSetup =
-                        (section.setup_id && (setupMap.get(section.setup_id) || setupMap.get(String(section.setup_id)))) ||
-                        setups.find((s) => (s.assigned_section_ids || []).some((id) => String(id) === String(section.id))) ||
-                        setups[0]
+                      const secSetup = setupForSection(section, setups)
                       const secEntries = entriesBySection.get(section.id) || []
 
                       return (

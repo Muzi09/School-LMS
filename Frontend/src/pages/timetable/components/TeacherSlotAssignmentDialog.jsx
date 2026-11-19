@@ -1,3 +1,4 @@
+import { setupForSection, scheduleGroups, periodsOn, isTeachingSlot } from "../sectionSchedule"
 import React, { useState, useMemo, useEffect, useRef } from "react"
 import {
   Clock,
@@ -67,7 +68,7 @@ export function TeacherSlotAssignmentDialog({
   onClose,
   cellData, // { teacher, day, period, currentEntry, timetableId, scheduleDays, allDays }
   teacherAllocations = [], // [{ section, subject_id, subject_name, subject_code, category, is_academic, assigned, target }]
-  allSections = [],
+  setups = [],
   existingEntries = [],
   onAssign, // (payload) => void
   onUnassign, // (entryId, sectionId, context) => void
@@ -78,18 +79,8 @@ export function TeacherSlotAssignmentDialog({
   const [selectedScope, setSelectedScope] = useState("SLOT") // "SLOT" | "WEEKDAYS" | "ALL_DAYS"
   const selectedItemRef = useRef(null)
 
-  const { teacher, day, period, currentEntry, scheduleDays = [], allDays = [] } = cellData || {}
-
-  const allScheduleDays = useMemo(() => {
-    if (allDays && allDays.length > 0) return allDays
-    if (scheduleDays && scheduleDays.length > 0) return scheduleDays
-    return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-  }, [allDays, scheduleDays])
-
-  const weekdayDays = useMemo(() => {
-    return allScheduleDays.filter((d) => !["SATURDAY", "SUNDAY"].includes(d.toUpperCase()))
-  }, [allScheduleDays])
-
+  const { teacher, day, period: clickedPeriod, currentEntry } = cellData || {}
+  const [periodChoice, setPeriodChoice] = useState("")
   // Current entry details
   const currentSubjectId = currentEntry?.subject_id || currentEntry?.subject?.id
   const currentSectionId = currentEntry?.section_id || currentEntry?.section?.id
@@ -134,7 +125,7 @@ export function TeacherSlotAssignmentDialog({
   // Map existing entries to check if target section is occupied in this slot
   const sectionOccupancyMap = useMemo(() => {
     const map = new Map() // `${sectionId}_${day}_${periodId}` -> entry
-    if (!existingEntries || !day || !period) return map
+    if (!existingEntries || !day) return map
 
     for (const e of existingEntries) {
       if (e.section_id && e.day_of_week && (e.period_id || e.period?.id)) {
@@ -144,7 +135,7 @@ export function TeacherSlotAssignmentDialog({
       }
     }
     return map
-  }, [existingEntries, day, period])
+  }, [existingEntries, day])
 
   // Selected item
   const selectedItem = useMemo(() => {
@@ -154,6 +145,12 @@ export function TeacherSlotAssignmentDialog({
     )
   }, [selectedAllocationKey, teacherAllocations])
 
+  const groups = scheduleGroups(setupForSection(selectedItem?.section, setups))
+  const periods = periodsOn(groups, day).filter(isTeachingSlot)
+  const period = periods.find(p => String(p.id) === periodChoice) ||
+    periods.find(p => String(p.id) === String(clickedPeriod?.id))
+  const allScheduleDays = groups.flatMap(g => g.days)
+  const weekdayDays = allScheduleDays.filter(d => d !== "SATURDAY" && d !== "SUNDAY")
   // Check collision for selected item
   const collisionForSelected = useMemo(() => {
     if (!selectedItem || !day || !period) return null
@@ -173,7 +170,7 @@ export function TeacherSlotAssignmentDialog({
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault()
-    if (!selectedItem) return
+    if (!selectedItem || !period) return
 
     let daysToApply = [day]
     if (selectedScope === "ALL_DAYS") {
@@ -183,6 +180,7 @@ export function TeacherSlotAssignmentDialog({
     }
 
     onAssign?.({
+      period,
       section_id: selectedItem.section.id,
       subject_id: selectedItem.subject_id,
       teacher_user_id: teacher.id,
@@ -539,6 +537,14 @@ export function TeacherSlotAssignmentDialog({
       </div>
 
       {/* 4. SECTION CONFLICT NOTICE */}
+      {selectedItem && <label className="mx-4 flex items-center gap-2 text-sm">
+        {selectedItem.section.class_name} {selectedItem.section.name} · {day?.toLowerCase()} period
+        <select className="rounded-md border bg-background p-1.5" value={period?.id || ""}
+          disabled={Boolean(currentEntry)} onChange={e => setPeriodChoice(e.target.value)}>
+          <option value="" disabled>Choose a class period</option>
+          {periods.map(p => <option key={p.id} value={p.id}>{formatPeriodLabel(p)} · {p.start_time}–{p.end_time}</option>)}
+        </select>
+      </label>}
       {collisionForSelected && (
         <div className="px-5 py-2 bg-destructive/10 border-t border-destructive/20 text-destructive text-xs flex items-center gap-2 shrink-0 animate-in fade-in-0 duration-150">
           <AlertTriangle className="size-4 shrink-0 text-destructive" />
@@ -616,7 +622,7 @@ export function TeacherSlotAssignmentDialog({
             type="button"
             onClick={handleSubmit}
             size="default"
-            disabled={isSubmitting || !selectedItem}
+            disabled={isSubmitting || !selectedItem || !period || (selectedScope === "WEEKDAYS" && !weekdayDays.length)}
             className={cn(
               "h-8 px-4 text-xs font-bold gap-1.5 shadow-xs cursor-pointer",
               !selectedItem && "opacity-50 cursor-not-allowed"

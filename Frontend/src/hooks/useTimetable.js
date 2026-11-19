@@ -34,6 +34,7 @@ import {
   getClassWiseTimetableApi,
   checkConflictApi,
   bulkAssignSlotApi,
+  moveLessonApi,
   exportTimetableExcelApi,
 } from "@/api/timetableService"
 
@@ -302,6 +303,10 @@ function applyOptimisticBulkAssign(oldData, payload) {
       : [payload.day_of_week]
     ).map((d) => String(d).toUpperCase())
   )
+
+  // The server resolves each destination against its own bell schedule.
+  // Project only single-slot writes until multi-slot results are returned.
+  if (applyDays.size > 1 || !applyDays.has(payload.day_of_week) || payload.scope === "CLASS_SECTIONS") return oldData
 
   const targetSectionIds = new Set()
   if (payload.scope === "CLASS_SECTIONS" && payload._section?.class_id) {
@@ -640,3 +645,8 @@ export function useExportTimetableExcel() {
   })
 }
 
+
+export function useMoveLesson() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: moveLessonApi, onSuccess: () => client.invalidateQueries({ queryKey: ["timetable"] }) })
+}

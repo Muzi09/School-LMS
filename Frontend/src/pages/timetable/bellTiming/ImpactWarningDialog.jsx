@@ -53,7 +53,7 @@ export function ImpactWarningDialog({
         </div>
 
         <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/30 text-xs text-destructive font-medium leading-relaxed">
-          {message || `This change directly affects ${affected_slots_count} scheduled lesson slot(s). Removing or renumbering periods will unlink or delete these slots.`}
+          {message || `This change directly affects ${affected_slots_count} scheduled lesson slot(s). Review lessons whose period no longer belongs to the class schedule.`}
         </div>
 
         {/* Affected entries list */}
