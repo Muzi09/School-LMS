@@ -383,8 +383,10 @@ class TimetableEntryRead(BaseModel):
     day_of_week: str
     subject: TimetableSubjectRead
     teacher: Optional[TimetableTeacherRead] = None
-    created_at: datetime
-    updated_at: datetime
+    section: Optional[Dict[str, Any]] = None
+    period: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -587,6 +589,8 @@ class MasterTimetableEntryRead(BaseModel):
     end_time: str
     subject: TimetableSubjectRead
     teacher: Optional[TimetableTeacherRead] = None
+    section: Optional[Dict[str, Any]] = None
+    period: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getSubjectTheme } from "../subjectTheme"
+import { formatClassSection } from "../timetableUtils"
 import { cn } from "@/lib/utils"
 
 function formatTime12h(timeStr) {
@@ -310,7 +311,7 @@ export function TeacherWiseGridView({
 
                         if (slotEntries.length > 1) {
                           const conflictDesc = slotEntries
-                            .map((se) => `${se.section?.school_class?.name || ""}-${se.section?.name || ""} (${se.subject?.name || ""})`)
+                            .map((se) => `${formatClassSection(se.section)} (${se.subject?.name || ""})`)
                             .join(", ")
 
                           return (
@@ -324,7 +325,7 @@ export function TeacherWiseGridView({
                                 <span>Conflict ({slotEntries.length})</span>
                               </div>
                               <span className="text-[10px] font-bold text-destructive/90 truncate max-w-full">
-                                {slotEntries.map((se) => `${se.section?.school_class?.name || ""}-${se.section?.name || ""}`).join(" & ")}
+                                {slotEntries.map((se) => formatClassSection(se.section)).join(" & ")}
                               </span>
                             </div>
                           )

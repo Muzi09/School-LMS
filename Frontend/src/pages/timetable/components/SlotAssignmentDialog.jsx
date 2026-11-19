@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { getSubjectTheme } from "../subjectTheme"
-import { formatTimingsInText } from "../timetableUtils"
+import { formatTimingsInText, formatClassSection } from "../timetableUtils"
 import { sortDays } from "../bellTiming/validators"
 import { useCheckConflict } from "@/hooks/useTimetable"
 import { cn } from "@/lib/utils"
@@ -77,6 +77,7 @@ export function SlotAssignmentDialog({
   availableSubjects = [],
   eligibleTeachers = [],
   existingEntries = [],
+  allSections = [],
   periodMap = null,
   onAssign, // (payload) => void
   onUnassign, // (entryId) => void
@@ -92,6 +93,18 @@ export function SlotAssignmentDialog({
 
   const selectedItemRef = useRef(null)
   const checkConflictMutation = useCheckConflict()
+
+  // Map sections by ID for 0 ms section and class lookup
+  const sectionMap = useMemo(() => {
+    const map = new Map()
+    for (const s of allSections || []) {
+      if (s?.id) {
+        map.set(s.id, s)
+        map.set(String(s.id), s)
+      }
+    }
+    return map
+  }, [allSections])
 
   // Weekdays list (Mon-Fri or applicable weekdays)
   const weekdayDays = useMemo(() => {
@@ -225,7 +238,7 @@ export function SlotAssignmentDialog({
   }, [filteredSubjects])
 
   // Synchronous in-memory conflict check helper
-  const checkInstantConflict = (teacher, cell, allEntries, allTeachers, pMap) => {
+  const checkInstantConflict = (teacher, cell, allEntries, allTeachers, pMap, sMap) => {
     const tId = String(teacher?.id || teacher?.user_id || "")
     if (!tId || !cell?.period || !cell?.day) return null
 
@@ -292,7 +305,13 @@ export function SlotAssignmentDialog({
 
           if (epStart != null && epEnd != null && curStart != null && curEnd != null) {
             if (epStart < curEnd && curStart < epEnd) {
-              const clsSec = e.section ? `${e.section.class_name || ""} ${e.section.name || ""}`.trim() : "another section"
+              let secObj = e.section
+              if (!secObj || (!secObj.class_name && !secObj.className && !secObj.school_class)) {
+                if (sMap && e.section_id) {
+                  secObj = sMap.get(e.section_id) || sMap.get(String(e.section_id)) || secObj
+                }
+              }
+              const clsSec = formatClassSection(secObj)
               const subName = e.subject?.name || "a subject"
               return `${fullTeacher.name || "Teacher"} is already teaching ${subName} in ${clsSec} at this time (${formatTime12h(ep.start_time)} – ${formatTime12h(ep.end_time)}).`
             }
@@ -314,7 +333,7 @@ export function SlotAssignmentDialog({
     }
 
     // Immediate 0 ms synchronous pre-check
-    const localConflict = checkInstantConflict(assignedTeacher, cellData, existingEntries, eligibleTeachers, periodMap)
+    const localConflict = checkInstantConflict(assignedTeacher, cellData, existingEntries, eligibleTeachers, periodMap, sectionMap)
     if (localConflict) {
       setConflictWarning(localConflict)
       setIsCheckingConflict(false)
@@ -355,7 +374,7 @@ export function SlotAssignmentDialog({
     return () => {
       isMounted = false
     }
-  }, [assignedTeacher?.id, assignedTeacher?.user_id, cellData, existingEntries, eligibleTeachers, periodMap])
+  }, [assignedTeacher?.id, assignedTeacher?.user_id, cellData, existingEntries, eligibleTeachers, periodMap, sectionMap])
 
   // Scroll to selected item when dialog opens
   useEffect(() => {

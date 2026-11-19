@@ -91,6 +91,14 @@ export function MoveScheduleModal({
           </button>
         </div>
 
+        {/* Warning about resetting lecture assignments */}
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+          <div className="leading-relaxed">
+            <span className="font-semibold">Notice:</span> Moving {pluralClasses} to a different bell setup will empty and reset their current lecture slots in this timetable so you can reassign them cleanly under the new bell schedule.
+          </div>
+        </div>
+
         {/* Setups List */}
         <div className="space-y-2 py-1 max-h-72 overflow-y-auto scrollbar-thin">
           {setups.map((setup, sIdx) => {

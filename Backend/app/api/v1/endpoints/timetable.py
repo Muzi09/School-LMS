@@ -367,12 +367,13 @@ def get_free_teachers(
     service: Annotated[TimetableService, Depends(get_timetable_service)],
     current_user: Annotated[User, Depends(require_view_timetable)],
     day_of_week: Annotated[str | None, Query(description="Optional filter by day of week")] = None,
+    timetable_id: Annotated[UUID | None, Query(description="Optional filter by timetable ID")] = None,
 ):
     school_id = current_user.school_id
     if not school_id:
         raise BadRequestException("User does not belong to a school.")
 
-    return service.get_free_teachers(school_id=school_id, day_of_week=day_of_week)
+    return service.get_free_teachers(school_id=school_id, day_of_week=day_of_week, timetable_id=timetable_id)
 
 
 @router.get(

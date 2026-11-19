@@ -37,7 +37,7 @@ import {
 } from "@/hooks/useTimetable"
 import { parseTimetableQuery, sectionMatchesQuery } from "../searchUtils"
 import { isNonTeachingPeriod, sortDays } from "../bellTiming/validators"
-import { getIsMac, formatTime12 } from "../timetableUtils"
+import { getIsMac, formatTime12, formatClassSection } from "../timetableUtils"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -332,8 +332,9 @@ export function ClassWiseGridView({
     const secLookup = new Map()
     const secObjMap = new Map()
     for (const s of allFlattenedSections) {
-      secLookup.set(s.id, `${s.class_name || ""} ${s.name || ""}`.trim())
-      secLookup.set(String(s.id), `${s.class_name || ""} ${s.name || ""}`.trim())
+      const formatted = formatClassSection(s)
+      secLookup.set(s.id, formatted)
+      secLookup.set(String(s.id), formatted)
       secObjMap.set(s.id, s)
       secObjMap.set(String(s.id), s)
     }
@@ -1797,6 +1798,7 @@ export function ClassWiseGridView({
             availableSubjects={availableSubjectsForDialog}
             eligibleTeachers={eligible_teachers}
             existingEntries={entries}
+            allSections={allFlattenedSections}
             periodMap={periodMap}
             onAssign={handleAssignSlot}
             onUnassign={(entryId, secId) =>

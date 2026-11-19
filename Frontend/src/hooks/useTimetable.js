@@ -332,6 +332,34 @@ function applyOptimisticBulkAssign(oldData, payload) {
   // 2. If assigning, append optimistic entries
   if (!isUnassign) {
     for (const secId of targetSectionIds) {
+      let secObj = null
+      if (payload._section && String(payload._section.id) === String(secId)) {
+        secObj = {
+          id: payload._section.id,
+          name: payload._section.name,
+          class_id: payload._section.class_id,
+          class_name: payload._section.class_name || payload._section.school_class?.name || "",
+        }
+      } else {
+        for (const w of oldData.wings || []) {
+          for (const c of w.classes || []) {
+            for (const s of c.sections || []) {
+              if (String(s.id) === String(secId)) {
+                secObj = {
+                  id: s.id,
+                  name: s.name,
+                  class_id: s.class_id || c.id,
+                  class_name: s.class_name || c.name || "",
+                }
+                break
+              }
+            }
+            if (secObj) break
+          }
+          if (secObj) break
+        }
+      }
+
       for (const day of applyDays) {
         updatedEntries.push({
           id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -346,6 +374,7 @@ function applyOptimisticBulkAssign(oldData, payload) {
           subject: payload._optimisticSubject || null,
           teacher: payload._optimisticTeacher || null,
           period: payload._optimisticPeriod || null,
+          section: secObj,
         })
       }
     }

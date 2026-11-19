@@ -126,7 +126,7 @@ export const ClassWiseCell = memo(function ClassWiseCell({
     const teacherName = entry?.teacher?.name || fallbackTeacherName || "Unassigned"
     const hasTeacher = Boolean(entry?.teacher?.name || fallbackTeacherName)
 
-    const repeatInfo = sameDayRepeatCount >= 2 ? ` • Scheduled ${sameDayRepeatCount}x today` : ""
+    const repeatInfo = sameDayRepeatCount >= 2 ? ` • Scheduled ${sameDayRepeatCount}x` : ""
     const tooltipText = `${subjectName}${subjectCode ? ` (${subjectCode})` : ""} • ${teacherName} • ${day} ${periodLabel}${timePart}${repeatInfo}${conflictInfo ? ` • ${conflictInfo}` : ""}${isAssignMode ? " • Click to edit" : ""}`
 
     return (
@@ -185,9 +185,9 @@ export const ClassWiseCell = memo(function ClassWiseCell({
               {sameDayRepeatCount >= 2 && !conflictInfo && (
                 <span
                   className="px-1 py-0.2 rounded text-[9px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 shrink-0"
-                  title={`${subjectName} is scheduled ${sameDayRepeatCount} times today for this class`}
+                  title={`${subjectName} is scheduled ${sameDayRepeatCount} times on this day`}
                 >
-                  {sameDayRepeatCount}x Today
+                  {sameDayRepeatCount}x
                 </span>
               )}
               {conflictInfo && (

@@ -41,10 +41,15 @@ def validate_period_sequence(periods: List[Dict[str, Any]], schedule_name: str =
 
     has_class_period = False
     seen_labels = set()
+    seen_period_numbers = set()
     valid_periods = []
 
     for idx, p in enumerate(periods):
         p_num = p.get("period_number", idx + 1)
+        if p_num in seen_period_numbers:
+            errors.append(f"{schedule_name}: Duplicate period number '{p_num}' found.")
+        seen_period_numbers.add(p_num)
+
         p_type = p.get("type") or ("RECESS" if p.get("is_break") else "CLASS")
         if p_type == "CLASS":
             has_class_period = True
