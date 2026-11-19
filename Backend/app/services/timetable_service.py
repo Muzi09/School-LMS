@@ -106,6 +106,19 @@ def _format_class_section_name(class_name: Optional[str], section_name: Optional
     return f"{formatted_cls} {clean_sec}".strip()
 
 
+def _teacher_conflict_message(teacher_name: str, booked: TimetableEntry) -> str:
+    section = booked.section
+    class_name = section.school_class.name if section and section.school_class else ""
+    location = " ".join(filter(None, (class_name, section.name if section else ""))) or "another section"
+    subject = booked.subject.name if booked.subject else "a subject"
+    period = booked.period
+    return (
+        f"{teacher_name} is already teaching {subject} in {location} on "
+        f"{_format_day_display(booked.day_of_week)}, P{period.period_number} "
+        f"({_format_time_12h(period.start_time)} – {_format_time_12h(period.end_time)})."
+    )
+
+
 class TimetableService:
     def __init__(self, db: Session):
         self.db = db
@@ -2567,16 +2580,16 @@ class TimetableService:
                 sec_name = e.section.name if e.section else ""
                 cls_sec = _format_class_section_name(cls_name, sec_name)
                 sub_name = e.subject.name if e.subject else "a subject"
-                t_name = f"{teacher.first_name} {teacher.last_name}".strip()
                 return {
                     "has_conflict": True,
-                    "message": f"{t_name} is already teaching {sub_name} in {cls_sec} at this time ({_format_time_12h(ep.start_time)} - {_format_time_12h(ep.end_time)}).",
+                    "message": _teacher_conflict_message(t_name, e),
                     "conflicting_entry": {
                         "id": str(e.id),
                         "class_name": cls_name,
                         "section_name": sec_name,
                         "formatted_class_section": cls_sec,
                         "subject_name": sub_name,
+                        "period_number": ep.period_number,
                         "start_time": _format_time(ep.start_time),
                         "end_time": _format_time(ep.end_time),
                     },
@@ -3419,14 +3432,16 @@ class TimetableService:
 
                     raise ScheduleConflictException(
                         code="TEACHER_SCHEDULE_CONFLICT",
-                        message=f"{teacher_name} is already assigned to {conf_cls_sec} ({conf_sub_name}) during {day_display} Period {period.period_number} ({_format_time_12h(cp.start_time)} - {_format_time_12h(cp.end_time)}).",
+                        message=_teacher_conflict_message(teacher_name, tch_conflict),
                         details={
                             "teacher_name": teacher_name,
                             "class_name": conf_class_name,
                             "section_name": conf_sec_name,
                             "formatted_class_section": conf_cls_sec,
                             "day": day_val,
-                            "period": period.period_number,
+                            "period": cp.period_number,
+                            "start_time": _format_time(cp.start_time),
+                            "end_time": _format_time(cp.end_time),
                             "subject_name": conf_sub_name,
                             "existing_entry_id": str(tch_conflict.id),
                         },

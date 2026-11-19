@@ -102,3 +102,4 @@ Branch `Bugs-fixed`, based on `4857de141f386cb9efcd67003b729b3b6d70ad23`. Findin
 
 - Saving, moving, and removing lessons now uses the selected class’s bell schedule for that day. Both tabs show the same start and end times, including Saturday.
 - Verified both bell-editor regressions, covering explicit saves and the 15-minute minimum, alongside the tests for different class schedules.
+- Both tabs now identify the booked class, period, and times in overlap warnings. Verified in Chrome that Grade 9 P5 (10:40–11:20 AM) was blocked by Grade 11 P4 (11:00 AM–12:00 PM) and the original lesson remained after reload.

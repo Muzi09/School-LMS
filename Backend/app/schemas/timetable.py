@@ -503,6 +503,8 @@ class ScheduleConflictDetails(BaseModel):
     section_name: Optional[str] = None
     day: Optional[str] = None
     period: Optional[int] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     subject_name: Optional[str] = None
     existing_entry_id: Optional[str] = None
 

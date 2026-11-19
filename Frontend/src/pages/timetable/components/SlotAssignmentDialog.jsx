@@ -297,9 +297,13 @@ function SlotAssignmentEditor({
                   secObj = sMap.get(e.section_id) || sMap.get(String(e.section_id)) || secObj
                 }
               }
-              const clsSec = formatClassSection(secObj)
+              const className = secObj?.class_name || secObj?.className || secObj?.school_class?.name
+              const clsSec = className ? [className, secObj.name].filter(Boolean).join(" ") : formatClassSection(secObj)
               const subName = e.subject?.name || "a subject"
-              return `${fullTeacher.name || "Teacher"} is already teaching ${subName} in ${clsSec} at this time (${formatTime12h(ep.start_time)} – ${formatTime12h(ep.end_time)}).`
+              const day = targetDay[0] + targetDay.slice(1).toLowerCase()
+              const bookedPeriod = ep.period_number ?? pMap?.get(e.period_id)?.period_number
+              const periodLabel = bookedPeriod == null ? "" : `, P${bookedPeriod}`
+              return `${fullTeacher.name || "Teacher"} is already teaching ${subName} in ${clsSec} on ${day}${periodLabel} (${formatTime12h(ep.start_time)} – ${formatTime12h(ep.end_time)}).`
             }
           }
         }

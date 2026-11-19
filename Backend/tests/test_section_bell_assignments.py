@@ -11,7 +11,7 @@ from app.models import School, SchoolClass, Section, Subject, User, UserRole, Ge
 from app.models.subject import ClassSubject
 from app.models.wing import Wing, WingClass
 from app.models.timetable import Timetable, TimetableEntry, TimetablePeriod, TimetableSetup, TimetableSetupAssignment
-from app.schemas.timetable import BulkSlotAssignRequest, MoveLessonRequest
+from app.schemas.timetable import BulkSlotAssignRequest, ConflictCheckRequest, MoveLessonRequest
 from app.services.timetable_service import TimetableService
 
 
@@ -86,6 +86,30 @@ def test_save_across_weekday_and_saturday_and_remove_exact_lesson(school_bells):
     rows = f.db.query(TimetableEntry).filter_by(timetable_id=f.tt, deleted_at=None).all()
     assert {r.period_id for r in rows} == {weekday, f.periods[1][1]} and wrong in rows
     assert len(rows) == 3
+
+
+def test_teacher_overlap_reports_the_booked_class_bell_in_preview_and_save(school_bells):
+    f = school_bells
+    requested, booked = (f.db.get(TimetablePeriod, ids[0]) for ids in f.periods)
+    for section_id, grade in zip(f.sections, ("Grade 9", "Grade 11")):
+        f.db.get(Section, section_id).school_class.name = grade
+    requested.period_number, requested.start_time, requested.end_time = 5, time(10, 40), time(11, 20)
+    booked.period_number, booked.start_time, booked.end_time = 4, time(11), time(12)
+    f.db.flush()
+    assign(f, 1, "MONDAY", booked.id)
+
+    preview = f.service.check_slot_conflict(f.school, ConflictCheckRequest(
+        timetable_id=f.tt, teacher_user_id=f.actor, day_of_week="MONDAY", period_id=requested.id,
+    ))
+    with pytest.raises(ScheduleConflictException) as rejected:
+        assign(f, 0, "MONDAY", requested.id)
+    assert preview["has_conflict"]
+    assert preview["message"] == rejected.value.message
+    assert "Grade 11 A on Monday, P4 (11:00 AM – 12:00 PM)" in preview["message"]
+    assert preview["conflicting_entry"]["period_number"] == rejected.value.details["period"] == 4
+    assert rejected.value.details["start_time"] == "11:00"
+    assert rejected.value.details["end_time"] == "12:00"
+    assert f.db.query(TimetableEntry).filter_by(timetable_id=f.tt).one().period_id == booked.id
 
 
 def test_move_and_failed_swap_preserve_source(school_bells):
