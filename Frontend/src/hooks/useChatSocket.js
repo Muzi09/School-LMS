@@ -29,12 +29,12 @@ export function useChatSocket({
   onReconnect,
 } = {}) {
   const { user } = useAuth()
+  const userId = user?.id
   const [status, setStatus] = useState(user ? "connecting" : "disconnected")
   const socketRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const reconnectAttemptsRef = useRef(0)
   const pingIntervalRef = useRef(null)
-  const isUnmountedRef = useRef(false)
   const connectRef = useRef(null)
 
   // Keep latest callbacks in refs to avoid re-triggering connection effects
@@ -63,7 +63,7 @@ export function useChatSocket({
   }, [onMessage, onMessageSent, onMessageFailed, onPresenceChange, onReadReceipt, onTyping, onConversationUpdated, onReconnect])
 
   const connect = useCallback(() => {
-    if (!user) {
+    if (!userId) {
       return
     }
 
@@ -83,7 +83,7 @@ export function useChatSocket({
       socketRef.current = ws
 
       ws.onopen = () => {
-        if (isUnmountedRef.current) return
+        if (socketRef.current !== ws) return
         setStatus("connected")
         const wasReconnecting = reconnectAttemptsRef.current > 0
         reconnectAttemptsRef.current = 0
@@ -102,7 +102,7 @@ export function useChatSocket({
       }
 
       ws.onmessage = (event) => {
-        if (isUnmountedRef.current) return
+        if (socketRef.current !== ws) return
         try {
           const data = JSON.parse(event.data)
           if (data.type === "pong") return
@@ -128,17 +128,17 @@ export function useChatSocket({
       }
 
       ws.onerror = (err) => {
+        if (socketRef.current !== ws) return
         console.warn("WebSocket error:", err)
         setStatus("disconnected")
       }
 
       ws.onclose = (event) => {
+        if (socketRef.current !== ws) return
         if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current)
           pingIntervalRef.current = null
         }
-
-        if (isUnmountedRef.current) return
 
         // 1008 = Policy violation -> do not retry immediately
         if (event.code === 1008) {
@@ -161,24 +161,23 @@ export function useChatSocket({
     } catch (err) {
       console.error("Failed to initialize WebSocket:", err)
     }
-  }, [user])
+  }, [userId])
 
   useEffect(() => {
     connectRef.current = connect
   }, [connect])
 
   useEffect(() => {
-    isUnmountedRef.current = false
-    connect()
+    // Strict Mode can replay this effect before the initial connection starts.
+    const initialConnection = setTimeout(connect, 0)
 
     return () => {
-      isUnmountedRef.current = true
+      clearTimeout(initialConnection)
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current)
-      if (socketRef.current) {
-        socketRef.current.close()
-        socketRef.current = null
-      }
+      const socket = socketRef.current
+      socketRef.current = null
+      socket?.close()
     }
   }, [connect])
 

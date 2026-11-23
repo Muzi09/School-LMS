@@ -1,15 +1,12 @@
+import { AssignmentTabs } from "./AssignmentTabs"
 import { useState, useEffect, useMemo, useRef } from "react"
-import { useNavigate } from "react-router-dom"
 import {
   Clock,
   User,
   Check,
   Trash2,
-  Search,
   Loader2,
   ShieldAlert,
-  ExternalLink,
-  X,
   GraduationCap,
   Sparkles,
 } from "lucide-react"
@@ -20,12 +17,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { getSubjectTheme } from "../subjectTheme"
 import { formatTimingsInText, formatClassSection } from "../timetableUtils"
-import { sortDays } from "../bellTiming/validators"
+import { isTeachingSlot, periodsOn, scheduleGroups, setupForSection } from "../sectionSchedule"
+
+const dayLabels = { MONDAY: "M", TUESDAY: "Tu", WEDNESDAY: "W", THURSDAY: "Th", FRIDAY: "F", SATURDAY: "S", SUNDAY: "Su" }
 import { useQuery } from "@tanstack/react-query"
 import { checkConflictApi } from "@/api/timetableService"
 import { cn } from "@/lib/utils"
@@ -90,17 +88,16 @@ function SlotAssignmentEditor({
   onAssign, // (payload) => void
   onUnassign, // (entryId) => void
   isSubmitting = false,
+  setups = [],
+  groupPanel,
+  preferGroup,
+  groupBusy,
 }) {
-  const navigate = useNavigate()
-  const [search, setSearch] = useState("")
   const [selectedSubjectId, setSelectedSubjectId] = useState(() => cellData.currentEntry?.subject?.id || "")
-  const [selectedScope, setSelectedScope] = useState("SLOT") // "SLOT" | "WEEKDAYS" | "ALL_DAYS"
+  const [selectedDays, setSelectedDays] = useState(() => [cellData.day])
   const [validationError, setValidationError] = useState("")
 
   const selectedItemRef = useRef(null)
-
-  const scheduleDays = cellData.scheduleDays
-  const fullScheduleDays = cellData.allDays
 
   // Map sections by ID for 0 ms section and class lookup
   const sectionMap = useMemo(() => {
@@ -113,32 +110,6 @@ function SlotAssignmentEditor({
     }
     return map
   }, [allSections])
-
-  // Weekdays list (Mon-Fri or applicable weekdays)
-  const weekdayDays = useMemo(() => {
-    if (scheduleDays && Array.isArray(scheduleDays) && scheduleDays.length > 0) {
-      const filtered = scheduleDays
-        .map((d) => String(d).toUpperCase())
-        .filter((d) => d !== "SATURDAY" && d !== "SUNDAY")
-      if (filtered.length > 0) return sortDays(filtered)
-    }
-    return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-  }, [scheduleDays])
-
-  // All days list (Mon-Sat or full applicable days)
-  const allScheduleDays = useMemo(() => {
-    if (fullScheduleDays && Array.isArray(fullScheduleDays) && fullScheduleDays.length > 0) {
-      return sortDays(fullScheduleDays.map((d) => String(d).toUpperCase()))
-    }
-    if (scheduleDays && Array.isArray(scheduleDays) && scheduleDays.length > 0) {
-      const days = scheduleDays.map((d) => String(d).toUpperCase())
-      if (!days.includes("SATURDAY")) {
-        return sortDays([...days, "SATURDAY"])
-      }
-      return sortDays(days)
-    }
-    return ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-  }, [fullScheduleDays, scheduleDays])
 
   const currentEntry = cellData.currentEntry ?? null
   const currentSubject = currentEntry?.subject
@@ -197,17 +168,7 @@ function SlotAssignmentEditor({
     return null
   }
 
-  // Filtered subjects by search query
-  const filteredSubjects = useMemo(() => {
-    if (!search.trim()) return allSubjects
-    const q = search.toLowerCase().trim()
-    return allSubjects.filter(
-      (s) =>
-        s.name?.toLowerCase().includes(q) ||
-        s.code?.toLowerCase().includes(q) ||
-        s.teacher?.name?.toLowerCase().includes(q)
-    )
-  }, [allSubjects, search])
+  const filteredSubjects = allSubjects
 
   // Split subjects into two categories: Academic and Activity
   const { academicSubjects, nonAcademicSubjects } = useMemo(() => {
@@ -339,7 +300,7 @@ function SlotAssignmentEditor({
   // Scroll to selected item when dialog opens
   useEffect(() => {
     if (isOpen && selectedSubjectId && selectedItemRef.current) {
-      selectedItemRef.current.scrollIntoView({
+      selectedItemRef.current.scrollIntoView?.({
         behavior: "smooth",
         block: "nearest",
       })
@@ -361,73 +322,30 @@ function SlotAssignmentEditor({
     "Class"
   const sectionName = section?.name || currentEntry?.section?.name || ""
 
+  const bellGroups = scheduleGroups(setupForSection(section, setups))
+  const dayProblems = Object.fromEntries(Object.keys(dayLabels).map(date => {
+    if (date === day) return [date, conflictWarning]
+    const matching = periodsOn(bellGroups, date).filter(p => p.period_number === period.period_number)
+    if (matching.length !== 1 || !isTeachingSlot(matching[0])) return [date, "No matching teaching period"]
+    const destination = matching[0]
+    const occupied = existingEntries.some(entry => String(entry.section_id) === String(section.id) &&
+      entry.day_of_week === date && String(entry.period_id || entry.period?.id) === String(destination.id))
+    return [date, occupied ? "This period is already scheduled" : checkInstantConflict(
+      assignedTeacher, { ...cellData, day: date, period: destination }, existingEntries, eligibleTeachers, periodMap, sectionMap,
+    )]
+  }))
+  const applyDays = selectedDays.filter(date => !dayProblems[date])
+  const isCurrentSubject = Boolean(currentEntry && String(currentSubject?.id || currentEntry.subject_id) === String(selectedSubjectId))
+
   const handleSelectSubject = (sub) => {
     setSelectedSubjectId(sub.id)
+    setSelectedDays([day])
     setValidationError("")
-  }
-
-  // Redirect to Manage School to assign teacher for this specific subject
-  const handleAssignNow = async () => {
-    const classId = section?.class_id || section?.classId || ""
-    const sectionId = section?.id || ""
-    const subjectId = selectedSubjectId || ""
-    const slotKey = `${sectionId}_${day}_${period?.id || period?.period_number || ""}`
-
-    const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
-    const scrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft || 0
-    sessionStorage.setItem("timetable_scroll_y", String(scrollY))
-    sessionStorage.setItem("timetable_scroll_x", String(scrollX))
-    sessionStorage.setItem("timetable_scroll_slot_key", slotKey)
-    sessionStorage.setItem("timetable_edit_mode", "true")
-
-    sessionStorage.setItem(
-      "timetable_assign_now_target",
-      JSON.stringify({
-        sectionId,
-        classId,
-        day,
-        periodId: period?.id,
-        periodNumber: period?.period_number,
-        subjectId,
-        timetableId: cellData?.timetableId,
-      })
-    )
-
-    let applyDays = [day]
-    if (selectedScope === "ALL_DAYS") {
-      applyDays = allScheduleDays
-    } else if (selectedScope === "WEEKDAYS") {
-      applyDays = weekdayDays
-    }
-
-    if (selectedSubjectId && onAssign) {
-      try {
-        await onAssign({
-          timetable_id: cellData?.timetableId,
-          section_id: section?.id,
-          day_of_week: day,
-          period_id: period?.id,
-          subject_id: selectedSubjectId,
-          teacher_user_id: null,
-          scope: selectedScope || "SLOT",
-          apply_days: applyDays,
-          overwrite: true,
-          silent: true,
-        })
-      } catch (err) {
-        console.error("Assign now pre-save error:", err)
-      }
-    }
-
-    onClose()
-    navigate(
-      `/manage-school?classId=${classId}&sectionId=${sectionId}&subjectId=${subjectId}&highlight=true`
-    )
   }
 
   const handleApply = (e) => {
     if (e) e.preventDefault()
-    if (!selectedSubjectId) {
+    if (!selectedSubjectId || !applyDays.length) {
       setValidationError("Please select a subject to assign to this period.")
       return
     }
@@ -437,19 +355,12 @@ function SlotAssignmentEditor({
       return
     }
 
-    if (conflictWarning) {
+    if (selectedDays.includes(day) && conflictWarning) {
       toast.error("Teacher has a schedule conflict with this time slot.")
       return
     }
 
     setValidationError("")
-
-    let applyDays = [day]
-    if (selectedScope === "ALL_DAYS") {
-      applyDays = allScheduleDays
-    } else if (selectedScope === "WEEKDAYS") {
-      applyDays = weekdayDays
-    }
 
     onAssign({
       timetable_id: cellData?.timetableId,
@@ -457,8 +368,7 @@ function SlotAssignmentEditor({
       day_of_week: day,
       period_id: period?.id,
       subject_id: selectedSubjectId,
-      teacher_user_id: assignedTeacher?.id || null,
-      scope: selectedScope,
+      teacher_user_id: teacherId || null,
       apply_days: applyDays,
       overwrite: true,
       subject: matchedSubject || cellData?.currentEntry?.subject || null,
@@ -468,36 +378,18 @@ function SlotAssignmentEditor({
   }
 
   const handleClear = () => {
-    let applyDays = [day]
-    if (selectedScope === "ALL_DAYS") {
-      applyDays = allScheduleDays
-    } else if (selectedScope === "WEEKDAYS") {
-      applyDays = weekdayDays
-    }
-
-    if (currentEntry?.id && selectedScope === "SLOT") {
-      onUnassign(currentEntry.id, section?.id)
-    } else {
-      onAssign({
-        timetable_id: cellData?.timetableId,
-        section_id: section?.id,
-        day_of_week: day,
-        period_id: period?.id,
-        subject_id: null,
-        scope: selectedScope,
-        apply_days: applyDays,
-      })
-    }
+    if (!currentEntry?.id) return
+    onUnassign(currentEntry.id, section?.id)
     onClose()
   }
 
-  // Render individual subject item card (space-economized for 8+ visible subjects)
   const renderSubjectItem = (sub) => {
     const isSelected = String(selectedSubjectId) === String(sub.id)
     const isAcademic = isAcademicSubject(sub)
     const theme = getSubjectTheme(sub.name)
     const teacher = resolveTeacherForSubject(sub)
     const hasTeacher = Boolean(teacher?.name)
+    const unavailable = teacher && checkInstantConflict(teacher, cellData, existingEntries, eligibleTeachers, periodMap, sectionMap)
 
     const assignedCount = sub.assigned ?? sub.current_assigned ?? 0
     const targetCount = sub.target ?? sub.target_weekly ?? (isAcademic ? 6 : 3)
@@ -521,7 +413,8 @@ function SlotAssignmentEditor({
           "w-full px-2.5 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between gap-2 group cursor-pointer select-none",
           isSelected
             ? "border-primary bg-primary/10 ring-1.5 ring-primary/60 shadow-2xs"
-            : "border-border/60 hover:border-border hover:bg-muted/40 bg-card/70"
+            : "border-border/60 hover:border-border hover:bg-muted/40 bg-card/70",
+          unavailable && "opacity-65"
         )}
       >
         {/* Left: Dot + Subject Name & Code + Teacher Name near the subject */}
@@ -566,11 +459,7 @@ function SlotAssignmentEditor({
                   ) : null
                 })()}
               </span>
-            ) : (
-              <span className="text-[10px] text-amber-600/90 dark:text-amber-400/90 font-medium italic shrink-0">
-                · No teacher
-              </span>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -614,7 +503,7 @@ function SlotAssignmentEditor({
   return (
     <Dialog
       isOpen={isOpen}
-      onOpenChange={(open) => !open && onClose()}
+      onOpenChange={(open) => !open && !groupBusy && onClose()}
       className="sm:max-w-3xl md:max-w-4xl p-0 gap-0 overflow-hidden max-h-[92vh] flex flex-col [&>[data-slot=dialog]]:flex [&>[data-slot=dialog]]:flex-col [&>[data-slot=dialog]]:overflow-hidden [&>[data-slot=dialog]]:h-full [&>[data-slot=dialog]]:max-h-[92vh]"
     >
       {/* 1. FIXED HEADER: Never moves with body scroll */}
@@ -622,6 +511,7 @@ function SlotAssignmentEditor({
         <DialogTitle className="text-base sm:text-lg font-bold tracking-tight text-foreground">
           {className}{sectionName ? ` - ${sectionName}` : ""}
         </DialogTitle>
+
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
           {day && (
@@ -644,142 +534,15 @@ function SlotAssignmentEditor({
           )}
         </div>
       </DialogHeader>
+      <AssignmentTabs groupPanel={groupPanel} preferGroup={preferGroup} busy={groupBusy || isSubmitting}>
 
-      {/* 2. FIXED TOP ROW: Current Slot, Configured Teacher, Search (never moves with scroll) */}
-      <div className="px-5 py-2.5 border-b border-border/60 bg-muted/10 shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-center">
-        {/* Left: Current Slot Status */}
-        <div className="px-2.5 py-1.5 rounded-lg border border-border/70 bg-card/60 flex items-center justify-between gap-1.5 h-9 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0 truncate">
-            <span className="text-[10px] uppercase font-bold text-muted-foreground shrink-0">
-              Current:
-            </span>
-            {currentEntry ? (
-              <span
-                className="text-xs font-semibold text-foreground truncate"
-                title={`${currentEntry.subject?.name} · ${currentEntry.teacher?.name || "No teacher"}`}
-              >
-                {currentEntry.subject?.name}
-                <span className="text-muted-foreground font-normal ml-1">
-                  · {currentEntry.teacher?.name || "No teacher"}
-                </span>
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground italic">
-                Unassigned slot
-              </span>
-            )}
-          </div>
-
-          {currentEntry && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={handleClear}
-              className="text-destructive hover:bg-destructive/10 text-xs h-6 px-1.5 shrink-0 cursor-pointer"
-              title="Unassign current slot"
-            >
-              <Trash2 className="size-3 mr-1" />
-              Unassign
-            </Button>
-          )}
-        </div>
-
-        {/* Center: Selected / Configured Teacher */}
-        <div className="px-2.5 py-1.5 rounded-lg border border-border/70 bg-card/60 flex items-center justify-between gap-1.5 h-9 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0 truncate flex-1">
-            <span className="text-[10px] uppercase font-bold text-muted-foreground shrink-0">
-              Teacher:
-            </span>
-            {selectedSubjectId ? (
-              assignedTeacher?.name ? (
-                <div className="flex items-center gap-1.5 min-w-0 truncate">
-                  <div className="size-5 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <User className="size-3" />
-                  </div>
-                  <span
-                    className="text-xs font-semibold text-foreground truncate"
-                    title={assignedTeacher.name}
-                  >
-                    {assignedTeacher.name}
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 py-0 px-1 h-4 shrink-0"
-                  >
-                    Configured
-                  </Badge>
-                  {(() => {
-                    const tLoad = (existingEntries || []).filter(
-                      (e) => String(e.teacher_user_id || e.teacher?.id) === String(assignedTeacher.id) && e.day_of_week === cellData?.day
-                    ).length
-                    return tLoad >= 5 ? (
-                      <Badge
-                        variant="outline"
-                        className="text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 border-amber-500/40 py-0 px-1 h-4 shrink-0"
-                        title={`${tLoad} periods scheduled on ${cellData?.day} (Heavy Load)`}
-                      >
-                        Heavy Load ({tLoad}P)
-                      </Badge>
-                    ) : null
-                  })()}
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 min-w-0 truncate">
-                  <span className="text-[11px] font-medium text-amber-700 dark:text-amber-300 truncate">
-                    No teacher configured
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleAssignNow}
-                    className="inline-flex items-center gap-0.5 text-[11px] font-bold text-primary hover:underline px-1.5 py-0.5 rounded hover:bg-primary/10 shrink-0 cursor-pointer"
-                  >
-                    <span>Assign</span>
-                    <ExternalLink className="size-2.5" />
-                  </button>
-                </div>
-              )
-            ) : (
-              <span className="text-xs text-muted-foreground italic truncate">
-                Pick a subject below
-              </span>
-            )}
-          </div>
-
-          {isCheckingConflict && (
-            <span
-              className="text-[9px] text-muted-foreground flex items-center gap-1 shrink-0"
-              title="Checking teacher availability…"
-            >
-              <Loader2 className="size-3 animate-spin" />
-            </span>
-          )}
-        </div>
-
-        {/* Right: Search Filter Input */}
-        <div className="relative h-9">
-          <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search subject or teacher..."
-            className="w-full h-9 rounded-lg pl-8 pr-7 text-xs bg-card/60 border-border/70 text-foreground transition-colors"
-          />
-          {search ? (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-              title="Clear search"
-            >
-              <X className="size-3" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-
+        {matchedSubject && <div className="px-5 py-2 flex flex-wrap items-center gap-2 text-sm">
+          <span>{matchedSubject.name}{assignedTeacher?.name && ` · ${assignedTeacher.name}`}</span>
+          {!assignedTeacher && <a className="underline" href={`/manage-school?classId=${section.class_id || section.classId || ""}&sectionId=${section.id}&subjectId=${matchedSubject.id}&highlight=true`}>Manage School</a>}
+          {isCurrentSubject && <Button variant="ghost" size="xs" onPress={handleClear} isDisabled={isSubmitting}><Trash2 className="size-3" /> Unassign</Button>}
+        </div>}
       {/* 3. SCROLLABLE SUBJECTS AREA: Single common scroll for both Academic & Activity columns */}
-      <div className="flex-1 overflow-y-auto px-5 py-3.5 space-y-3 min-h-[340px] max-h-[460px] scrollbar-thin">
+      <div className="flex-1 overflow-y-auto px-5 py-3.5 space-y-3 min-h-0 max-h-[460px] scrollbar-thin">
         {filteredSubjects.length === 0 ? (
           <div className="py-12 text-center text-xs text-muted-foreground border border-dashed rounded-xl">
             No matching subjects found.
@@ -856,58 +619,23 @@ function SlotAssignmentEditor({
       )}
 
       {/* 5. FIXED FOOTER: Apply Scope (3 options) + Action Buttons */}
+      <p className="px-5 text-xs">Room · {(selectedSubjectId && selectedSubjectId === currentSubject?.id ? currentEntry?.room_number : matchedSubject?.room_number) || "Not assigned"}</p>
       <DialogFooter className="px-5 py-2.5 border-t border-border/60 bg-muted/15 shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-        {/* Left: Apply Scope Selector (Fixed at bottom) */}
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-semibold text-foreground shrink-0">
-            Apply Scope:
-          </span>
-          <div className="inline-flex items-center p-0.5 rounded-lg border border-border/70 bg-background text-xs shadow-2xs">
-            {/* Option 1: This slot only */}
-            <button
-              type="button"
-              onClick={() => setSelectedScope("SLOT")}
-              className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer whitespace-nowrap",
-                selectedScope === "SLOT"
-                  ? "bg-primary text-primary-foreground font-bold shadow-xs"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              )}
-            >
-              This slot only
-            </button>
-
-            {/* Option 2: Weekdays */}
-            <button
-              type="button"
-              onClick={() => setSelectedScope("WEEKDAYS")}
-              className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer whitespace-nowrap",
-                selectedScope === "WEEKDAYS"
-                  ? "bg-primary text-primary-foreground font-bold shadow-xs"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              )}
-              title={`Apply to ${weekdayDays.map((d) => d.slice(0, 3)).join(", ")}`}
-            >
-              Weekdays ({weekdayDays.length}d)
-            </button>
-
-            {/* Option 3: All days */}
-            <button
-              type="button"
-              onClick={() => setSelectedScope("ALL_DAYS")}
-              className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer whitespace-nowrap",
-                selectedScope === "ALL_DAYS"
-                  ? "bg-primary text-primary-foreground font-bold shadow-xs"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              )}
-              title={`Apply to all active days: ${allScheduleDays.map((d) => d.slice(0, 3)).join(", ")}`}
-            >
-              All days ({allScheduleDays.length}d)
-            </button>
-          </div>
-        </div>
+        <fieldset className="flex flex-wrap items-center gap-2 text-xs">
+          <legend className="font-semibold">Apply to days</legend>
+          {Object.entries(dayLabels).filter(([date]) => date !== "SUNDAY" || date === day || !dayProblems[date]).map(([date, label]) => {
+            const reason = dayProblems[date]
+            return <label key={date} title={reason || undefined} className={cn("flex items-center gap-1", reason && "text-muted-foreground")}>
+              <input type="checkbox" aria-label={date} disabled={Boolean(reason) || isSubmitting}
+                checked={selectedDays.includes(date) && (date === day || !reason)}
+                onChange={event => {
+                  const checked = event.target.checked
+                  setSelectedDays(previous => checked ? [...previous, date] : previous.filter(value => value !== date))
+                }} />
+              {label}
+            </label>
+          })}
+        </fieldset>
 
         {/* Right: Actions (Fixed at bottom) */}
         <div className="flex items-center gap-2 shrink-0 justify-end">
@@ -925,10 +653,10 @@ function SlotAssignmentEditor({
             type="button"
             onClick={handleApply}
             size="default"
-            disabled={isSubmitting || isCheckingConflict || Boolean(conflictWarning) || !selectedSubjectId}
+            disabled={isSubmitting || isCheckingConflict || !selectedSubjectId || !applyDays.length || (selectedDays.includes(day) && Boolean(conflictWarning))}
             className={cn(
               "h-8 px-4 text-xs font-bold gap-1.5 shadow-xs cursor-pointer",
-              (conflictWarning || isCheckingConflict || !selectedSubjectId) && "opacity-50 cursor-not-allowed"
+              (isCheckingConflict || !selectedSubjectId || !applyDays.length) && "opacity-50 cursor-not-allowed"
             )}
           >
             {(isSubmitting || isCheckingConflict) && <Loader2 className="size-3.5 animate-spin" />}
@@ -942,6 +670,7 @@ function SlotAssignmentEditor({
           </Button>
         </div>
       </DialogFooter>
+      </AssignmentTabs>
     </Dialog>
   )
 }

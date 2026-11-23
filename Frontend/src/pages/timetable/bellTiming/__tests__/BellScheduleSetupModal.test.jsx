@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react"
 import { BellScheduleSetupModal } from "../../components/BellScheduleSetupModal"
 
+vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }))
+
 // Mock hooks and services
 const mockMutateAsync = vi.fn().mockResolvedValue({ message: "Saved" })
 const mockRefetch = vi.fn()
@@ -254,6 +256,10 @@ describe("BellScheduleSetupModal Orchestrator Integration", () => {
     expect(mockMutateAsync).toHaveBeenCalledTimes(1)
     expect(mockMutateAsync.mock.calls[0][0]).toEqual(expect.objectContaining({
       timetable_id: "tt-123",
+      setups: [
+        expect.objectContaining({ id: "setup-1", version: 1 }),
+        expect.objectContaining({ id: expect.stringMatching(/^draft-/), name: "Copy of Setup 1" }),
+      ],
     }))
   })
 

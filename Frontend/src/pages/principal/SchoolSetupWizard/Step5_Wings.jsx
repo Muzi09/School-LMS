@@ -1,3 +1,4 @@
+import { OrderButtons } from "@/components/common/OrderButtons"
 import { RotateCcw, Plus, AlertCircle, GripVertical, Check, X, Edit3, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,7 +21,8 @@ export function Step5Wings({
   handleSaveEditWing,
   handleCancelEditWing,
   handleDeleteWing,
-  handleRemoveClassFromWing,
+  onAssignClass,
+  onMoveWing,
   handleWingClassDragStart,
   handleWingClassDragOver,
   handleWingClassDrop,
@@ -33,7 +35,7 @@ export function Step5Wings({
         <div>
           <h2 className="text-lg font-bold text-foreground">Step 5: Academic Wings</h2>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1 leading-relaxed">
-            Organize classes into academic wings. Drag and drop classes between wings or into the unassigned pool.
+            Set the wing order and assign every class to one wing.
           </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
@@ -103,16 +105,7 @@ export function Step5Wings({
 
       {/* Unassigned Classes Section (Only shown at top if any class is unassigned) */}
       {unassignedClasses.length > 0 && (
-        <div
-          onDragOver={(e) => handleWingClassDragOver(e, "unassigned")}
-          onDragLeave={() => setDragOverArea(null)}
-          onDrop={(e) => handleWingClassDrop(e, null)}
-          className={`p-4 rounded-2xl border transition-all duration-150 space-y-3 ${
-            dragOverArea === "unassigned"
-              ? "border-amber-500/80 bg-amber-500/10 ring-2 ring-amber-500/20"
-              : "border-amber-500/30 bg-amber-500/5 shadow-2xs"
-          }`}
-        >
+        <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 space-y-3">
           <div className="flex items-center justify-between pb-2.5 border-b border-amber-500/20">
             <div className="flex items-center gap-2">
               <AlertCircle className="size-4 text-amber-500" />
@@ -122,7 +115,7 @@ export function Step5Wings({
               </span>
             </div>
             <span className="text-[11px] text-muted-foreground hidden sm:inline">
-              Drag into any wing below to assign
+              Select a wing for each class
             </span>
           </div>
 
@@ -137,6 +130,12 @@ export function Step5Wings({
               >
                 <GripVertical className="size-3 text-muted-foreground group-hover:text-amber-500 shrink-0" />
                 <span className="truncate flex-1 min-w-0">{clsName}</span>
+                <select aria-label={`Wing for ${clsName}`} value=""
+                  className="rounded border border-input bg-background text-xs"
+                  onChange={event => onAssignClass(Number(event.target.value), clsName)}>
+                  <option value="" disabled>Choose wing</option>
+                  {wingsList.map((item, index) => <option key={item.id} value={index}>{item.name}</option>)}
+                </select>
               </div>
             ))}
           </div>
@@ -212,6 +211,8 @@ export function Step5Wings({
                     </div>
 
                     <div className="flex items-center gap-1">
+                      <OrderButtons name={wing.name} index={wingIdx} count={wingsList.length}
+                        onMove={direction => onMoveWing(wingIdx, direction)} />
                       <button
                         type="button"
                         onClick={() => handleStartEditWing(wingIdx, wing.name)}
@@ -224,6 +225,7 @@ export function Step5Wings({
                       <button
                         type="button"
                         onClick={() => handleDeleteWing(wingIdx)}
+                        disabled={wingClasses.length > 0}
                         className="size-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center transition-colors cursor-pointer"
                         title={`Delete ${wing.name}`}
                         aria-label={`Delete ${wing.name}`}
@@ -251,15 +253,11 @@ export function Step5Wings({
                         <span className="truncate">{clsName}</span>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveClassFromWing(wingIdx, clsName)}
-                        className="size-5 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground flex items-center justify-center transition-colors cursor-pointer shrink-0 ml-1"
-                        title={`Remove ${clsName} from ${wing.name}`}
-                        aria-label={`Remove ${clsName}`}
-                      >
-                        <Trash2 className="size-3" />
-                      </button>
+                      <select aria-label={`Wing for ${clsName}`} value={wingIdx}
+                        className="min-w-0 max-w-[55%] rounded border border-input bg-background text-xs"
+                        onChange={event => onAssignClass(Number(event.target.value), clsName)}>
+                        {wingsList.map((item, index) => <option key={item.id} value={index}>{item.name}</option>)}
+                      </select>
                     </div>
                   ))}
                 </div>

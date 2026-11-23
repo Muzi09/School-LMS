@@ -24,6 +24,10 @@ const SUBJECT_COLORS = [
   "bg-indigo-500",
 ]
 
+function RoomLabel({ room }) {
+  return room ? <span className="truncate text-[10px] font-normal text-muted-foreground" title={room}>Room {room}</span> : null
+}
+
 function SingleClassCard({
   schoolClass,
   wings = [],
@@ -67,7 +71,9 @@ function SingleClassCard({
         label: "Unassigned",
         description: "No teacher assigned",
       },
-      ...teachers.map((tch) => ({
+      ...teachers.filter((teacher) =>
+        wings.length === 0 || teacher.assigned_wing_ids?.includes(schoolClass.wing_id)
+      ).map((tch) => ({
         value: String(tch.id),
         label: tch.name,
         description: (tch.tag || tch.designation)
@@ -75,7 +81,7 @@ function SingleClassCard({
           : (tch.email || null),
       })),
     ]
-  }, [teachers])
+  }, [teachers, wings, schoolClass.wing_id])
 
   const handleStartRenameClass = () => {
     setIsRenamingClass(true)
@@ -103,26 +109,12 @@ function SingleClassCard({
     setEditingSectionId(null)
   }
 
-  // Always maintain strict, deterministic natural section order so cards never jump around
-  const sections = useMemo(() => {
-    const list = [...(schoolClass.sections || [])]
-    return list.sort((a, b) => {
-      const nameCompare = (a.name || "").localeCompare(b.name || "", undefined, {
-        numeric: true,
-        sensitivity: "base",
-      })
-      if (nameCompare !== 0) return nameCompare
-      if (a.created_at && b.created_at) {
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      }
-      return String(a.id || "").localeCompare(String(b.id || ""))
-    })
-  }, [schoolClass.sections])
+  const sections = schoolClass.sections || []
 
   const currentWing = wings.find((w) => w.id === schoolClass.wing_id)
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 space-y-4 shadow-xs">
+    <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-xs">
       {/* Header: Class Name, Wing Badge & Edit/Delete on Left; Sections Count & Add Section on Right */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-3">
         {/* Left Side: Class Name, Edit/Delete, and Wing Badge Button */}
@@ -170,14 +162,14 @@ function SingleClassCard({
             title="Click to reassign to another wing or unassign"
           >
             <span className="size-1.5 rounded-full bg-primary" />
-            <span>{currentWing ? currentWing.name : "Unassigned Wing"}</span>
+            <span>{currentWing ? currentWing.name : "Assign wing"}</span>
             <ArrowLeftRight className="size-2.5 ml-0.5 text-muted-foreground" />
           </button>
         </div>
 
-        {/* Right Side: Same for all sections Checkbox, Sections Count Chip & Add Section Button */}
+        {/* Right Side: Same subjects in all sections Checkbox, Sections Count Chip & Add Section Button */}
         <div className="flex items-center gap-3 self-start sm:self-center flex-wrap sm:flex-nowrap">
-          {/* Same for All Sections Checkbox */}
+          {/* Same Subjects in All Sections Checkbox */}
           <label
             className="flex items-center gap-2 cursor-pointer select-none group text-xs font-semibold text-foreground hover:text-primary transition-colors shrink-0"
             title="When ticked, all sections in this class share the same subjects. Teacher assignments always remain independent per section."
@@ -189,7 +181,7 @@ function SingleClassCard({
               className="size-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
             />
             <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors whitespace-nowrap">
-              Same for all sections
+              Same subjects in all sections
             </span>
           </label>
 
@@ -207,10 +199,10 @@ function SingleClassCard({
         </div>
       </div>
 
-      {/* Sections Cards - Take available width with proper max width */}
-      <div className="flex flex-wrap gap-4 items-stretch">
+      {/* Each section grows with its complete subject list. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3 items-start">
         {sections.length === 0 ? (
-          <div className="w-full py-6 px-4 rounded-xl border border-dashed border-border/80 text-center text-xs text-muted-foreground">
+          <div className="col-span-full py-6 px-4 rounded-xl border border-dashed border-border/80 text-center text-xs text-muted-foreground">
             No sections configured for {schoolClass.name}. Click &quot;Add Section&quot; to create one.
           </div>
         ) : (
@@ -224,7 +216,7 @@ function SingleClassCard({
             return (
               <div
                 key={sec.id}
-                className="flex-1 min-w-[280px] max-w-[360px] p-4 rounded-xl border border-border bg-card space-y-3 shadow-xs flex flex-col justify-between"
+                className="min-w-0 p-3 rounded-lg border border-border bg-card space-y-3"
               >
                 <div className="space-y-3">
                   {/* Section Title Header */}
@@ -245,6 +237,7 @@ function SingleClassCard({
                           <span className="text-xs font-bold text-foreground uppercase tracking-wide">
                             {sec.name}
                           </span>
+                          <RoomLabel room={sec.room_number} />
                           <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.2 rounded bg-muted font-bold">
                             {sectionSubjects.length} Subjects
                           </span>
@@ -340,7 +333,7 @@ function SingleClassCard({
                       </button>
                     </div>
 
-                    <div className="space-y-2 max-h-[200px] overflow-y-auto scrollbar-thin p-1.5 pr-2.5">
+                    <div className="space-y-1.5">
                       {sectionSubjects.length === 0 ? (
                         <div className="text-[11px] text-muted-foreground italic py-2 text-center">
                           No subjects assigned
@@ -351,20 +344,6 @@ function SingleClassCard({
                           const isActivity = !sub.is_academic || sub.category === "non_academic"
                           const isSplit = Boolean(sub.is_split && sub.child_subjects && sub.child_subjects.length > 0)
                           const rawTeacherId = sub.teacher_id || sub.teacher?.id || ""
-                          const hasTeacherInList = teacherComboboxOptions.some((o) => o.value === String(rawTeacherId))
-                          const validAssignedTeacher = (hasTeacherInList || sub.teacher?.name) ? rawTeacherId : ""
-                          const subjectTeacherOptions =
-                            validAssignedTeacher && !hasTeacherInList && sub.teacher?.name
-                              ? [
-                                ...teacherComboboxOptions,
-                                {
-                                  value: String(validAssignedTeacher),
-                                  label: sub.teacher.name,
-                                  description: sub.teacher?.tag || sub.teacher?.designation || null,
-                                },
-                              ]
-                              : teacherComboboxOptions
-
                           if (isSplit) {
                             return (
                               <div
@@ -389,20 +368,6 @@ function SingleClassCard({
                                 <div className="p-1.5 space-y-1.5 bg-muted/10">
                                   {sub.child_subjects.map((childSub) => {
                                     const rawChildTeacherId = childSub.teacher_id || childSub.teacher?.id || ""
-                                    const hasChildTeacherInList = teacherComboboxOptions.some((o) => o.value === String(rawChildTeacherId))
-                                    const validChildTeacher = (hasChildTeacherInList || childSub.teacher?.name) ? rawChildTeacherId : ""
-                                    const childTeacherOptions =
-                                      validChildTeacher && !hasChildTeacherInList && childSub.teacher?.name
-                                        ? [
-                                          ...teacherComboboxOptions,
-                                          {
-                                            value: String(validChildTeacher),
-                                            label: childSub.teacher.name,
-                                            description: childSub.teacher?.tag || childSub.teacher?.designation || null,
-                                          },
-                                        ]
-                                        : teacherComboboxOptions
-
                                     const isChildTarget = Boolean(
                                       targetSectionId &&
                                       targetSubjectId &&
@@ -416,7 +381,7 @@ function SingleClassCard({
                                         id={`target-subject-${sec.id}-${childSub.id}`}
                                         data-subject-card
                                         className={cn(
-                                          "px-2 py-1 rounded-md border border-border/50 bg-background hover:bg-accent/30 flex items-center justify-between gap-1.5 transition-all pl-3 relative",
+                                          "px-2 py-1 rounded-md border border-border/50 bg-background hover:bg-accent/30 flex flex-wrap items-center justify-between gap-1.5 transition-all pl-3 relative",
                                           isChildTarget && "ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/10 border-primary shadow-sm animate-pulse"
                                         )}
                                       >
@@ -425,6 +390,7 @@ function SingleClassCard({
                                           <span className="text-[11px] font-medium text-foreground truncate" title={childSub.name}>
                                             {childSub.name}
                                           </span>
+                                          <RoomLabel room={sec.room_overrides?.[childSub.id]} />
                                           {childSub.code && (
                                             <span className="text-[9px] font-mono text-muted-foreground">
                                               ({childSub.code})
@@ -434,7 +400,7 @@ function SingleClassCard({
 
                                         <div className="shrink-0 max-w-[130px]">
                                           <Combobox
-                                            value={validChildTeacher ? String(validChildTeacher) : ""}
+                                            value={String(rawChildTeacherId)}
                                             onValueChange={(newVal) => {
                                               onAssignSubjectTeacher?.(sec.id, childSub.id, newVal ? newVal : null)
                                               if (isChildTarget) {
@@ -446,8 +412,9 @@ function SingleClassCard({
                                                 onStopHighlight?.()
                                               }
                                             }}
-                                            options={childTeacherOptions}
-                                            placeholder="Assign"
+                                            options={teacherComboboxOptions}
+                                            searchPlaceholder="Search teachers"
+                                            placeholder={childSub.teacher?.name || "Assign"}
                                             showDescriptionInTrigger={false}
                                             anchorSelector="[data-subject-card]"
                                             autoOpen={isChildTarget}
@@ -476,7 +443,7 @@ function SingleClassCard({
                               id={`target-subject-${sec.id}-${sub.id}`}
                               data-subject-card
                               className={cn(
-                                "px-2.5 py-1.5 rounded-lg border border-border/70 bg-background hover:bg-accent/40 flex items-center justify-between gap-1.5 transition-all relative",
+                                "px-2.5 py-1.5 rounded-lg border border-border/70 bg-background hover:bg-accent/40 flex flex-wrap items-center justify-between gap-1.5 transition-all relative",
                                 isTarget && "ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/10 border-primary shadow-sm animate-pulse"
                               )}
                             >
@@ -485,6 +452,7 @@ function SingleClassCard({
                                 <span className="text-xs font-medium text-foreground truncate" title={sub.name}>
                                   {sub.name}
                                 </span>
+                                <RoomLabel room={sec.room_overrides?.[sub.id]} />
                                 {isActivity && (
                                   <span className="text-[8px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded shrink-0">
                                     Activity
@@ -494,7 +462,7 @@ function SingleClassCard({
 
                               <div className="shrink-0 max-w-[130px]">
                                 <Combobox
-                                  value={validAssignedTeacher ? String(validAssignedTeacher) : ""}
+                                  value={String(rawTeacherId)}
                                   onValueChange={(newVal) => {
                                     onAssignSubjectTeacher?.(sec.id, sub.id, newVal ? newVal : null)
                                     if (isTarget) {
@@ -506,8 +474,9 @@ function SingleClassCard({
                                       onStopHighlight?.()
                                     }
                                   }}
-                                  options={subjectTeacherOptions}
-                                  placeholder="Assign"
+                                  options={teacherComboboxOptions}
+                                  searchPlaceholder="Search teachers"
+                                  placeholder={sub.teacher?.name || "Assign"}
                                   showDescriptionInTrigger={false}
                                   anchorSelector="[data-subject-card]"
                                   autoOpen={isTarget}

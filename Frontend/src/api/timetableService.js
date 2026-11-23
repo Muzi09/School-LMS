@@ -115,6 +115,9 @@ export const listSetupsApi = async (timetableId) => {
   return await apiClient.get(`/timetable/setups?timetable_id=${timetableId}`)
 }
 
+export const getBellEditorSnapshotApi = (timetableId) =>
+  apiClient.get("/timetable/setups/editor", { params: { timetable_id: timetableId } })
+
 export const createSetupApi = async (payload) => {
   return await apiClient.post("/timetable/setups", payload)
 }

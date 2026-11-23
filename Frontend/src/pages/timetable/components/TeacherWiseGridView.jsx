@@ -6,8 +6,10 @@ import {
 import { getSubjectTheme } from "../subjectTheme"
 import { getShortSubjectName, buildRowGroups } from "../subjectShortName"
 import { cn } from "@/lib/utils"
+import { duration } from "../lessonTime"
 import { teacherWeek } from "../sectionSchedule"
 import { TeacherSchedule } from "./TeacherSchedule"
+import { LecturePlannerDialog } from "./LecturePlannerDialog"
 import { TeacherSlotAssignmentDialog } from "./TeacherSlotAssignmentDialog"
 import { TimetableTooltip } from "./TimetableTooltip"
 import { useBulkAssignSlot, useDeleteTimetableEntry } from "@/hooks/useTimetable"
@@ -85,7 +87,6 @@ export function TeacherWiseGridView({
     return { sectionMap: sMap, secSubToTeacherMap: tMap }
   }, [allFlattenedSections])
 
-  // Map teacher subject allocations derived from Manage School (sections' subject_stats)
   const teacherAllocationsMap = useMemo(() => {
     const map = new Map() // teacherId -> Array of allocation objects
 
@@ -109,6 +110,7 @@ export function TeacherWiseGridView({
               section: sec,
               subject_id: subId,
               subject_name: stat.name,
+              room_number: stat.room_number,
               subject_code: stat.code,
               category: stat.category || (stat.is_academic ? "academic" : "non_academic"),
               is_academic: stat.is_academic !== undefined ? stat.is_academic : true,
@@ -139,6 +141,7 @@ export function TeacherWiseGridView({
             section: secMatch,
             subject_id: subId,
             subject_name: e.subject.name,
+            room_number: e.room_number,
             subject_code: e.subject.code,
             category: e.subject.category || (e.subject.is_academic ? "academic" : "non_academic"),
             is_academic: e.subject.is_academic !== undefined ? e.subject.is_academic : true,
@@ -154,23 +157,43 @@ export function TeacherWiseGridView({
 
   const { weeks, conflictsCount } = useMemo(() => {
     const byTeacher = new Map()
+    const activeOptions = new Map()
+    for (const e of entries) {
+      if (!e.placement_id) continue
+      if (!activeOptions.has(e.placement_id)) activeOptions.set(e.placement_id,new Set())
+      activeOptions.get(e.placement_id).add(e.option_id)
+    }
     for (const e of entries) {
       const id = String(e.teacher_user_id || e.teacher_id || e.teacher?.id ||
         secSubToTeacherMap.get(e.section_id + "_" + (e.subject_id || e.subject?.id)) || "")
       if (!id) continue
       if (!byTeacher.has(id)) byTeacher.set(id, [])
-      byTeacher.get(id).push({ ...e, section: sectionMap.get(String(e.section_id)) || e.section })
+      const active = activeOptions.get(e.placement_id)?.size || 0
+      const expected = timetableData?.lecture_plan?.placements?.[e.placement_id]?.expected?.length || 0
+      const coverage = active < expected ? active + " of " + expected + " options scheduled" : ""
+      byTeacher.get(id).push({ ...e, coverage, section: sectionMap.get(String(e.section_id)) || e.section })
     }
     const weeks = new Map()
     let conflictsCount = 0
     for (const t of eligible_teachers) {
       const id = String(t.id)
-      const week = teacherWeek(teacherAllocationsMap.get(id) || [], byTeacher.get(id) || [], setups)
+      const week = teacherWeek(teacherAllocationsMap.get(id) || [], byTeacher.get(id) || [], setups, t.working_shifts)
       weeks.set(id, week)
       conflictsCount += week.conflicts.size + week.review.length
     }
     return { weeks, conflictsCount }
-  }, [entries, setups, eligible_teachers, teacherAllocationsMap, sectionMap, secSubToTeacherMap])
+  }, [entries, setups, eligible_teachers, teacherAllocationsMap, sectionMap, secSubToTeacherMap, timetableData?.lecture_plan])
+
+  const subjectCounts = useMemo(() => {
+    const counts = new Map()
+    for (const e of entries) {
+      const subject = e.subject_id || e.subject?.id
+      const teacher = e.teacher_user_id || e.teacher?.id || secSubToTeacherMap.get(e.section_id + "_" + subject)
+      const key = [teacher,e.section_id,subject].join("/")
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    return counts
+  }, [entries, secSubToTeacherMap])
 
   // Report assign bar metrics to parent Timetable header
   useEffect(() => {
@@ -182,17 +205,31 @@ export function TeacherWiseGridView({
     }
   }, [conflictsCount, onAssignBarPropsChange])
 
-  // Filter teachers by search query
+  const classTeacherSections = useMemo(() => {
+    const byTeacher = new Map()
+    for (const section of allFlattenedSections) {
+      if (!section.class_teacher_id) continue
+      const id = String(section.class_teacher_id)
+      if (!byTeacher.has(id)) byTeacher.set(id, [])
+      byTeacher.get(id).push(section)
+    }
+    return byTeacher
+  }, [allFlattenedSections])
+
+  // Keep class teachers visible when filtering by wing.
   const filteredTeachers = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
     return eligible_teachers.filter((t) => {
-      if (selectedWingId !== "ALL" && !(teacherAllocationsMap.get(String(t.id)) || []).some(a => a.section?.wing_id === selectedWingId)) return false
+      const id = String(t.id)
+      if (selectedWingId !== "ALL" &&
+        !(teacherAllocationsMap.get(id) || []).some(a => a.section?.wing_id === selectedWingId) &&
+        !(classTeacherSections.get(id) || []).some(section => section.wing_id === selectedWingId)) return false
       const name = `${t.first_name || ""} ${t.last_name || ""}`.toLowerCase()
       const dept = (t.department || t.designation || "").toLowerCase()
       const subj = (t.primary_subject || "").toLowerCase()
       return name.includes(q) || dept.includes(q) || subj.includes(q)
     })
-  }, [eligible_teachers, searchQuery, selectedWingId, teacherAllocationsMap])
+  }, [eligible_teachers, searchQuery, selectedWingId, teacherAllocationsMap, classTeacherSections])
 
   // Slot assignment handler
   const handleAssignSlot = useCallback(
@@ -361,25 +398,7 @@ export function TeacherWiseGridView({
           const secId = String(alloc.section?.id)
           const subId = String(alloc.subject_id)
           // Count periods taught by this teacher in this section for this subject
-          let currentAssigned = 0
-          for (const e of entries) {
-            const entryTid = String(
-              e.teacher_user_id ||
-              e.teacher_id ||
-              e.teacher?.id ||
-              secSubToTeacherMap.get(`${e.section_id}_${e.subject_id || e.subject?.id}`) ||
-              ""
-            )
-            if (
-              entryTid === tId &&
-              String(e.section_id) === secId &&
-              String(e.subject_id || e.subject?.id) === subId &&
-              !e.period?.is_break
-            ) {
-              currentAssigned += 1
-            }
-          }
-
+          const currentAssigned = subjectCounts.get([tId,secId,subId].join("/")) || 0
           const clsName = alloc.section?.school_class?.name || alloc.section?.class_name || "Class"
           const secName = alloc.section?.name || ""
           const classSecLabel = `${clsName} ${secName}`.trim()
@@ -394,10 +413,10 @@ export function TeacherWiseGridView({
         // Class Teacher resolution
         const ctSections = (teacher.class_teacher_of && teacher.class_teacher_of.length > 0)
           ? teacher.class_teacher_of
-          : allFlattenedSections.filter((s) => String(s.class_teacher_id) === String(teacher.id))
+          : classTeacherSections.get(tId) || []
         const isClassTeacher = ctSections.length > 0
         const ctLabel = ctSections
-          .map((s) => s.label || `${s.class_name || ""} ${s.name || ""}`.trim())
+          .map((s) => s.label || `${s.class_name || ""} ${s.section_name || s.name || ""}`.trim())
           .join(", ")
 
         // 2-Row Micro-Tokens distribution with "Acad :" and "Non Acad :" headers
@@ -410,7 +429,7 @@ export function TeacherWiseGridView({
             className="bg-card text-card-foreground rounded-2xl border border-primary/25 shadow-xs overflow-hidden transition-all hover:shadow-sm"
           >
             {/* TEACHER CARD HEADER: Compact 3-Zone x 2-Line Architecture (~48px height) */}
-            <div className="flex items-center justify-between gap-3 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px] max-h-[52px]">
+            <div className="flex items-center justify-between gap-3 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px]">
               {/* Left: Avatar & Teacher Name & Designation */}
               <div className="flex items-center gap-2.5 min-w-[170px] max-w-[260px] shrink-0">
                 <div className="size-8 rounded-xl bg-primary text-primary-foreground font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
@@ -424,9 +443,9 @@ export function TeacherWiseGridView({
                     </span>
                   </div>
 
-                  {/* Line 2: Class Teacher Info (Compact CT: <ctLabel>, tooltip gives full Class Teacher) */}
+                  {/* Class teacher assignments */}
                   <div
-                    className="flex items-center gap-1 text-[11px] truncate font-medium cursor-default"
+                    className="flex flex-wrap items-baseline gap-x-1 text-xs font-medium"
                     title={
                       isClassTeacher
                         ? `Class Teacher: ${ctLabel}${dept ? ` • ${dept}` : ""}`
@@ -435,9 +454,9 @@ export function TeacherWiseGridView({
                   >
                     {isClassTeacher ? (
                       <>
-                        <GraduationCap className="size-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span className="text-emerald-700 dark:text-emerald-300 font-medium truncate">
-                          <span className="font-semibold">CT:</span> {ctLabel}
+                        <span className="min-w-0 break-words text-emerald-700 dark:text-emerald-300">
+                          <GraduationCap className="mr-1 inline size-3 align-[-2px]" />
+                          <span className="font-semibold">Class teacher for</span> {ctLabel}
                         </span>
                         {dept && (
                           <>
@@ -601,19 +620,31 @@ export function TeacherWiseGridView({
               </div>
 
               <div className="text-right text-xs text-muted-foreground">
-                <strong>{assignedCount} lessons</strong><div>{week.minutes} teaching minutes</div>
+                <strong>Assigned {assignedCount}{week.capacity !== null && "/" + week.capacity}</strong>
+                {week.capacity > 0 && <progress className="h-1.5 w-24 accent-primary" value={assignedCount} max={week.capacity} aria-label="Assigned periods" />}
+                <div>{duration(week.minutes)} teaching</div>
+                {week.hours.length > 0 && <div>{duration(week.days.reduce((n,d) => n + d.free.reduce((v,[a,b]) => v+b-a,0),0))} free</div>}
               </div>
             </div>
             <TeacherSchedule week={week} teacher={teacher} density={density} zoom={zoom} edit={isAssignMode}
-              open={(day, period, currentEntry) => setDialogState({ isOpen: true, cellData: { teacher, day, period, currentEntry } })}
-              remove={handleUnassignSlot} />
+              open={(day, period, currentEntry, at, stretch) => setDialogState({ isOpen: true, cellData: { teacher, day, period, currentEntry, at, stretch } })}
+              remove={(id,secId) => {
+                const e = entries.find(row => row.id === id)
+                if (e?.placement_id) setDialogState({isOpen:true,cellData:{teacher,day:e.day_of_week,period:e.period,currentEntry:e,remove:true}})
+                else handleUnassignSlot(id,secId)
+              }} />
           </div>
         )
       })}
 
       {/* TEACHER SLOT ASSIGNMENT DIALOG */}
       {dialogState.isOpen && (
-        <TeacherSlotAssignmentDialog
+        <LecturePlannerDialog data={timetableData} cell={dialogState.cellData}
+          onClose={() => setDialogState({isOpen:false,cellData:null})}
+          renderAssignment={dialogState.cellData.currentEntry?.placement_id ? undefined : (groupPanel, preferGroup, groupBusy) => <TeacherSlotAssignmentDialog
+          groupPanel={dialogState.cellData.currentEntry ? null : groupPanel}
+          preferGroup={preferGroup}
+          groupBusy={groupBusy}
           isOpen={dialogState.isOpen}
           onClose={() => setDialogState({ isOpen: false, cellData: null })}
           cellData={dialogState.cellData}
@@ -627,7 +658,7 @@ export function TeacherWiseGridView({
           onAssign={handleAssignSlot}
           onUnassign={handleUnassignSlot}
           isSubmitting={bulkAssignMutation.isPending || deleteEntryMutation.isPending}
-        />
+        />} />
       )}
 
       {/* FLOATING TIMETABLE TOOLTIP */}

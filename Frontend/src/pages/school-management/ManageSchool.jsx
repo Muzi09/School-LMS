@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/common/PageHeader"
 
 import { schoolConfigService } from "@/api/schoolConfigService"
+import { StructureOrderDialog } from "./StructureOrderDialog"
 import { WingsBar } from "./WingsBar"
 import { ClassSectionWorkspace } from "./ClassSectionWorkspace"
 import {
@@ -33,6 +34,7 @@ import {
 
 export function ManageSchool() {
   const queryClient = useQueryClient()
+  const [isOrderOpen, setIsOrderOpen] = useState(false)
 
   // -------------------------------------------------------------
   // Data Fetching
@@ -57,24 +59,7 @@ export function ManageSchool() {
     staleTime: 60000,
   })
 
-  // Normalize fetched data
-  const classes = useMemo(() => {
-    const rawClasses = config?.classes || []
-    return rawClasses.map((cls) => ({
-      ...cls,
-      sections: [...(cls.sections || [])].sort((a, b) => {
-        const nameCompare = (a.name || "").localeCompare(b.name || "", undefined, {
-          numeric: true,
-          sensitivity: "base",
-        })
-        if (nameCompare !== 0) return nameCompare
-        if (a.created_at && b.created_at) {
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        }
-        return String(a.id || "").localeCompare(String(b.id || ""))
-      }),
-    }))
-  }, [config?.classes])
+  const classes = useMemo(() => config?.classes || [], [config?.classes])
   const wings = useMemo(() => config?.wings || [], [config?.wings])
   const subjects = useMemo(() => config?.subjects || [], [config?.subjects])
 
@@ -147,7 +132,9 @@ export function ManageSchool() {
   // Mutations & Query Invalidation
   // -------------------------------------------------------------
   const invalidateConfig = () => {
-    queryClient.invalidateQueries({ queryKey: ["schoolConfig"] })
+    return Promise.all(
+      ["schoolConfig", "schoolClasses", "timetable"].map(key => queryClient.invalidateQueries({ queryKey: [key] })),
+    )
   }
 
   // 1. Class Mutations
@@ -221,12 +208,9 @@ export function ManageSchool() {
   const assignSectionSubjectsMutation = useMutation({
     mutationFn: (/** @type {{ classId: string, sectionId?: string, subjectIds: string[] }} */ { classId, sectionId, subjectIds }) =>
       schoolConfigService.assignSectionSubjects(classId, sectionId, subjectIds),
-    onSuccess: () => {
-      invalidateConfig()
+    onSuccess: async () => {
+      await Promise.all(["schoolConfig", "timetable"].map(key => queryClient.invalidateQueries({ queryKey: [key] })))
       toast.success("Section subjects updated.")
-    },
-    onError: (err) => {
-      toast.error(err.message || "Failed to assign section subjects.")
     },
   })
 
@@ -277,7 +261,7 @@ export function ManageSchool() {
     onSuccess: () => {
       invalidateConfig()
       setSelectedWingId("all")
-      toast.success("Wing deleted. Assigned classes are now unassigned.")
+      toast.success("Wing deleted.")
     },
     onError: (err) => {
       toast.error(err.message || "Failed to delete wing.")
@@ -323,7 +307,7 @@ export function ManageSchool() {
       toast.error(msg)
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["timetable"], refetchType: "none" })
+      queryClient.invalidateQueries({ queryKey: ["timetable", "class-wise"] })
       toast.success(
         variables.teacherId
           ? "Class teacher assigned successfully."
@@ -523,7 +507,9 @@ export function ManageSchool() {
           .map((s) => s.id)
           .sort()
           .join(",")
-        return secSubIds === firstSecSubIds
+        return secSubIds === firstSecSubIds &&
+          [...(sec.parallel_subject_ids || [])].sort().join(",") ===
+          [...(sections[0].parallel_subject_ids || [])].sort().join(",")
       })
 
       if (allIdentical) {
@@ -557,10 +543,14 @@ export function ManageSchool() {
   }
 
   const handleDeleteWing = (wing) => {
+    if (wing.class_ids?.length) {
+      toast.error("Move this wing’s classes before deleting it.")
+      return
+    }
     setConfirmDialog({
       isOpen: true,
       title: `Delete Wing '${wing.name}'?`,
-      description: `Are you sure you want to delete '${wing.name}'? Underlying classes will NOT be deleted; they will simply become unassigned.`,
+      description: `Are you sure you want to delete '${wing.name}'?`,
       confirmLabel: "Delete Wing",
       isLoading: false,
       onConfirm: async () => {
@@ -679,6 +669,17 @@ export function ManageSchool() {
         description="Manage your school's academic structure, classes, sections, wings, and teacher assignments."
         onRefresh={() => refetch()}
         isRefreshing={isFetching}
+        beforeCreateActions={
+          <Button
+            type="button"
+            variant="outline"
+            size="default"
+            onClick={() => setIsOrderOpen(true)}
+            className="h-9 px-4 text-sm font-medium shadow-2xs"
+          >
+            Set display order
+          </Button>
+        }
         onCreate={handleOpenAddClass}
         createLabel="Add Class"
       />
@@ -761,6 +762,13 @@ export function ManageSchool() {
       {/* 4. Modals & Dialogs                                           */}
       {/* ------------------------------------------------------------- */}
 
+      <StructureOrderDialog
+        open={isOrderOpen}
+        onOpenChange={setIsOrderOpen}
+        wings={wings}
+        classes={classes}
+      />
+
       {/* Add Class Dialog */}
       <AddClassDialog
         isOpen={isAddClassOpen}
@@ -798,16 +806,17 @@ export function ManageSchool() {
           setIsSectionSubjectsOpen(false)
           setSectionSubjectTarget({ class: null, section: null })
         }}
-        targetClass={sectionSubjectTarget.class}
-        targetSection={sectionSubjectTarget.section}
+        targetClass={
+          classes.find((c) => c.id === sectionSubjectTarget.class?.id) || sectionSubjectTarget.class
+        }
+        targetSection={
+          classes
+            .find((c) => c.id === sectionSubjectTarget.class?.id)
+            ?.sections?.find((s) => s.id === sectionSubjectTarget.section?.id) || sectionSubjectTarget.section
+        }
         allSubjects={subjects}
-        onSaveAssignments={(classId, sectionId, subjectIds) => {
-          assignSectionSubjectsMutation.mutate({
-            classId,
-            sectionId,
-            subjectIds,
-          })
-        }}
+        onSaveAssignments={(classId, sectionId, subjectIds) =>
+          assignSectionSubjectsMutation.mutateAsync({ classId, sectionId, subjectIds })}
         onSubjectSplitChange={() => {
           invalidateConfig()
         }}

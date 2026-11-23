@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, List
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -58,6 +59,8 @@ class Timetable(Base, AuditMixin):
         String(255),
         nullable=False,
     )
+
+    lecture_plan: Mapped[dict | None] = mapped_column(JSON, deferred=True)
 
     description: Mapped[str | None] = mapped_column(
         Text,
@@ -444,6 +447,10 @@ class TimetableEntry(Base, AuditMixin):
     """
     __tablename__ = "timetable_entries"
 
+    placement_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+    option_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+    room_number: Mapped[str | None] = mapped_column(String(80))
+
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
@@ -544,7 +551,10 @@ class TimetableEntry(Base, AuditMixin):
                 cls.day_of_week,
                 cls.period_id,
                 unique=True,
-                postgresql_where=(cls.deleted_at.is_(None) & cls.timetable_id.is_not(None)),
+                postgresql_where=(cls.deleted_at.is_(None) & cls.timetable_id.is_not(None) & cls.placement_id.is_(None)),
+            ),
+            Index("uq_group_section_option", cls.timetable_id, cls.placement_id, cls.option_id, cls.section_id,
+                  unique=True, postgresql_where=cls.deleted_at.is_(None) & cls.placement_id.is_not(None),
             ),
             Index(
                 "idx_timetable_entries_teacher_tt_slot",

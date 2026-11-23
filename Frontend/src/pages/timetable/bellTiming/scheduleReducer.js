@@ -148,7 +148,7 @@ export function createDefaultPeriodsTemplate(startTimeStr = "08:30", periodDurat
  * Initial empty / default setup generator.
  */
 export function createDefaultSetup(name = "Setup 1", index = 1, workingDays = ALL_WEEKDAYS) {
-  const setupId = generateUUID()
+  const setupId = `draft-${generateUUID()}`
   const scheduleId = `sched-${Date.now()}-1`
   return {
     id: setupId,
@@ -359,7 +359,7 @@ export function bellTimingReducer(state, action) {
       if (!source) return state
 
       const nextIdx = state.setups.length + 1
-      const newId = generateUUID()
+      const newId = `draft-${generateUUID()}`
       const duplicated = {
         ...source,
         id: newId,

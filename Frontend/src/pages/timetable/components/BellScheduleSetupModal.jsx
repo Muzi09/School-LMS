@@ -175,14 +175,14 @@ function BellScheduleEditor({
   onSaved,
   readOnly = false,
 }) {
-  // Query setups from API (pre-populated with initialSetups if provided from parent)
+  // Fetch separately only when the editor is opened without a snapshot.
   const {
     data: rawSetupsData = [],
     isLoading: isFetchingSetups,
     error: fetchError,
     refetch,
   } = useSetups(timetableId, {
-    initialData: initialSetups && initialSetups.length > 0 ? initialSetups : undefined,
+    enabled: Boolean(timetableId) && initialSetups === null,
   })
 
   const openedTimetableVersion = useState(timetableVersion)[0]
@@ -191,25 +191,15 @@ function BellScheduleEditor({
 
   // Flatten all sections in all wings
   const allSections = useMemo(() => extractSectionsFromWings(wings), [wings])
+  const [initialPayload] = useState(() => (
+    initialSetups === null ? null : mapSetupsToState(initialSetups, allSections)
+  ))
 
   // Schedule Reducer State: initialized on frame 0 using initialSetups if present
   const [state, dispatch] = useReducer(bellTimingReducer, null, () => {
-    const sections = extractSectionsFromWings(wings)
-    if (initialSetups && initialSetups.length > 0) {
-      const mapped = mapSetupsToState(initialSetups, sections)
-      return {
-        setups: mapped.setups,
-        sectionAssignments: mapped.sectionAssignments,
-        activeSetupId: null,
-        activeScheduleId: null,
-        isDirty: false,
-        revision: 0,
-        history: { past: [], future: [] },
-      }
-    }
     return {
-      setups: [],
-      sectionAssignments: {},
+      setups: initialPayload?.setups ?? [],
+      sectionAssignments: initialPayload?.sectionAssignments ?? {},
       activeSetupId: null,
       activeScheduleId: null,
       isDirty: false,
@@ -227,39 +217,14 @@ function BellScheduleEditor({
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const [saveConflict, setSaveConflict] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
-  const initialPayloadRef = useRef(
-    initialSetups && initialSetups.length > 0
-      ? JSON.parse(JSON.stringify(mapSetupsToState(initialSetups, extractSectionsFromWings(wings))))
-      : null
-  )
-  const hasInitializedRef = useRef(Boolean(initialSetups && initialSetups.length > 0))
+  const initialPayloadRef = useRef(initialPayload)
   // Initialize or re-sync reducer state when API data arrives (only if not pre-populated)
   useEffect(() => {
-    if (!isOpen || hasInitializedRef.current) return
-    if (isFetchingSetups) return
-
-    // If state is not dirty, populate from API data or synthesize initial setup
-    if (!state.isDirty) {
-      if (rawSetupsData && rawSetupsData.length > 0) {
-        const initialPayload = mapSetupsToState(rawSetupsData, allSections)
-        initialPayloadRef.current = JSON.parse(JSON.stringify(initialPayload))
-        hasInitializedRef.current = true
-        dispatch({
-          type: "SET_INITIAL_STATE",
-          payload: initialPayload,
-        })
-      } else if (!isFetchingSetups) {
-        // No setups exist yet: create initial default setup and assign all classes to it
-        const initialPayload = mapSetupsToState([], allSections)
-        initialPayloadRef.current = JSON.parse(JSON.stringify(initialPayload))
-        hasInitializedRef.current = true
-        dispatch({
-          type: "SET_INITIAL_STATE",
-          payload: initialPayload,
-        })
-      }
-    }
-  }, [isOpen, rawSetupsData, isFetchingSetups, allSections, state.isDirty])
+    if (!isOpen || initialPayloadRef.current || isFetchingSetups || fetchError || state.isDirty) return
+    const payload = mapSetupsToState(rawSetupsData, allSections)
+    initialPayloadRef.current = payload
+    dispatch({ type: "SET_INITIAL_STATE", payload })
+  }, [isOpen, rawSetupsData, isFetchingSetups, fetchError, allSections, state.isDirty])
 
   // Setup Actions
   const handleRenameSetup = (setupId, name) => {
@@ -609,7 +574,7 @@ function BellScheduleEditor({
     if (initialPayloadRef.current) {
       dispatch({
         type: "SET_INITIAL_STATE",
-        payload: JSON.parse(JSON.stringify(initialPayloadRef.current)),
+        payload: initialPayloadRef.current,
       })
       toast.info("All changes discarded.")
     }
@@ -655,23 +620,9 @@ function BellScheduleEditor({
         },
       })
 
-      const setupsToCache = savedSetups && savedSetups.length > 0 ? savedSetups : stateToSave.setups
-      queryClient.setQueriesData(
-        { queryKey: ["timetable", "class-wise"] },
-        (oldData) => {
-          if (!oldData) return oldData
-          return {
-            ...oldData,
-            setups: setupsToCache,
-          }
-        }
-      )
-      queryClient.invalidateQueries({ queryKey: timetableKeys.setups(timetableId) })
-      queryClient.invalidateQueries({ queryKey: ["timetable", "class-wise"] })
-
-      return setupsToCache
+      return savedSetups.length > 0 ? savedSetups : stateToSave.setups
     },
-    [batchSaveMutation, queryClient, readOnly, timetableId, openedTimetableVersion]
+    [batchSaveMutation, readOnly, timetableId, openedTimetableVersion]
   )
 
   const executeSaveAndClose = async (stateToSave) => {
@@ -775,7 +726,7 @@ function BellScheduleEditor({
     >
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 bg-background/90"
         onClick={isSaving ? undefined : handleRequestClose}
       />
 
@@ -854,7 +805,7 @@ function BellScheduleEditor({
           </div>
         ) : (
           /* Scrollable Body: Vertical List of Setup Cards */
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          <div data-bell-editor-scroll className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
             {/* Validation Alerts Banner */}
             {validationErrors.length > 0 && (
               <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs space-y-1">
@@ -944,7 +895,7 @@ function BellScheduleEditor({
         )}
 
         {/* Sticky Action Footer Bar */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-t border-border bg-card/95 backdrop-blur-xs shrink-0 z-20">
+        <div className="flex items-center justify-between px-5 py-3.5 border-t border-border bg-card shrink-0 z-20">
           <div className="flex items-center gap-3 flex-wrap">
             {state.isDirty ? (
               <div className="flex items-center gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
@@ -1135,7 +1086,7 @@ function BellScheduleEditor({
           aria-modal="true"
         >
           <div
-            className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-background/90"
             onClick={() => setShowDiscardConfirm(false)}
           />
           <div className="relative w-full max-w-sm bg-card border border-border shadow-2xl rounded-2xl z-10 overflow-hidden flex flex-col space-y-4 p-5 animate-in zoom-in-95 duration-150">

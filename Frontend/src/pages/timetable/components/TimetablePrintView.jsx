@@ -1,464 +1,146 @@
-import React from "react"
-import { getSubjectTheme } from "../subjectTheme"
-import { sortDays } from "../bellTiming/validators"
+import { forwardRef, useMemo } from "react"
+import { lessonRoomLabel } from "../rooms"
 import { cn } from "@/lib/utils"
+import { clock, duration, interval, minutes } from "../lessonTime"
+import { isTeachingSlot, lessonPeriod, scheduleGroups, setupForSection, teacherWeek } from "../sectionSchedule"
+import { getSubjectTheme } from "../subjectTheme"
+import { formatClassSection } from "../timetableUtils"
 
-function formatTime12h(timeStr) {
-  if (!timeStr || typeof timeStr !== "string") return ""
-  const parts = timeStr.split(":")
-  if (parts.length < 2) return timeStr
-  const [h, m] = parts.map(Number)
-  if (isNaN(h)) return timeStr
-  const period = h >= 12 ? "PM" : "AM"
-  const hour12 = h % 12 === 0 ? 12 : h % 12
-  return m === 0 ? `${hour12} ${period}` : `${hour12}:${String(m || 0).padStart(2, "0")} ${period}`
+function indexBy(items, keyFor) {
+  const result = new Map()
+  for (const item of items) {
+    const key = keyFor(item)
+    if (!result.has(key)) result.set(key, [])
+    result.get(key).push(item)
+  }
+  return result
 }
 
-/** @typedef {import("./ClassWiseCell").TimetableSection} TimetableSection */
-/** @typedef {import("./ClassWiseCell").TimetableTeacher} TimetableTeacher */
-/** @typedef {import("./ClassWiseCell").TimetableSetup} TimetableSetup */
-/** @typedef {import("./ClassWiseCell").TimetableEntry} TimetableEntry */
+function Lesson({ entry, teacherView, color }) {
+  const subject = entry.subjectLabel || entry.subject?.name || "Subject"
+  const detail = teacherView ? entry.sectionLabel : entry.teacher?.name || "Unassigned teacher"
+  return <div className={cn("px-1 py-1 leading-tight", color && getSubjectTheme(subject).cellBg)}>
+    <strong>{subject}</strong>
+    <div>{detail}</div>
+    <div>{lessonRoomLabel(entry)}</div>
+    {teacherView && entry.coverage && <small>{entry.coverage}</small>}
+  </div>
+}
 
-/**
- * @typedef {object} TimetablePrintProps
- * @property {string} [schoolName]
- * @property {string} [timetableTitle]
- * @property {string} [academicYear]
- * @property {string} [printScope]
- * @property {TimetableSection[]} [selectedSections]
- * @property {TimetableTeacher[]} [selectedTeachers]
- * @property {TimetableSetup[]} [setups]
- * @property {TimetableEntry[]} [entries]
- * @property {string} [pageBreak]
- * @property {string} [colorMode]
- * @property {boolean} [includeHeader]
- */
+function PeriodGrid({ periods, days, entriesAt, teacherView, color, placements, sectionId }) {
+  return <table className="mb-2 w-full table-fixed border-collapse text-center text-[10px]">
+    <thead><tr className="bg-slate-100">
+      <th scope="col" className="w-12 border p-1">Day</th>
+      {periods.map(p => <th key={p.id} scope="col" className="border p-1">
+        {p.label || "P" + p.period_number}<div className="font-normal">{interval(p)}</div>
+      </th>)}
+    </tr></thead>
+    <tbody>{days.map(day => <tr key={day} className="break-inside-avoid">
+      <th scope="row" className="border bg-slate-50">{day.slice(0,3)}</th>
+      {periods.map(p => {
+        const lessons = entriesAt(day,p)
+        const expected = placements?.[lessons[0]?.placement_id]?.expected?.filter(r => r.section_ids.includes(sectionId)).length
+        return <td key={p.id} className="border align-middle">
+          {lessons.length ? lessons.map(e => <Lesson key={e.id} entry={e} teacherView={teacherView} color={color} />) :
+            !isTeachingSlot(p) ? p.label || "Break" : teacherView ? "Free" : "—"}
+          {lessons.length < expected && <small>{lessons.length} of {expected} options scheduled</small>}
+        </td>
+      })}
+    </tr>)}</tbody>
+  </table>
+}
 
-export const TimetablePrintView = React.forwardRef(function TimetablePrintView(
-  /** @type {TimetablePrintProps} */ {
-    schoolName = "School",
-    timetableTitle = "Timetable",
-    academicYear = "2026-2027",
-    printScope = "classwise", // "classwise" | "teacherwise" | "both"
-    selectedSections = [],
-    selectedTeachers = [],
-    setups = [],
-    entries = [],
-    pageBreak = "always", // "always" | "auto"
-    colorMode = "color", // "color" | "bw"
-    includeHeader = true,
-  },
-  /** @type {React.ForwardedRef<HTMLDivElement>} */ ref
-) {
-  const isColor = colorMode === "color"
-  const defaultDays = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+function ReviewLessons({ entries }) {
+  if (!entries.length) return null
+  return <div className="mt-2 border-t p-2 text-xs"><strong>Review · Outside the current bell schedule</strong>
+    {entries.map(e => <div key={e.id}>{e.day_of_week} · {e.period && interval(e.period)} · {formatClassSection(e.section)} · {e.subject?.name}{e.room_number && " · Room " + e.room_number}</div>)}
+  </div>
+}
 
-  // Map section to setup
-  const secToSetup = React.useMemo(() => {
-    const map = {}
-    for (const s of setups) {
-      let rawSecIds = s.assigned_section_ids || []
-      if (typeof rawSecIds === "string") {
-        try {
-          rawSecIds = JSON.parse(rawSecIds)
-        } catch {
-          rawSecIds = []
-        }
-      }
-      for (const id of rawSecIds) {
-        map[String(id)] = s
-      }
-    }
-    return map
-  }, [setups])
+function ClassSchedule({ section, setups, entries, color, placements }) {
+  const groups = scheduleGroups(setupForSection(section,setups))
+  const slots = indexBy(entries,e => e.day_of_week + "/" + e.period_id)
+  return <>
+    {groups.map(g => <PeriodGrid key={g.id} periods={g.periods} days={g.days} color={color} placements={placements}
+      sectionId={section.id} entriesAt={(day,p) => slots.get(day + "/" + p.id) || []} />)}
+    {!groups.length && <p className="p-2 text-xs">No bell schedule assigned.</p>}
+    <ReviewLessons entries={entries.filter(e => !lessonPeriod(e,groups))} />
+  </>
+}
 
-  // Index entries by sectionId_day_period
-  const classEntryMap = React.useMemo(() => {
-    const map = {}
-    for (const e of entries) {
-      const p = e.period
-      const pNum = p?.period_number || 0
-      map[`${e.section_id}_${e.day_of_week}_${e.period_id}`] = e
-      map[`${e.section_id}_${e.day_of_week}_${pNum}`] = e
-    }
-    return map
-  }, [entries])
-
-  // Group entries by teacher
-  const { teacherEntriesMap, teacherWorkloadMap } = React.useMemo(() => {
-    const tMap = {}
-    const wMap = {}
-    for (const e of entries) {
-      if (!e.teacher_user_id) continue
-      const tId = String(e.teacher_user_id)
-      if (!tMap[tId]) tMap[tId] = {}
-      const p = e.period
-      const pNum = p?.period_number || 0
-      tMap[tId][`${e.day_of_week}_${e.period_id}`] = e
-      tMap[tId][`${e.day_of_week}_${pNum}`] = e
-      if (!p?.is_break) {
-        wMap[tId] = (wMap[tId] || 0) + 1
-      }
-    }
-    return { teacherEntriesMap: tMap, teacherWorkloadMap: wMap }
-  }, [entries])
-
-  // Fallback master periods
-  const fallbackPeriods = React.useMemo(() => {
-    const firstPeriods = setups[0]?.schedules?.[0]?.periods || setups[0]?.periods || []
-    if (setups.length > 0 && firstPeriods.length > 0) {
-      return firstPeriods
-    }
-    // Extract unique periods from entries
-    const seen = new Map()
-    for (const e of entries) {
-      if (e.period && !seen.has(e.period.id)) {
-        seen.set(e.period.id, e.period)
-      }
-    }
-    return Array.from(seen.values()).sort((a, b) => (a.period_number || 0) - (b.period_number || 0))
-  }, [setups, entries])
-
-  const renderClassSectionCard = (section) => {
-    const setup = secToSetup[String(section.id)] || setups[0] || null
-    let secDays = defaultDays
-    let secPeriods = fallbackPeriods
-
-    if (setup) {
-      let rawDays = setup.applicable_days
-      if (typeof rawDays === "string") {
-        try {
-          rawDays = JSON.parse(rawDays)
-        } catch {
-          rawDays = defaultDays
-        }
-      }
-      if (Array.isArray(rawDays) && rawDays.length > 0) {
-        secDays = sortDays(rawDays.map((d) => String(d).toUpperCase()))
-      }
-      const targetPeriods = setup.schedules?.[0]?.periods || setup.periods || []
-      if (targetPeriods.length > 0) {
-        secPeriods = [...targetPeriods].sort((a, b) => a.period_number - b.period_number)
-      }
-    }
-
-    const clsName = section.class_name || "Class"
-    const secName = section.name || ""
-
-    return (
-      <div
-        key={`print-sec-${section.id}`}
-        className={cn(
-          "print-card border border-slate-800 rounded-lg overflow-hidden bg-white text-slate-900 mb-6",
-          pageBreak === "always" ? "break-after-page" : "break-inside-avoid"
-        )}
-        style={{
-          pageBreakAfter: pageBreak === "always" ? "always" : "auto",
-          breakAfter: pageBreak === "always" ? "page" : "auto",
-        }}
-      >
-        {/* Header Branding */}
-        {includeHeader && (
-          <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between border-b border-slate-800">
-            <div>
-              <h2 className="text-sm font-bold tracking-tight uppercase">{schoolName}</h2>
-              <p className="text-[10px] text-slate-300 font-medium">
-                {timetableTitle} {academicYear ? `(${academicYear})` : ""} — Class Schedule
-              </p>
-            </div>
-            <div className="text-right">
-              <span className="text-xs font-black px-2.5 py-1 bg-white text-slate-900 rounded-md">
-                CLASS {clsName} - {secName}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Timetable Table Grid */}
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-center text-xs">
-            <thead>
-              <tr className="bg-slate-100 border-b border-slate-400 font-bold text-slate-800">
-                <th className="border-r border-slate-300 px-2 py-2 w-16 text-[11px] uppercase tracking-wider">
-                  Days
-                </th>
-                {secPeriods.map((p, pIdx) => {
-                  const pNum = p.name || `P${p.period_number || pIdx + 1}`
-                  const startFmt = formatTime12h(p.start_time)
-                  const endFmt = formatTime12h(p.end_time)
-                  const timeRange = startFmt && endFmt ? `${startFmt} - ${endFmt}` : ""
-                  return (
-                    <th
-                      key={p.id || pIdx}
-                      className="border-r border-slate-300 px-1 py-1.5 min-w-[75px] font-semibold"
-                    >
-                      <div className="text-[11px] font-bold text-slate-900">{pNum}</div>
-                      {timeRange && <div className="text-[9px] text-slate-500 font-normal">{timeRange}</div>}
-                    </th>
-                  )
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {secDays.map((day) => {
-                return (
-                  <tr key={day} className="border-b border-slate-300 last:border-b-0">
-                    <td className="border-r border-slate-300 px-1 py-2 font-bold text-[10px] bg-slate-50 uppercase tracking-wider text-slate-700">
-                      {day.slice(0, 3)}
-                    </td>
-                    {secPeriods.map((p, pIdx) => {
-                      if (p.is_break) {
-                        return (
-                          <td
-                            key={p.id || pIdx}
-                            className="border-r border-slate-300 px-1 py-2 bg-slate-100 text-slate-500 font-bold text-[10px] italic select-none"
-                          >
-                            {p.name || "BREAK"}
-                          </td>
-                        )
-                      }
-
-                      const entry =
-                        classEntryMap[`${section.id}_${day}_${p.id}`] ||
-                        classEntryMap[`${section.id}_${day}_${p.period_number}`]
-
-                      if (entry && entry.subject) {
-                        const subjName = entry.subject.name || "Subject"
-                        const theme = getSubjectTheme(subjName)
-                        const teacherName = entry.teacher
-                          ? `${entry.teacher.first_name || ""} ${entry.teacher.last_name || ""}`.trim()
-                          : ""
-
-                        return (
-                          <td
-                            key={p.id || pIdx}
-                            className={cn(
-                              "border-r border-slate-300 px-1 py-1.5 transition-colors align-middle",
-                              isColor ? theme.cellBg : "bg-white"
-                            )}
-                          >
-                            <div className="font-bold text-[11px] text-slate-900 leading-tight">
-                              {subjName}
-                            </div>
-                            {teacherName && (
-                              <div className="text-[9.5px] text-slate-600 font-medium leading-tight mt-0.5">
-                                ({teacherName})
-                              </div>
-                            )}
-                          </td>
-                        )
-                      }
-
-                      return (
-                        <td
-                          key={p.id || pIdx}
-                          className="border-r border-slate-300 px-1 py-2 text-slate-300 text-[10px]"
-                        >
-                          -
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )
+function TeacherSchedulePrint({ teacher, sections, entries, setups, color }) {
+  const allocations = new Map(sections.map(section => [section.id,{ section }]))
+  for (const e of entries) if (e.section && !allocations.has(e.section_id)) allocations.set(e.section_id,{section:e.section})
+  const week = teacherWeek([...allocations.values()], entries, setups, teacher.working_shifts)
+  const blocks = []
+  for (const day of week.days) {
+    const last = blocks.at(-1)
+    if (day.periods && last?.periods === day.periods) last.days.push(day)
+    else blocks.push({periods:day.periods,days:[day]})
   }
+  return <>
+    <p className="px-2 py-1 text-xs">Assigned {week.count} · {duration(week.minutes)} teaching
+      {week.hours.length > 0 && " · " + duration(week.days.flatMap(d => d.free).reduce((n,[a,b]) => n+b-a,0)) + " free"}</p>
+    {blocks.map(({periods, days}) => {
+      if (periods) {
+        const slots = indexBy(days.flatMap(d => d.lessons),e => e.day_of_week + "/" + interval(e.period))
+        return <PeriodGrid key={days[0].day} teacherView periods={periods} days={days.map(d => d.day)}
+          entriesAt={(day,p) => slots.get(day + "/" + interval(p)) || []} color={color}/>
+      }
+      const day = days[0]
+      const items = [
+        ...day.lessons.map(e => ({key:e.id,start:e.period.start_time,range:interval(e.period),label:e.periodLabels + " · " + duration(minutes(e.period.end_time) - minutes(e.period.start_time)),entry:e})),
+        ...day.free.map(([a,b],i) => ({key:"F" + i,start:clock(a),range:clock(a) + "–" + clock(b),label:"F" + (i+1) + " · " + duration(b-a) + " free"})),
+      ].sort((a,b) => a.start.localeCompare(b.start))
+      return <section key={day.day} className="border-t p-2 text-[10px]">
+        <strong>{day.day} · {duration(day.teachingMinutes)} teaching</strong>
+        {!week.hours.length && <span> · Working hours unavailable</span>}
+        <div className="mt-1 flex flex-wrap gap-1">{items.map(item => <div key={item.key} className="break-inside-avoid border p-1">
+          <div>{item.range} · {item.label}</div>
+          {item.entry && <Lesson entry={item.entry} color={color} teacherView />}
+        </div>)}</div>
+      </section>
+    })}
+    {!blocks.length && <p className="p-2 text-xs">No class bell schedule assigned.</p>}
+    <ReviewLessons entries={week.review}/>
+  </>
+}
 
-  const renderTeacherCard = (teacher) => {
-    const tId = String(teacher.id)
-    const tName = `${teacher.first_name || ""} ${teacher.last_name || ""}`.trim() || teacher.email
-    const dept = teacher.tag || teacher.designation || teacher.department || "Teacher"
-    const assignedCount = teacherWorkloadMap[tId] || 0
-    const tMap = teacherEntriesMap[tId] || {}
-    const secPeriods = fallbackPeriods
-
-    return (
-      <div
-        key={`print-teacher-${teacher.id}`}
-        className={cn(
-          "print-card border border-slate-800 rounded-lg overflow-hidden bg-white text-slate-900 mb-6",
-          pageBreak === "always" ? "break-after-page" : "break-inside-avoid"
-        )}
-        style={{
-          pageBreakAfter: pageBreak === "always" ? "always" : "auto",
-          breakAfter: pageBreak === "always" ? "page" : "auto",
-        }}
-      >
-        {/* Header Branding */}
-        {includeHeader && (
-          <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between border-b border-slate-800">
-            <div>
-              <h2 className="text-sm font-bold tracking-tight uppercase">{schoolName}</h2>
-              <p className="text-[10px] text-slate-300 font-medium">
-                {timetableTitle} {academicYear ? `(${academicYear})` : ""} — Faculty Schedule
-              </p>
-            </div>
-            <div className="text-right flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-slate-300">
-                {dept} • Assigned: {assignedCount} pds/wk
-              </span>
-              <span className="text-xs font-black px-2.5 py-1 bg-white text-slate-900 rounded-md">
-                {tName.toUpperCase()}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Timetable Table Grid */}
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-center text-xs">
-            <thead>
-              <tr className="bg-slate-100 border-b border-slate-400 font-bold text-slate-800">
-                <th className="border-r border-slate-300 px-2 py-2 w-16 text-[11px] uppercase tracking-wider">
-                  Days
-                </th>
-                {secPeriods.map((p, pIdx) => {
-                  const pNum = p.name || `P${p.period_number || pIdx + 1}`
-                  const startFmt = formatTime12h(p.start_time)
-                  const endFmt = formatTime12h(p.end_time)
-                  const timeRange = startFmt && endFmt ? `${startFmt} - ${endFmt}` : ""
-                  return (
-                    <th
-                      key={p.id || pIdx}
-                      className="border-r border-slate-300 px-1 py-1.5 min-w-[75px] font-semibold"
-                    >
-                      <div className="text-[11px] font-bold text-slate-900">{pNum}</div>
-                      {timeRange && <div className="text-[9px] text-slate-500 font-normal">{timeRange}</div>}
-                    </th>
-                  )
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {defaultDays.map((day) => {
-                return (
-                  <tr key={day} className="border-b border-slate-300 last:border-b-0">
-                    <td className="border-r border-slate-300 px-1 py-2 font-bold text-[10px] bg-slate-50 uppercase tracking-wider text-slate-700">
-                      {day.slice(0, 3)}
-                    </td>
-                    {secPeriods.map((p, pIdx) => {
-                      if (p.is_break) {
-                        return (
-                          <td
-                            key={p.id || pIdx}
-                            className="border-r border-slate-300 px-1 py-2 bg-slate-100 text-slate-500 font-bold text-[10px] italic select-none"
-                          >
-                            {p.name || "BREAK"}
-                          </td>
-                        )
-                      }
-
-                      const entry = tMap[`${day}_${p.id}`] || tMap[`${day}_${p.period_number}`]
-
-                      if (entry && entry.section) {
-                        const sec = entry.section
-                        const clsName = sec.school_class?.name || ""
-                        const secLabel = `${clsName} ${sec.name || ""}`.trim()
-                        const subjName = entry.subject?.name || ""
-                        const theme = getSubjectTheme(subjName)
-
-                        return (
-                          <td
-                            key={p.id || pIdx}
-                            className={cn(
-                              "border-r border-slate-300 px-1 py-1.5 transition-colors align-middle",
-                              isColor ? theme.cellBg : "bg-white"
-                            )}
-                          >
-                            <div className="font-black text-[11px] text-slate-900 leading-tight">
-                              {secLabel}
-                            </div>
-                            {subjName && (
-                              <div className="text-[9.5px] text-slate-700 font-semibold leading-tight mt-0.5">
-                                ({subjName})
-                              </div>
-                            )}
-                          </td>
-                        )
-                      }
-
-                      return (
-                        <td
-                          key={p.id || pIdx}
-                          className="border-r border-slate-300 px-1 py-2 text-slate-400 text-[10px] font-mono"
-                        >
-                          Free
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div ref={ref} id="printable-timetable-area" className="w-full text-slate-900 bg-white">
-      {/* Printable Stylesheet injected directly into the component */}
-      <style>{`
-        @media print {
-          @page {
-            size: landscape;
-            margin: 8mm;
-          }
-          body {
-            background: white !important;
-            color: black !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          /* Hide all application elements except printable timetable area */
-          body > *:not(#print-root-container) {
-            display: none !important;
-          }
-          #printable-timetable-area {
-            display: block !important;
-            width: 100% !important;
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          .break-after-page {
-            page-break-after: always !important;
-            break-after: page !important;
-          }
-          .break-inside-avoid {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-        }
-      `}</style>
-
-      {/* Class-wise tables */}
-      {(printScope === "classwise" || printScope === "both") && (
-        <div>
-          {selectedSections.map((section) => renderClassSectionCard(section))}
-        </div>
-      )}
-
-      {/* Teacher-wise tables */}
-      {(printScope === "teacherwise" || printScope === "both") && (
-        <div>
-          {selectedTeachers.map((teacher) => renderTeacherCard(teacher))}
-        </div>
-      )}
-
-      {selectedSections.length === 0 && selectedTeachers.length === 0 && (
-        <div className="py-12 text-center text-sm text-slate-500">
-          No classes or teachers selected to print.
-        </div>
-      )}
-    </div>
-  )
+export const TimetablePrintView = forwardRef(function TimetablePrintView({
+  schoolName, timetableTitle, academicYear, printScope = "both", selectedSections = [], selectedTeachers = [],
+  allSections = selectedSections, setups = [], entries = [], placements, pageBreak = "always", colorMode = "color", includeHeader = true,
+}, ref) {
+  const sections = useMemo(() => indexBy(entries,e => e.section_id),[entries])
+  const teachers = useMemo(() => {
+    const options = new Map()
+    for (const e of entries) {
+      if (!e.placement_id) continue
+      if (!options.has(e.placement_id)) options.set(e.placement_id, new Set())
+      options.get(e.placement_id).add(e.option_id)
+    }
+    const lessons = entries.map(e => {
+      const count = options.get(e.placement_id)?.size
+      const expected = placements?.[e.placement_id]?.expected?.length
+      return count < expected ? { ...e, coverage: count + " of " + expected + " options scheduled" } : e
+    })
+    return indexBy(lessons, e => e.teacher?.id || e.teacher_user_id)
+  }, [entries, placements])
+  const teacherSections = useMemo(() => {
+    const pairs = allSections.flatMap(section => [...new Set((section.subject_stats || []).map(s => s.teacher_id || s.teacher?.id).filter(Boolean))]
+      .map(id => ({id,section})))
+    return indexBy(pairs,pair => pair.id)
+  },[allSections])
+  const color = colorMode === "color"
+  const card = (key,title,body) => <article key={key} className={cn("mb-4 bg-white text-slate-900",pageBreak === "always" ? "break-after-page" : "break-inside-avoid")}>
+    {includeHeader && <div className="bg-slate-900 px-3 py-1.5 text-xs font-medium text-white">{[schoolName,timetableTitle,academicYear].filter(Boolean).join(" · ")}</div>}
+    <h2 className="border border-slate-300 px-2 py-1 text-sm font-bold">{title}</h2>
+    {body}
+  </article>
+  return <div ref={ref}>
+    {printScope !== "teacherwise" && selectedSections.map(section => card("s"+section.id,formatClassSection(section),
+      <ClassSchedule section={section} setups={setups} entries={sections.get(section.id) || []} color={color} placements={placements}/>))}
+    {printScope !== "classwise" && selectedTeachers.map(t => card("t"+t.id,t.name || [t.first_name,t.last_name].filter(Boolean).join(" ") || t.email,
+      <TeacherSchedulePrint teacher={t} setups={setups} sections={(teacherSections.get(t.id) || []).map(p => p.section)} entries={teachers.get(t.id) || []} color={color}/>))}
+    {!selectedSections.length && !selectedTeachers.length && <p>No classes or teachers selected to print.</p>}
+  </div>
 })
-

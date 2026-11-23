@@ -22,6 +22,7 @@ import {
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 import { ClassWiseCard } from "./ClassWiseCard"
 import { JumpToRail } from "./JumpToRail"
+import { LecturePlannerDialog } from "./LecturePlannerDialog"
 import { SlotAssignmentDialog } from "./SlotAssignmentDialog"
 import { TimetableTooltip } from "./TimetableTooltip"
 import {
@@ -33,6 +34,8 @@ import { parseTimetableQuery, sectionMatchesQuery } from "../searchUtils"
 import { isNonTeachingPeriod } from "../bellTiming/validators"
 import { getIsMac, formatTime12, formatClassSection } from "../timetableUtils"
 import { toast } from "sonner"
+
+const EMPTY_ITEMS = []
 
 export function ClassWiseGridView({
   timetableData,
@@ -73,9 +76,11 @@ export function ClassWiseGridView({
     }
   }
 
-  const bulkAssignMutation = useBulkAssignSlot()
-  const moveLesson = useMoveLesson()
-  const deleteEntryMutation = useDeleteTimetableEntry()
+  // The mutation result objects change on every render. Use their stable methods
+  // so the callbacks reported to the parent toolbar don't trigger a render loop.
+  const { mutateAsync: assignSlot, mutate: assignSlotWithoutWaiting, isPending: isAssigningSlot } = useBulkAssignSlot()
+  const { mutateAsync: moveLesson } = useMoveLesson()
+  const { mutateAsync: removeEntry, isPending: isRemovingEntry } = useDeleteTimetableEntry()
 
   // In-memory per-slot mutation queue to ensure causal sequential execution and eliminate race conditions
   const inFlightSlotMutationsRef = useRef(new Map())
@@ -85,10 +90,10 @@ export function ClassWiseGridView({
 
   const {
     timetable,
-    wings = [],
-    setups = [],
-    entries = [],
-    eligible_teachers = [],
+    wings = EMPTY_ITEMS,
+    setups = EMPTY_ITEMS,
+    entries = EMPTY_ITEMS,
+    eligible_teachers = EMPTY_ITEMS,
   } = timetableData || {}
 
   // Map setups by ID
@@ -238,6 +243,7 @@ export function ClassWiseGridView({
         for (let j = i + 1; j < tEntries.length; j++) {
           const e1 = tEntries[i]
           const e2 = tEntries[j]
+          if (e1.placement_id && e1.placement_id === e2.placement_id) continue
           const p1 = getEffectivePeriod(e1)
           const p2 = getEffectivePeriod(e2)
 
@@ -446,7 +452,7 @@ export function ClassWiseGridView({
     setIsClearingConflicts(true)
     try {
       for (const entry of entriesToClear) {
-        await deleteEntryMutation.mutateAsync({
+        await removeEntry({
           entryId: entry.id,
           sectionId: entry.section_id,
         })
@@ -458,7 +464,7 @@ export function ClassWiseGridView({
     } finally {
       setIsClearingConflicts(false)
     }
-  }, [confirmClearDialog.entries, deleteEntryMutation])
+  }, [confirmClearDialog.entries, removeEntry])
 
   // Issues list for AssignModeBar & Drawer
   const issuesList = useMemo(() => {
@@ -618,6 +624,7 @@ export function ClassWiseGridView({
       target_weekly: s.target ?? s.target_weekly ?? (s.is_academic ? 6 : 3),
       current_assigned: s.assigned ?? s.current_assigned ?? 0,
       teacher_id: s.teacher_id || s.teacher?.id || null,
+      room_number: s.room_number,
       teacher: s.teacher || null,
     }))
   }, [dialogState.cellData, allFlattenedSections])
@@ -691,7 +698,7 @@ export function ClassWiseGridView({
 
       const mutationPromise = previousPromise
         .catch(() => {})
-        .then(() => bulkAssignMutation.mutateAsync(requestPayload))
+        .then(() => assignSlot(requestPayload))
         .finally(() => {
           if (inFlightSlotMutationsRef.current.get(slotKey) === mutationPromise) {
             inFlightSlotMutationsRef.current.delete(slotKey)
@@ -711,7 +718,7 @@ export function ClassWiseGridView({
         }
       }
     },
-    [timetable, dialogState.cellData, bulkAssignMutation, getSplitDaysForSectionAndDay, makeSlotMutationKey, allFlattenedSections]
+    [timetable, dialogState.cellData, assignSlot, getSplitDaysForSectionAndDay, makeSlotMutationKey, allFlattenedSections]
   )
 
   // Handle any pending assign now slot assignment when returning from Manage School
@@ -731,7 +738,7 @@ export function ClassWiseGridView({
       )
 
       if (!hasSlot && target.subjectId && target.timetableId) {
-        bulkAssignMutation.mutate({
+        assignSlotWithoutWaiting({
           timetable_id: target.timetableId,
           section_id: target.sectionId,
           day_of_week: target.day,
@@ -747,7 +754,7 @@ export function ClassWiseGridView({
       console.error("Error processing pending assign target:", e)
       sessionStorage.removeItem("timetable_assign_now_target")
     }
-  }, [timetable, entries, bulkAssignMutation])
+  }, [timetable, entries, assignSlotWithoutWaiting])
 
   // Handle slot unassign
   const handleUnassignSlot = useCallback(
@@ -758,6 +765,11 @@ export function ClassWiseGridView({
           ? dialogState.cellData.currentEntry
           : null)
 
+      if (entryToDelete?.placement_id) {
+        setDialogState({isOpen:true, cellData:{section:entryToDelete.section, day:entryToDelete.day_of_week,
+          period:entryToDelete.period, currentEntry:entryToDelete, remove:true}})
+        return
+      }
       const secId =
         entryToDelete?.section_id ||
         sectionIdOpt ||
@@ -798,13 +810,13 @@ export function ClassWiseGridView({
         .catch(() => {})
         .then(async () => {
           if (entryId && !String(entryId).startsWith("opt_")) {
-            return deleteEntryMutation.mutateAsync({ entryId, sectionId: secId })
+            return removeEntry({ entryId, sectionId: secId })
           }
           if (entryId && !String(entryId).startsWith("opt_")) {
-            return deleteEntryMutation.mutateAsync({ entryId, sectionId: secId })
+            return removeEntry({ entryId, sectionId: secId })
           }
           if (timetable?.id && secId && targetDay && targetPeriodId) {
-            return bulkAssignMutation.mutateAsync({
+            return assignSlot({
               timetable_id: timetable.id, section_id: secId, day_of_week: targetDay,
               period_id: targetPeriodId, subject_id: null, scope: "SLOT",
             })
@@ -826,7 +838,7 @@ export function ClassWiseGridView({
         // Fallback: If delete by ID failed (e.g. invalid UUID or stale reference), unassign by slot coordinates
         if (timetable?.id && secId && targetDay && targetPeriodId) {
           try {
-            await bulkAssignMutation.mutateAsync({
+            await assignSlot({
               timetable_id: timetable.id,
               section_id: secId,
               day_of_week: targetDay,
@@ -843,7 +855,7 @@ export function ClassWiseGridView({
         toast.error("Failed to unassign slot")
       }
     },
-    [entries, dialogState.cellData, timetable?.id, deleteEntryMutation, bulkAssignMutation, makeSlotMutationKey]
+    [entries, dialogState.cellData, timetable?.id, removeEntry, assignSlot, makeSlotMutationKey]
   )
 
   // Handle moving / swapping slots via drag and drop
@@ -865,7 +877,7 @@ export function ClassWiseGridView({
       try {
         if (isCopy) {
           // Copy source entry to target
-          await bulkAssignMutation.mutateAsync({
+          await assignSlot({
             timetable_id: timetable.id,
             section_id: targetSlot.section.id,
             day_of_week: targetSlot.day,
@@ -876,7 +888,7 @@ export function ClassWiseGridView({
           })
           toast.success("Slot copied")
         } else {
-          await moveLesson.mutateAsync({
+          await moveLesson({
             entryId: srcEntry.id, timetable_id: timetable.id,
             source_section_id: sourceSlot.section.id, source_day: sourceSlot.day, source_period_id: sourceSlot.period.id,
             section_id: targetSlot.section.id, day_of_week: targetSlot.day, period_id: targetSlot.period.id,
@@ -888,7 +900,7 @@ export function ClassWiseGridView({
         toast.error("Failed to move slot: " + (err.message || ""))
       }
     },
-    [timetable, bulkAssignMutation, moveLesson]
+    [timetable, assignSlot, moveLesson]
   )
 
   // Undo action
@@ -903,7 +915,7 @@ export function ClassWiseGridView({
       if (lastAction.type === "ASSIGN") {
         if (lastAction.prevEntry) {
           // Restore previous entry
-          await bulkAssignMutation.mutateAsync({
+          await assignSlot({
             timetable_id: timetable.id,
             section_id: lastAction.prevEntry.section_id,
             day_of_week: lastAction.prevEntry.day_of_week,
@@ -921,7 +933,7 @@ export function ClassWiseGridView({
               e.period_id === lastAction.payload.period_id
           )
           if (currentE) {
-            await deleteEntryMutation.mutateAsync({
+            await removeEntry({
               entryId: currentE.id,
               sectionId: currentE.section_id,
             })
@@ -930,7 +942,7 @@ export function ClassWiseGridView({
         toast.success("Undone")
       } else if (lastAction.type === "UNASSIGN") {
         // Re-create the deleted entry
-        await bulkAssignMutation.mutateAsync({
+        await assignSlot({
           timetable_id: timetable.id,
           section_id: lastAction.entry.section_id,
           day_of_week: lastAction.entry.day_of_week,
@@ -944,7 +956,7 @@ export function ClassWiseGridView({
     } catch {
       toast.error("Undo failed")
     }
-  }, [historyStack, timetable, entries, bulkAssignMutation, deleteEntryMutation])
+  }, [historyStack, timetable, entries, assignSlot, removeEntry])
 
   // Redo action
   const handleRedo = useCallback(async () => {
@@ -956,13 +968,13 @@ export function ClassWiseGridView({
 
     try {
       if (nextAction.type === "ASSIGN") {
-        await bulkAssignMutation.mutateAsync(nextAction.payload)
+        await assignSlot(nextAction.payload)
         toast.success("Redone")
       }
     } catch {
       toast.error("Redo failed")
     }
-  }, [futureStack, bulkAssignMutation])
+  }, [futureStack, assignSlot])
 
   // Sync AssignModeBar props to parent (so it can render smoothly inside TimetableHeader)
   useEffect(() => {
@@ -1223,6 +1235,7 @@ export function ClassWiseGridView({
       if (
         e.defaultPrevented ||
         dialogState.isOpen ||
+        document.activeElement?.closest('[role="dialog"]') ||
         ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)
       ) {
         return
@@ -1470,6 +1483,7 @@ export function ClassWiseGridView({
                             wing_name: wing.name,
                           }}
                           setup={secSetup}
+                          placements={timetableData.lecture_plan?.placements}
                           entries={secEntries}
                           conflictMap={conflictMap}
                           isAssignMode={isAssignMode}
@@ -1521,11 +1535,17 @@ export function ClassWiseGridView({
       {/* SLOT ASSIGNMENT DIALOG */}
       {dialogState.isOpen && (
         <ErrorBoundary>
-          <SlotAssignmentDialog
+          <LecturePlannerDialog data={timetableData} cell={dialogState.cellData}
+            onClose={() => setDialogState({isOpen:false,cellData:null})}
+            renderAssignment={dialogState.cellData.currentEntry?.placement_id ? undefined : (groupPanel, preferGroup, groupBusy) => <SlotAssignmentDialog
+            groupPanel={dialogState.cellData.currentEntry ? null : groupPanel}
+            preferGroup={preferGroup}
+            groupBusy={groupBusy}
             isOpen={dialogState.isOpen}
             onClose={() => setDialogState({ isOpen: false, cellData: null })}
             cellData={dialogState.cellData}
             availableSubjects={availableSubjectsForDialog}
+            setups={setups}
             eligibleTeachers={eligible_teachers}
             existingEntries={entries}
             allSections={allFlattenedSections}
@@ -1537,8 +1557,8 @@ export function ClassWiseGridView({
                 period: dialogState.cellData?.period,
               })
             }
-            isSubmitting={bulkAssignMutation.isPending || deleteEntryMutation.isPending}
-          />
+            isSubmitting={isAssigningSlot || isRemovingEntry}
+            />} />
         </ErrorBoundary>
       )}
 

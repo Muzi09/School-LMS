@@ -1,28 +1,23 @@
 import io
-import json
-from typing import Any, Dict, List, Optional
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from itertools import groupby, zip_longest
+from textwrap import wrap
+from typing import Dict
 from uuid import UUID
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.models.school import School
 from app.models.school_class import SchoolClass
+from app.services.school_order import class_order, section_order
 from app.models.section import Section
-from app.models.subject import Subject
-from app.models.timetable import (
-    DayOfWeek,
-    Timetable,
-    TimetableEntry,
-    TimetablePeriod,
-    TimetableSetup,
-)
-from app.models.staff import StaffProfile
-from app.models.user import User, UserRole
-from app.models.wing import Wing, WingClass
+from app.models.timetable import DayOfWeek
+from app.services.timetable_service import TimetableService
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +82,6 @@ def get_subject_hex_color(subject_name: str = "", category: str = "") -> Dict[st
 # Borders
 THIN_GRAY_SIDE = Side(border_style="thin", color="FFCBD5E1")
 MEDIUM_DARK_SIDE = Side(border_style="medium", color="FF64748B")
-DOUBLE_DARK_SIDE = Side(border_style="double", color="FF475569")
 
 BORDER_BOX = Border(
     left=THIN_GRAY_SIDE,
@@ -106,622 +100,315 @@ BORDER_HEADER = Border(
 FILL_TITLE = PatternFill(fill_type="solid", start_color="FF1E293B", end_color="FF1E293B")
 FONT_TITLE = Font(name="Segoe UI", size=13, bold=True, color="FFFFFFFF")
 
-FILL_SUBTITLE = PatternFill(fill_type="solid", start_color="FFF8FAFC", end_color="FFF8FAFC")
-FONT_SUBTITLE = Font(name="Segoe UI", size=9, bold=False, color="FF64748B")
-
 FILL_HEADER = PatternFill(fill_type="solid", start_color="FFE2E8F0", end_color="FFE2E8F0")
 FONT_HEADER = Font(name="Segoe UI", size=9, bold=True, color="FF1E293B")
 
-FILL_DAY = PatternFill(fill_type="solid", start_color="FFF1F5F9", end_color="FFF1F5F9")
-FONT_DAY = Font(name="Segoe UI", size=9, bold=True, color="FF334155")
-
 ALIGN_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
-ALIGN_LEFT = Alignment(horizontal="left", vertical="center", wrap_text=False)
 
 
-def _format_time_12h(time_obj) -> str:
-    """Formats time object or string to 12h representation e.g. 8:50 AM."""
-    if not time_obj:
-        return ""
-    if hasattr(time_obj, "strftime"):
-        # e.g. 8:50 AM
-        return time_obj.strftime("%I:%M %p").lstrip("0")
-    s = str(time_obj).strip()
-    if ":" in s:
-        parts = s.split(":")
-        try:
-            h = int(parts[0])
-            m = int(parts[1])
-            period = "PM" if h >= 12 else "AM"
-            h12 = 12 if h in (0, 12) else h % 12
-            return f"{h12}:{m:02d} {period}"
-        except Exception:
-            return s
-    return s
+def _teaching(p):
+    return (not p.get("is_break") and p.get("period_type", "CLASS") == "CLASS"
+            and not re.match(r"^(?:recess|break|assembly|activity|extra-?curricular|[RAE]\d*$)", p.get("label") or "", re.I))
+
+
+def _times(period):
+    return period["start_time"][:5], period["end_time"][:5]
+
+
+def _section_name(section):
+    return f"{section['class_name']} {section['name']}".strip()
+
+
+def _minutes(value):
+    return int(value[:2]) * 60 + int(value[3:5])
+
+
+def _clock(minutes):
+    return f"{minutes // 60:02}:{minutes % 60:02}"
+
+
+def _free_intervals(shifts, busy):
+    hours = []
+    for start, end in sorted((_minutes(s["start_time"]), _minutes(s["end_time"]))
+                             for s in shifts if s.get("start_time") and s.get("end_time")):
+        if start >= end:
+            continue
+        if hours and start <= hours[-1][1]:
+            hours[-1][1] = max(hours[-1][1], end)
+        else:
+            hours.append([start, end])
+    for start, end in hours:
+        cursor = start
+        for begin, finish in busy:
+            if finish <= cursor or begin >= end:
+                continue
+            if begin > cursor:
+                yield cursor, begin
+            cursor = max(cursor, finish)
+        if cursor < end:
+            yield cursor, end
+
+
+@dataclass(frozen=True)
+class ExportCell:
+    text: str
+    subject: str = ""
+
+    def chunks(self, width=27, max_lines=24):
+        # Excel caps row height at 409 points. Continue very large rosters on the next row.
+        lines = self.text.split("\n")
+        if sum(max(1, (len(line) + width - 1) // width) for line in lines) <= max_lines:
+            return [self]
+        wrapped = [part for line in lines for part in (wrap(line, width=width) or [""])]
+        return [ExportCell("\n".join(wrapped[i:i + max_lines]), self.subject)
+                for i in range(0, len(wrapped), max_lines)]
+
+
+class ScheduleSheet:
+    def __init__(self, workbook, name, title, color):
+        self.sheet = workbook.create_sheet(name)
+        self.next_row = 1
+        self.color = color
+        self.banner(title, 4)
+        self.sheet.sheet_properties.pageSetUpPr.fitToPage = True
+        self.sheet.page_setup.orientation = "landscape"
+        self.sheet.page_setup.fitToWidth = 1
+        self.sheet.page_setup.fitToHeight = 0
+
+    def write(self, values, kind="data"):
+        row = self.next_row
+        self.next_row += 1
+        height = 25
+        for col, value in enumerate(values, 1):
+            item = value if isinstance(value, ExportCell) else ExportCell(value)
+            cell = self.sheet.cell(row, col)
+            cell.value = item.text
+            cell.data_type = "s"  # Preserve literal names and room labels, including leading equals signs.
+            cell.alignment = ALIGN_CENTER
+            cell.border = BORDER_HEADER if kind == "header" else BORDER_BOX
+            width = 16 if col == 1 else 28
+            self.sheet.column_dimensions[get_column_letter(col)].width = width
+            lines = sum(max(1, (len(line) + width - 2) // (width - 1)) for line in item.text.split("\n"))
+            height = max(height, 15 * lines + 5)
+            if kind == "title":
+                cell.font, cell.fill = FONT_TITLE, FILL_TITLE
+                cell.alignment = Alignment(vertical="center")
+            elif kind == "header":
+                cell.font, cell.fill = FONT_HEADER, FILL_HEADER
+            elif item.subject and self.color:
+                theme = get_subject_hex_color(item.subject)
+                cell.font = Font(name="Segoe UI", size=10, color=theme["text"])
+                cell.fill = PatternFill("solid", fgColor=theme["fill"])
+        self.sheet.row_dimensions[row].height = min(height, 409)
+        return row
+
+    def banner(self, text, columns):
+        row = self.write([text], "title")
+        self.sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=max(3, columns))
+        self.sheet.row_dimensions[row].height = 28
+
+    def grid(self, daily):
+        for headers, group in groupby(daily, key=lambda row: row[1]):
+            self.write(["Day", *headers], "header")
+            for day, _, cells in group:
+                parts = [cell.chunks() for cell in cells] or [[ExportCell("")]]
+                for index, row in enumerate(zip_longest(*parts, fillvalue=ExportCell(""))):
+                    self.write([day.title() if index == 0 else f"{day.title()} (cont.)", *row])
+
+    def review(self, entries):
+        if entries:
+            self.write(["Review", "Outside the current bell schedule"], "header")
+        for e in entries:
+            self.write([e["day_of_week"].title(), "–".join(_times(e["period"])), _section_name(e["section"]),
+                        e["subject"]["name"], e.get("room_number") or ""])
 
 
 class TimetableExportService:
     def __init__(self, db: Session):
         self.db = db
 
-    def export_timetable_excel(
-        self,
-        school_id: UUID,
-        timetable_id: Optional[UUID] = None,
-        scope: str = "both",  # "classwise" | "teacherwise" | "both"
-        wing_ids: Optional[List[UUID]] = None,
-        class_ids: Optional[List[UUID]] = None,
-        section_ids: Optional[List[UUID]] = None,
-        teacher_ids: Optional[List[UUID]] = None,
-        color_coded: bool = True,
-    ) -> io.BytesIO:
-        """
-        Master method to export timetable to Excel.
-        Produces a beautifully styled workbook with Class-wise and/or Teacher-wise sheets.
-        """
-        # 1. Fetch Timetable
-        if timetable_id:
-            timetable = (
-                self.db.query(Timetable)
-                .filter(Timetable.id == timetable_id, Timetable.school_id == school_id)
-                .first()
-            )
-        else:
-            timetable = (
-                self.db.query(Timetable)
-                .filter(Timetable.school_id == school_id, Timetable.is_active.is_(True))
-                .first()
-            )
-
-        if not timetable:
-            timetable = (
-                self.db.query(Timetable)
-                .filter(Timetable.school_id == school_id)
-                .order_by(Timetable.created_at.desc())
-                .first()
-            )
-
-        school = self.db.query(School).filter(School.id == school_id).first()
-        school_name = school.name if school else "School"
-
-        # 2. Fetch Wings, Classes, Sections
-        wings_q = (
-            self.db.query(Wing)
-            .filter(Wing.school_id == school_id, Wing.deleted_at.is_(None))
-            .order_by(Wing.order_index.asc(), Wing.name.asc())
+    def export_timetable_excel(self, school_id: UUID, timetable_id=None, scope="both", wing_ids=None,
+                               class_ids=None, section_ids=None, teacher_ids=None, color_coded=True):
+        data = TimetableService(self.db).get_class_wise_timetable(
+            school_id, timetable_id=timetable_id, include_timetable_list=False
         )
-        if wing_ids:
-            wings_q = wings_q.filter(Wing.id.in_(wing_ids))
-        wings = wings_q.all()
+        timetable = data["timetable"]
+        school_name = self.db.query(School.name).filter_by(id=school_id).scalar()
+        title = " · ".join(filter(None, [school_name, timetable["name"], timetable["academic_year"]]))
+        workbook = openpyxl.Workbook()
+        workbook.remove(workbook.active)
+        days = [d.value for d in DayOfWeek]
+        section_bells = {}
+        for setup in data["setups"]:
+            schedule = {day: sorted(s["periods"], key=_times) for s in setup["schedules"] for day in s["days"]
+                        if not setup["applicable_days"] or day in setup["applicable_days"]}
+            for sid in setup["assigned_section_ids"]:
+                section_bells[sid] = schedule
 
-        all_classes_q = (
-            self.db.query(SchoolClass)
-            .filter(SchoolClass.school_id == school_id, SchoolClass.deleted_at.is_(None))
-            .order_by(SchoolClass.order_index.asc(), SchoolClass.name.asc())
-        )
-        if class_ids:
-            all_classes_q = all_classes_q.filter(SchoolClass.id.in_(class_ids))
-        all_classes = all_classes_q.all()
-        class_map = {c.id: c for c in all_classes}
+        by_section, by_teacher = defaultdict(list), defaultdict(list)
+        teacher_sections = defaultdict(set)
+        selected = {}
+        visible_wings = set(wing_ids) if wing_ids is not None else None
+        for wing in data["wings"]:
+            for cls in wing["classes"]:
+                for sec in cls["sections"]:
+                    if visible_wings is None or wing["id"] in visible_wings:
+                        selected[sec["id"]] = sec
+                    for stat in sec["subject_stats"]:
+                        if stat["teacher_id"]:
+                            teacher_sections[stat["teacher_id"]].add(sec["id"])
 
-        sections_q = (
-            self.db.query(Section)
-            .join(SchoolClass, SchoolClass.id == Section.class_id)
-            .filter(Section.school_id == school_id, Section.deleted_at.is_(None))
-            .options(joinedload(Section.school_class))
-            .order_by(SchoolClass.order_index.asc(), Section.name.asc())
-        )
-        if section_ids:
-            sections_q = sections_q.filter(Section.id.in_(section_ids))
-        elif class_ids:
-            sections_q = sections_q.filter(Section.class_id.in_(class_ids))
-        sections = sections_q.all()
+        # Schools can configure timetables before assigning their classes to wings.
+        if scope != "teacherwise" and wing_ids is None:
+            for sid, name, cid, cname in self.db.query(Section.id, Section.name, SchoolClass.id, SchoolClass.name).join(
+                    SchoolClass, SchoolClass.id == Section.class_id).filter(
+                    Section.school_id == school_id, Section.deleted_at.is_(None),
+                    SchoolClass.school_id == school_id, SchoolClass.deleted_at.is_(None)).order_by(
+                    *class_order(), *section_order()):
+                selected.setdefault(sid, {"id": sid, "name": name, "class_id": cid, "class_name": cname})
 
-        # 3. Fetch Setups for this timetable
-        setups = (
-            self.db.query(TimetableSetup)
-            .filter(
-                TimetableSetup.school_id == school_id,
-                TimetableSetup.timetable_id == (timetable.id if timetable else None),
-                TimetableSetup.deleted_at.is_(None),
-            )
-            .order_by(TimetableSetup.order_index.asc(), TimetableSetup.created_at.asc())
-            .all()
-        )
+        active_options = defaultdict(set)
+        for entry in data["entries"]:
+            if entry["placement_id"]:
+                active_options[str(entry["placement_id"])].add(entry["option_id"])
+            by_section[entry["section_id"]].append(entry)
+            tid = entry["teacher_user_id"]
+            if tid:
+                by_teacher[tid].append(entry)
+                teacher_sections[tid].add(entry["section_id"])
 
-        # 4. Fetch Periods
-        periods = (
-            self.db.query(TimetablePeriod)
-            .filter(
-                TimetablePeriod.school_id == school_id,
-                or_(
-                    TimetablePeriod.timetable_id == (timetable.id if timetable else None),
-                    TimetablePeriod.timetable_id.is_(None),
-                ),
-                TimetablePeriod.deleted_at.is_(None),
-            )
-            .order_by(TimetablePeriod.period_number.asc())
-            .all()
-        )
+        placements = data["lecture_plan"].get("placements", {})
+        coverage = {}
+        for pid, options in active_options.items():
+            expected = len(placements.get(pid, {}).get("expected", []))
+            if len(options) < expected:
+                coverage[pid] = f"{len(options)} of {expected} options scheduled"
+        if scope in ("classwise", "both"):
+            sheet = ScheduleSheet(workbook, "Class-wise Timetable", title, color_coded)
+            classes = set(class_ids) if class_ids is not None else None
+            sections = set(section_ids) if section_ids is not None else None
+            for sid, section in selected.items():
+                if classes is not None and section["class_id"] not in classes:
+                    continue
+                if sections is None or sid in sections:
+                    self._class_card(sheet, section, by_section[sid], section_bells.get(sid, {}), days, placements)
+        if scope in ("teacherwise", "both"):
+            sheet = ScheduleSheet(workbook, "Teacher-wise Timetable", title, color_coded)
+            teachers = set(teacher_ids) if teacher_ids is not None else None
+            for teacher in data["eligible_teachers"]:
+                tid = teacher["id"]
+                if teachers is None or tid in teachers:
+                    self._teacher_card(sheet, teacher, by_teacher[tid], teacher_sections[tid], section_bells, days, coverage)
+        stream = io.BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        return stream
 
-        # 5. Fetch Entries
-        entries_q = (
-            self.db.query(TimetableEntry)
-            .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
-            .options(
-                joinedload(TimetableEntry.subject),
-                joinedload(TimetableEntry.teacher).joinedload(User.staff_profile),
-                joinedload(TimetableEntry.period),
-                joinedload(TimetableEntry.section).joinedload(Section.school_class),
-            )
-            .filter(
-                TimetableEntry.school_id == school_id,
-                or_(
-                    TimetableEntry.timetable_id == (timetable.id if timetable else None),
-                    TimetableEntry.timetable_id.is_(None),
-                ),
-                TimetableEntry.deleted_at.is_(None),
-                TimetablePeriod.deleted_at.is_(None),
-            )
-        )
-        all_entries = entries_q.all()
-
-        # 6. Fetch Eligible Teachers
-        teachers_q = (
-            self.db.query(User)
-            .join(StaffProfile, StaffProfile.user_id == User.id)
-            .options(joinedload(User.staff_profile))
-            .filter(
-                StaffProfile.school_id == school_id,
-                User.is_active.is_(True),
-                User.deleted_at.is_(None),
-                User.role == UserRole.STAFF,
-            )
-            .order_by(User.first_name.asc(), User.last_name.asc())
-        )
-        if teacher_ids:
-            teachers_q = teachers_q.filter(User.id.in_(teacher_ids))
-        teachers = teachers_q.all()
-
-        # 7. Create Workbook
-        wb = openpyxl.Workbook()
-        # Remove default sheet
-        wb.remove(wb.active)
-
-        scope_lower = (scope or "both").lower().strip()
-
-        if scope_lower in ("classwise", "both"):
-            self._build_classwise_sheet(
-                wb=wb,
-                school_name=school_name,
-                timetable=timetable,
-                sections=sections,
-                setups=setups,
-                periods=periods,
-                entries=all_entries,
-                color_coded=color_coded,
-            )
-
-        if scope_lower in ("teacherwise", "both"):
-            self._build_teacherwise_sheet(
-                wb=wb,
-                school_name=school_name,
-                timetable=timetable,
-                teachers=teachers,
-                setups=setups,
-                periods=periods,
-                entries=all_entries,
-                color_coded=color_coded,
-            )
-
-        # Ensure at least one sheet exists
-        if not wb.sheetnames:
-            ws = wb.create_sheet(title="Timetable")
-            ws.cell(1, 1, "No timetable data available for selected filters.")
-
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-        return output
-
-    # -----------------------------------------------------------------------
-    # Helper: Build Class-wise Sheet
-    # -----------------------------------------------------------------------
-    def _build_classwise_sheet(
-        self,
-        wb: openpyxl.Workbook,
-        school_name: str,
-        timetable: Optional[Timetable],
-        sections: List[Section],
-        setups: List[TimetableSetup],
-        periods: List[TimetablePeriod],
-        entries: List[TimetableEntry],
-        color_coded: bool,
-    ):
-        ws = wb.create_sheet(title="Class-wise Timetable")
-        ws.views.sheetView[0].showGridLines = True
-
-        # Index entries by (section_id, day_of_week, period_id)
-        # and by (section_id, day_of_week, period_number)
-        entry_map: Dict[str, TimetableEntry] = {}
-        for e in entries:
-            p = e.period
-            p_num = p.period_number if p else 0
-            k1 = f"{e.section_id}_{e.day_of_week}_{e.period_id}"
-            k2 = f"{e.section_id}_{e.day_of_week}_{p_num}"
-            entry_map[k1] = e
-            entry_map[k2] = e
-
-        # Map section to its setup
-        sec_to_setup: Dict[UUID, TimetableSetup] = {}
-        for s in setups:
-            raw_sec_ids = s.assigned_section_ids or []
-            if isinstance(raw_sec_ids, str):
-                try:
-                    raw_sec_ids = json.loads(raw_sec_ids)
-                except Exception:
-                    raw_sec_ids = []
-            for sec_id_str in raw_sec_ids:
-                try:
-                    sec_to_setup[UUID(str(sec_id_str))] = s
-                except Exception:
-                    pass
-
-        current_row = 1
-
-        # Global Sheet Header
-        tt_title = timetable.name if timetable else "Timetable"
-        acad_year = timetable.academic_year if (timetable and timetable.academic_year) else ""
-        header_text = f"{school_name.upper()} — {tt_title.upper()}"
-        if acad_year:
-            header_text += f" ({acad_year})"
-
-        ws.cell(current_row, 1, header_text)
-        ws.cell(current_row, 1).font = Font(name="Segoe UI", size=14, bold=True, color="FF0F172A")
-        ws.row_dimensions[current_row].height = 28
-        current_row += 1
-
-        ws.cell(current_row, 1, "Class-wise Academic Bell Schedule & Faculty Roster")
-        ws.cell(current_row, 1).font = Font(name="Segoe UI", size=10, italic=True, color="FF64748B")
-        ws.row_dimensions[current_row].height = 20
-        current_row += 2  # Blank line
-
-        # Standard Days
-        default_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-
-        # Track max column used across tables to format widths
-        max_col_used = 10
-
-        for section in sections:
-            cls = section.school_class
-            cls_name = cls.name if cls else "Class"
-            sec_name = section.name
-
-            # Determine setup for this section
-            setup = sec_to_setup.get(section.id) or (setups[0] if setups else None)
-
-            # Determine applicable days and periods
-            sec_days = default_days
-            sec_periods = periods
-
-            if setup:
-                raw_days = setup.applicable_days
-                if isinstance(raw_days, str):
-                    try:
-                        raw_days = json.loads(raw_days)
-                    except Exception:
-                        raw_days = default_days
-                if isinstance(raw_days, list) and raw_days:
-                    sec_days = [str(d).upper() for d in raw_days]
-
-                if setup.periods:
-                    sec_periods = sorted(
-                        [p for p in setup.periods if not getattr(p, "deleted_at", None)],
-                        key=lambda p: p.period_number,
-                    )
-
-            if not sec_periods:
-                sec_periods = periods
-
-            col_count = len(sec_periods) + 1  # 1 for Day column
-            max_col_used = max(max_col_used, col_count)
-
-            # 1. Section Title Banner
-            ws.merge_cells(
-                start_row=current_row,
-                start_column=1,
-                end_row=current_row,
-                end_column=col_count,
-            )
-            banner_cell = ws.cell(current_row, 1, f"CLASS {cls_name} - {sec_name}".upper())
-            banner_cell.font = FONT_TITLE
-            banner_cell.fill = FILL_TITLE
-            banner_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-            ws.row_dimensions[current_row].height = 26
-
-            # Apply border to all cells in merged title
-            for c in range(1, col_count + 1):
-                ws.cell(current_row, c).border = BORDER_BOX
-                ws.cell(current_row, c).fill = FILL_TITLE
-
-            current_row += 1
-
-            # 2. Period Header Row
-            ws.row_dimensions[current_row].height = 30
-            day_hdr_cell = ws.cell(current_row, 1, "DAYS")
-            day_hdr_cell.font = FONT_HEADER
-            day_hdr_cell.fill = FILL_HEADER
-            day_hdr_cell.alignment = ALIGN_CENTER
-            day_hdr_cell.border = BORDER_HEADER
-
-            for p_idx, p in enumerate(sec_periods, start=2):
-                p_label = p.name or f"Period {p.period_number}"
-                t_start = _format_time_12h(p.start_time)
-                t_end = _format_time_12h(p.end_time)
-                time_range = f"{t_start} - {t_end}" if (t_start and t_end) else ""
-                hdr_val = f"{p_label}\n{time_range}".strip()
-
-                cell = ws.cell(current_row, p_idx, hdr_val)
-                cell.font = FONT_HEADER
-                cell.fill = FILL_HEADER
-                cell.alignment = ALIGN_CENTER
-                cell.border = BORDER_HEADER
-
-            current_row += 1
-
-            # 3. Day Rows
-            for day in sec_days:
-                ws.row_dimensions[current_row].height = 36
-                day_cell = ws.cell(current_row, 1, day[:3])  # MON, TUE, WED
-                day_cell.font = FONT_DAY
-                day_cell.fill = FILL_DAY
-                day_cell.alignment = ALIGN_CENTER
-                day_cell.border = BORDER_BOX
-
-                for p_idx, p in enumerate(sec_periods, start=2):
-                    cell = ws.cell(current_row, p_idx)
-                    cell.border = BORDER_BOX
-                    cell.alignment = ALIGN_CENTER
-
-                    if p.is_break:
-                        cell.value = p.name or "RECESS"
-                        cell.font = Font(name="Segoe UI", size=9, bold=True, italic=True, color="FF64748B")
-                        cell.fill = PatternFill(
-                            fill_type="solid",
-                            start_color=SUBJECT_PALETTE_HEX["break"]["fill"],
-                            end_color=SUBJECT_PALETTE_HEX["break"]["fill"],
-                        )
-                        continue
-
-                    # Lookup entry
-                    entry = entry_map.get(f"{section.id}_{day}_{p.id}") or entry_map.get(
-                        f"{section.id}_{day}_{p.period_number}"
-                    )
-
-                    if entry and entry.subject:
-                        subj_name = entry.subject.name or "Subject"
-                        teacher_name = ""
-                        if entry.teacher:
-                            t = entry.teacher
-                            teacher_name = f"{t.first_name or ''} {t.last_name or ''}".strip()
-
-                        if teacher_name:
-                            cell.value = f"{subj_name}\n({teacher_name})"
-                        else:
-                            cell.value = subj_name
-
-                        if color_coded:
-                            theme = get_subject_hex_color(subj_name, entry.subject.category or "")
-                            cell.fill = PatternFill(
-                                fill_type="solid",
-                                start_color=theme["fill"],
-                                end_color=theme["fill"],
-                            )
-                            cell.font = Font(name="Segoe UI", size=9, bold=True, color=theme["text"])
-                        else:
-                            cell.font = Font(name="Segoe UI", size=9, bold=True, color="FF1E293B")
-                    else:
-                        cell.value = ""
-                        cell.font = Font(name="Segoe UI", size=9, color="FF94A3B8")
-
-                current_row += 1
-
-            # Spacing between class tables
-            current_row += 2
-
-        # Auto-adjust column widths
-        ws.column_dimensions["A"].width = 12
-        for col in range(2, max_col_used + 2):
-            col_letter = get_column_letter(col)
-            ws.column_dimensions[col_letter].width = 22
-
-    # -----------------------------------------------------------------------
-    # Helper: Build Teacher-wise Sheet
-    # -----------------------------------------------------------------------
-    def _build_teacherwise_sheet(
-        self,
-        wb: openpyxl.Workbook,
-        school_name: str,
-        timetable: Optional[Timetable],
-        teachers: List[User],
-        setups: List[TimetableSetup],
-        periods: List[TimetablePeriod],
-        entries: List[TimetableEntry],
-        color_coded: bool,
-    ):
-        ws = wb.create_sheet(title="Teacher-wise Timetable")
-        ws.views.sheetView[0].showGridLines = True
-
-        # Group entries by teacher_user_id -> day_of_week -> period_id / period_number
-        teacher_entries: Dict[UUID, Dict[str, TimetableEntry]] = {}
-        teacher_workload: Dict[UUID, int] = {}
-
-        for e in entries:
-            if not e.teacher_user_id:
+    @staticmethod
+    def _class_card(sheet, section, entries, schedule, days, placements):
+        sid = section["id"]
+        slots = defaultdict(list)
+        for entry in entries:
+            slots[entry["day_of_week"], str(entry["period_id"])].append(entry)
+        daily = []
+        for day in days:
+            periods = schedule.get(day, [])
+            if not periods:
                 continue
-            t_id = e.teacher_user_id
-            teacher_entries.setdefault(t_id, {})
-            p = e.period
-            p_num = p.period_number if p else 0
-            k1 = f"{e.day_of_week}_{e.period_id}"
-            k2 = f"{e.day_of_week}_{p_num}"
-            teacher_entries[t_id][k1] = e
-            teacher_entries[t_id][k2] = e
+            headers, cells = [], []
+            for p in periods:
+                headers.append((p.get("label") or f"P{p['period_number']}") + "\n" + "–".join(_times(p)))
+                lessons = slots.pop((day, str(p["id"])), [])
+                lines = []
+                for e in lessons:
+                    name = (e["teacher"] or {}).get("name") or "Unassigned teacher"
+                    lines.append(" · ".join(filter(None, [e["subject"]["name"], name, e.get("room_number")])))
+                if lessons:
+                    expected = placements.get(str(lessons[0]["placement_id"]), {}).get("expected", [])
+                    total = sum(str(sid) in row["section_ids"] for row in expected)
+                    if len(lessons) < total:
+                        lines.append(f"{len(lessons)} of {total} options scheduled")
+                cells.append(ExportCell("\n".join(lines) or ("—" if _teaching(p) else p.get("label") or "Break"),
+                                        lessons[0]["subject"]["name"] if lessons else ""))
+            daily.append((day, headers, cells))
+        sheet.banner(_section_name(section), max((len(cells) + 1 for _, _, cells in daily), default=3))
+        sheet.grid(daily)
+        if not daily:
+            sheet.write(["No bell schedule assigned."])
+        sheet.review([e for bucket in slots.values() for e in bucket])
 
-            if not (p and p.is_break):
-                teacher_workload[t_id] = teacher_workload.get(t_id, 0) + 1
+    @staticmethod
+    def _teacher_card(sheet, teacher, entries, section_ids, section_bells, days, coverage):
+        schedules = [section_bells[s] for s in section_ids if s in section_bells]
+        allowed = {sid: {(day, str(p["id"])) for day, periods in section_bells.get(sid, {}).items()
+                         for p in periods if _teaching(p)} for sid in section_ids}
+        lessons, review = defaultdict(dict), []
+        for e in entries:
+            day = e["day_of_week"]
+            if (day, str(e["period_id"])) not in allowed[e["section_id"]]:
+                review.append(e)
+                continue
+            start, end = _times(e["period"])
+            identity = e["placement_id"] or e["id"]
+            lessons[day].setdefault((start, end, identity), []).append(e)
 
-        current_row = 1
-
-        # Global Sheet Header
-        tt_title = timetable.name if timetable else "Timetable"
-        acad_year = timetable.academic_year if (timetable and timetable.academic_year) else ""
-        header_text = f"{school_name.upper()} — {tt_title.upper()}"
-        if acad_year:
-            header_text += f" ({acad_year})"
-
-        ws.cell(current_row, 1, header_text)
-        ws.cell(current_row, 1).font = Font(name="Segoe UI", size=14, bold=True, color="FF0F172A")
-        ws.row_dimensions[current_row].height = 28
-        current_row += 1
-
-        ws.cell(current_row, 1, "Teacher-wise Master Faculty Schedules & Lecture Allocations")
-        ws.cell(current_row, 1).font = Font(name="Segoe UI", size=10, italic=True, color="FF64748B")
-        ws.row_dimensions[current_row].height = 20
-        current_row += 2  # Blank line
-
-        default_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
-
-        # Master periods across setups or school periods
-        master_periods = periods
-        if not master_periods and setups:
-            for s in setups:
-                if s.periods:
-                    master_periods = sorted(
-                        [p for p in s.periods if not getattr(p, "deleted_at", None)],
-                        key=lambda p: p.period_number,
+        daily = []
+        minutes = free_minutes = 0
+        shifts = teacher.get("working_shifts") or []
+        for day in days:
+            bells = [schedule[day] for schedule in schedules if schedule.get(day)]
+            if not bells:
+                continue
+            by_time = defaultdict(list)
+            segments = []
+            for (start, end, _), group in lessons[day].items():
+                e = group[0]
+                label = " + ".join(_section_name(row["section"]) for row in group)
+                period_labels = " / ".join(dict.fromkeys(f"P{row['period']['period_number']}" for row in group))
+                elapsed = _minutes(end) - _minutes(start)
+                minutes += elapsed
+                rooms = {row.get("room_number") for row in group}
+                room = (e.get("room_number") or "Not assigned") if len(rooms) == 1 else " / ".join(
+                    f"{_section_name(row['section'])} · {row.get('room_number') or 'Not assigned'}" for row in group
+                )
+                description = " · ".join([e["subject"]["name"], label, room])
+                if len({row["subject"]["id"] for row in group}) > 1:
+                    description = "\n".join(
+                        f"{row['subject']['name']} · {_section_name(row['section'])} · {row.get('room_number') or 'Not assigned'}"
+                        for row in group
                     )
-                    break
+                if str(e["placement_id"]) in coverage:
+                    description += "\n" + coverage[str(e["placement_id"])]
+                by_time[start, end].append(ExportCell(description, e["subject"]["name"]))
+                segments.append((start, ExportCell(f"{start}–{end}\n{period_labels} · {elapsed}m\n{description}", e["subject"]["name"])))
+            busy = sorted((_minutes(start), _minutes(end)) for start, end in by_time)
+            for num, (start, end) in enumerate(_free_intervals(shifts, busy), 1):
+                free_minutes += end - start
+                segments.append((_clock(start), ExportCell(f"{_clock(start)}–{_clock(end)}\nF{num} · {end-start}m free")))
 
-        col_count = len(master_periods) + 1
-        max_col_used = max(10, col_count)
-
-        for teacher in teachers:
-            sp = teacher.staff_profile
-            t_name = f"{teacher.first_name or ''} {teacher.last_name or ''}".strip()
-            dept = sp.department if (sp and sp.department) else (sp.designation if sp else "")
-            assigned_count = teacher_workload.get(teacher.id, 0)
-
-            # 1. Teacher Banner
-            ws.merge_cells(
-                start_row=current_row,
-                start_column=1,
-                end_row=current_row,
-                end_column=col_count,
-            )
-            title_text = f"TEACHER: {t_name.upper()}"
-            if dept:
-                title_text += f" ({dept.upper()})"
-            title_text += f"   •   ASSIGNED: {assigned_count} PDS/WK"
-
-            banner_cell = ws.cell(current_row, 1, title_text)
-            banner_cell.font = FONT_TITLE
-            banner_cell.fill = FILL_TITLE
-            banner_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-            ws.row_dimensions[current_row].height = 26
-
-            for c in range(1, col_count + 1):
-                ws.cell(current_row, c).border = BORDER_BOX
-                ws.cell(current_row, c).fill = FILL_TITLE
-
-            current_row += 1
-
-            # 2. Period Header Row
-            ws.row_dimensions[current_row].height = 30
-            day_hdr_cell = ws.cell(current_row, 1, "DAYS")
-            day_hdr_cell.font = FONT_HEADER
-            day_hdr_cell.fill = FILL_HEADER
-            day_hdr_cell.alignment = ALIGN_CENTER
-            day_hdr_cell.border = BORDER_HEADER
-
-            for p_idx, p in enumerate(master_periods, start=2):
-                p_label = p.name or f"Period {p.period_number}"
-                t_start = _format_time_12h(p.start_time)
-                t_end = _format_time_12h(p.end_time)
-                time_range = f"{t_start} - {t_end}" if (t_start and t_end) else ""
-                hdr_val = f"{p_label}\n{time_range}".strip()
-
-                cell = ws.cell(current_row, p_idx, hdr_val)
-                cell.font = FONT_HEADER
-                cell.fill = FILL_HEADER
-                cell.alignment = ALIGN_CENTER
-                cell.border = BORDER_HEADER
-
-            current_row += 1
-
-            # 3. Day Rows
-            t_map = teacher_entries.get(teacher.id, {})
-
-            for day in default_days:
-                ws.row_dimensions[current_row].height = 36
-                day_cell = ws.cell(current_row, 1, day[:3])
-                day_cell.font = FONT_DAY
-                day_cell.fill = FILL_DAY
-                day_cell.alignment = ALIGN_CENTER
-                day_cell.border = BORDER_BOX
-
-                for p_idx, p in enumerate(master_periods, start=2):
-                    cell = ws.cell(current_row, p_idx)
-                    cell.border = BORDER_BOX
-                    cell.alignment = ALIGN_CENTER
-
-                    if p.is_break:
-                        cell.value = p.name or "RECESS"
-                        cell.font = Font(name="Segoe UI", size=9, bold=True, italic=True, color="FF64748B")
-                        cell.fill = PatternFill(
-                            fill_type="solid",
-                            start_color=SUBJECT_PALETTE_HEX["break"]["fill"],
-                            end_color=SUBJECT_PALETTE_HEX["break"]["fill"],
-                        )
-                        continue
-
-                    # Lookup teacher entry
-                    entry = t_map.get(f"{day}_{p.id}") or t_map.get(f"{day}_{p.period_number}")
-
-                    if entry and entry.section:
-                        sec = entry.section
-                        cls_name = sec.school_class.name if sec.school_class else ""
-                        sec_label = f"{cls_name} {sec.name}".strip()
-                        subj_name = entry.subject.name if entry.subject else ""
-
-                        if subj_name:
-                            cell.value = f"{sec_label}\n({subj_name})"
-                        else:
-                            cell.value = sec_label
-
-                        if color_coded and subj_name:
-                            theme = get_subject_hex_color(subj_name, entry.subject.category or "")
-                            cell.fill = PatternFill(
-                                fill_type="solid",
-                                start_color=theme["fill"],
-                                end_color=theme["fill"],
-                            )
-                            cell.font = Font(name="Segoe UI", size=9, bold=True, color=theme["text"])
-                        else:
-                            cell.font = Font(name="Segoe UI", size=9, bold=True, color="FF1E293B")
-                    else:
-                        # Free period
-                        cell.value = "-"
-                        cell.font = Font(name="Segoe UI", size=9, color="FF94A3B8")
-                        cell.fill = PatternFill(fill_type=None)
-
-                current_row += 1
-
-            # Spacing between teacher tables
-            current_row += 2
-
-        # Auto-adjust column widths
-        ws.column_dimensions["A"].width = 12
-        for col in range(2, max_col_used + 2):
-            col_letter = get_column_letter(col)
-            ws.column_dimensions[col_letter].width = 22
+            signatures = {tuple((_times(p), _teaching(p)) for p in periods) for periods in bells}
+            if len(signatures) == 1:
+                headers, cells = [], []
+                for i, p in enumerate(bells[0]):
+                    start, end = _times(p)
+                    labels = sorted({b[i]["period_number"] for b in bells})
+                    label = " / ".join(f"P{n}" for n in labels) if len(labels) > 1 else p.get("label") or f"P{p['period_number']}"
+                    headers.append(f"{label}\n{start}–{end}")
+                    matches = by_time[start, end]
+                    cells.append(ExportCell("\n".join(c.text for c in matches), matches[0].subject) if matches else
+                                 ExportCell("Free" if _teaching(p) else label))
+            else:
+                cells = [item for _, item in sorted(segments, key=lambda item: item[0])]
+                if not shifts:
+                    cells.append(ExportCell("Working hours unavailable"))
+                headers = ["Timeline"] + [""] * max(0, len(cells) - 1)
+            daily.append((day, headers, cells))
+        count = sum(len(items) for items in lessons.values())
+        summary = f"{teacher['name']} · Assigned {count} · {minutes}m teaching"
+        if shifts:
+            summary += f" · {free_minutes}m free"
+        sheet.banner(summary, max((len(cells) + 1 for _, _, cells in daily), default=3))
+        sheet.grid(daily)
+        if not daily:
+            sheet.write(["No class bell schedule assigned."])
+        sheet.review(review)

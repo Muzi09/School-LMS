@@ -55,7 +55,7 @@ class SchoolSetupRequest(BaseModel):
     # Classes, Sections, Subjects, Wings, Houses
     classes: List[ClassSectionItem] = Field(..., min_length=1, description="List of configured classes with sections")
     subjects: List[SubjectItem] = Field(default_factory=list, description="List of configured subjects and class assignments")
-    wings: List[WingItem] = Field(default_factory=list, description="Optional list of configured academic wings")
+    wings: List[WingItem] = Field(..., min_length=1, description="Configured academic wings")
     houses: List[HouseItem] = Field(default_factory=list, description="List of school houses")
 
     # Step 6: School Customization (Theme & Emblem - Optional)

@@ -1,15 +1,14 @@
+import { AssignmentTabs } from "./AssignmentTabs"
 import { setupForSection, scheduleGroups, periodsOn, isTeachingSlot } from "../sectionSchedule"
 import { useState, useMemo, useRef } from "react"
 import {
   Clock,
   Check,
   Trash2,
-  Search,
   Loader2,
   AlertTriangle,
   GraduationCap,
   Sparkles,
-  X,
 } from "lucide-react"
 import {
   Dialog,
@@ -18,7 +17,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { getSubjectTheme } from "../subjectTheme"
 import { cn } from "@/lib/utils"
@@ -70,16 +68,21 @@ export function TeacherSlotAssignmentDialog({
   onAssign, // (payload) => void
   onUnassign, // (entryId, sectionId, context) => void
   isSubmitting = false,
+  groupPanel,
+  preferGroup,
+  groupBusy,
 }) {
-  const [search, setSearch] = useState("")
   const [selectedScope, setSelectedScope] = useState("SLOT") // "SLOT" | "WEEKDAYS" | "ALL_DAYS"
   const selectedItemRef = useRef(null)
 
-  const { teacher, day, period: clickedPeriod, currentEntry } = cellData || {}
+  const { teacher, day, period: clickedPeriod, currentEntry, at, stretch } = cellData || {}
   const [periodChoice, setPeriodChoice] = useState("")
   // Current entry details
   const currentSubjectId = currentEntry?.subject_id || currentEntry?.subject?.id
   const currentSectionId = currentEntry?.section_id || currentEntry?.section?.id
+  const currentAllocation = teacherAllocations.find(item =>
+    String(item.section?.id) === String(currentSectionId) && String(item.subject_id) === String(currentSubjectId)
+  )
 
   // The parent mounts a fresh dialog for each selected slot.
   const [selectedAllocationKey, setSelectedAllocationKey] = useState(() => {
@@ -88,19 +91,7 @@ export function TeacherSlotAssignmentDialog({
     return single ? `${single.section?.id}_${single.subject_id}` : ""
   })
 
-  // Filter allocations by search
-  const filteredAllocations = useMemo(() => {
-    if (!search.trim()) return teacherAllocations
-    const q = search.toLowerCase().trim()
-    return teacherAllocations.filter((item) => {
-      const cls = (item.section?.school_class?.name || item.section?.class_name || "").toLowerCase()
-      const sec = (item.section?.name || "").toLowerCase()
-      const sub = (item.subject_name || "").toLowerCase()
-      const code = (item.subject_code || "").toLowerCase()
-      return cls.includes(q) || sec.includes(q) || sub.includes(q) || code.includes(q)
-    })
-  }, [teacherAllocations, search])
-
+  const filteredAllocations = teacherAllocations
   // Split into Academic and Activity
   const academicAllocations = useMemo(
     () => filteredAllocations.filter((a) => isAcademicSubject(a)),
@@ -135,14 +126,25 @@ export function TeacherSlotAssignmentDialog({
   }, [selectedAllocationKey, teacherAllocations])
 
   const groups = scheduleGroups(setupForSection(selectedItem?.section, setups))
-  const periods = periodsOn(groups, day).filter(isTeachingSlot)
+  const periodsFor = section => periodsOn(scheduleGroups(setupForSection(section, setups)), day)
+    .filter(p => isTeachingSlot(p) && (!stretch || (
+      p.start_time.slice(0, 5) >= stretch[0] && p.end_time.slice(0, 5) <= stretch[1]
+    )))
+  const periods = periodsFor(selectedItem?.section)
+  const preferredPeriod = options => options.find(p => String(p.id) === String(clickedPeriod?.id)) ||
+    options.find(p => clickedPeriod && p.start_time === clickedPeriod.start_time && p.end_time === clickedPeriod.end_time) ||
+    options.find(p => at && p.start_time.slice(0, 5) <= at && at < p.end_time.slice(0, 5))
   const period = periods.find(p => String(p.id) === periodChoice) ||
-    periods.find(p => String(p.id) === String(clickedPeriod?.id))
+    preferredPeriod(periods)
   const allScheduleDays = groups.flatMap(g => g.days)
   const weekdayDays = allScheduleDays.filter(d => d !== "SATURDAY" && d !== "SUNDAY")
   // Check collision for selected item
   const getCollisionForSelected = () => {
-    if (!selectedItem || !day || !period) return null
+    if (!selectedItem || !day) return null
+    if (!period && stretch) return periods.length
+      ? "Choose a period within this free stretch."
+      : "No full teaching period fits in this free stretch."
+    if (!period) return null
     const k = `${selectedItem.section?.id}_${day}_${period.id}`
     const occ = sectionOccupancyMap.get(k)
     // If it's the current entry itself, not a conflict
@@ -160,7 +162,7 @@ export function TeacherSlotAssignmentDialog({
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault()
-    if (!selectedItem || !period) return
+    if (!selectedItem || !period || collisionForSelected) return
 
     let daysToApply = [day]
     if (selectedScope === "ALL_DAYS") {
@@ -222,7 +224,9 @@ export function TeacherSlotAssignmentDialog({
     const isOver = assignedCount > targetCount
 
     // Collision check
-    const occKey = `${item.section?.id}_${day}_${period?.id}`
+    const itemPeriods = isSelected ? periods : periodsFor(item.section)
+    const candidate = isSelected ? period : preferredPeriod(itemPeriods)
+    const occKey = `${item.section?.id}_${day}_${candidate?.id}`
     const occEntry = sectionOccupancyMap.get(occKey)
     const hasCollision = occEntry && String(occEntry.id) !== String(currentEntry?.id)
 
@@ -232,11 +236,12 @@ export function TeacherSlotAssignmentDialog({
         ref={isSelected ? selectedItemRef : null}
         role="button"
         tabIndex={0}
-        onClick={() => setSelectedAllocationKey(key)}
+        onClick={() => { setSelectedAllocationKey(key); setPeriodChoice("") }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
             setSelectedAllocationKey(key)
+            setPeriodChoice("")
           }
         }}
         className={cn(
@@ -244,16 +249,18 @@ export function TeacherSlotAssignmentDialog({
           isSelected
             ? "border-primary bg-primary/10 ring-1.5 ring-primary/60 shadow-2xs"
             : "border-border/60 hover:border-border hover:bg-muted/40 bg-card/70",
-          hasCollision && !isSelected && "border-amber-500/40"
+          (hasCollision || (stretch && !itemPeriods.length)) && "border-amber-500/40 opacity-65"
         )}
       >
         {/* Left: Dot + Subject Name & Code + Class & Section pill */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className={cn("size-2 rounded-full shrink-0", theme.dot || "bg-primary")} />
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            <span className="text-xs font-semibold">{classSecLabel}</span>
+            <span aria-hidden="true" className="text-muted-foreground">·</span>
             <span
               className={cn(
-                "text-xs font-semibold truncate max-w-[125px] sm:max-w-[145px]",
+                "text-xs font-semibold",
                 isSelected ? "text-primary font-bold" : "text-foreground"
               )}
               title={item.subject_name}
@@ -265,13 +272,6 @@ export function TeacherSlotAssignmentDialog({
                 ({item.subject_code})
               </span>
             )}
-            <span className="opacity-40 text-muted-foreground">·</span>
-            <span
-              className="text-[11px] font-medium text-foreground/85 bg-muted/70 border border-border/60 px-1.5 py-0.2 rounded shrink-0"
-              title={`Class: ${classSecLabel}`}
-            >
-              {classSecLabel}
-            </span>
             {hasCollision && (
               <span
                 className="text-[9.5px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1.5 py-0.2 rounded border border-amber-500/30 flex items-center gap-0.5 shrink-0"
@@ -325,7 +325,7 @@ export function TeacherSlotAssignmentDialog({
   return (
     <Dialog
       isOpen={isOpen}
-      onOpenChange={(open) => !open && onClose()}
+      onOpenChange={(open) => !open && !groupBusy && onClose()}
       className="sm:max-w-3xl md:max-w-4xl p-0 gap-0 overflow-hidden max-h-[92vh] flex flex-col [&>[data-slot=dialog]]:flex [&>[data-slot=dialog]]:flex-col [&>[data-slot=dialog]]:overflow-hidden [&>[data-slot=dialog]]:h-full [&>[data-slot=dialog]]:max-h-[92vh]"
     >
       {/* 1. FIXED HEADER */}
@@ -363,112 +363,26 @@ export function TeacherSlotAssignmentDialog({
         </div>
       </DialogHeader>
 
-      {/* 2. FIXED TOP ROW: Current Slot, Selected Class/Subject, Search */}
-      <div className="px-5 py-2.5 border-b border-border/60 bg-muted/10 shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-center">
-        {/* Left: Current Slot Status */}
-        <div className="px-2.5 py-1.5 rounded-lg border border-border/70 bg-card/60 flex items-center justify-between gap-1.5 h-9 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0 truncate">
-            <span className="text-[10px] uppercase font-bold text-muted-foreground shrink-0">
-              Current:
-            </span>
-            {currentEntry ? (
-              <span
-                className="text-xs font-semibold text-foreground truncate"
-                title={`${currentEntry.subject?.name || "Subject"} · ${currentEntry.section?.class_name || ""} ${currentEntry.section?.name || ""}`}
-              >
-                {currentEntry.subject?.name || "Subject"}
-                <span className="text-muted-foreground font-normal ml-1">
-                  · {currentEntry.section?.class_name || ""} {currentEntry.section?.name || ""}
-                </span>
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground italic">Unassigned slot</span>
-            )}
-          </div>
-
-          {currentEntry && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={handleUnassignClick}
-              disabled={isSubmitting}
-              className="text-destructive hover:bg-destructive/10 text-xs h-6 px-1.5 shrink-0 cursor-pointer"
-              title="Unassign current slot"
-            >
-              <Trash2 className="size-3 mr-1" />
-              Unassign
-            </Button>
-          )}
-        </div>
-
-        {/* Center: Selected Class & Subject */}
-        <div className="px-2.5 py-1.5 rounded-lg border border-border/70 bg-card/60 flex items-center justify-between gap-1.5 h-9 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0 truncate flex-1">
-            <span className="text-[10px] uppercase font-bold text-muted-foreground shrink-0">
-              Selected:
-            </span>
-            {selectedItem ? (
-              <div className="flex items-center gap-1.5 min-w-0 truncate">
-                <span
-                  className={cn(
-                    "size-2 rounded-full shrink-0",
-                    getSubjectTheme(selectedItem.subject_name).dot ||
-                      "bg-primary"
-                  )}
-                />
-                <span
-                  className="text-xs font-semibold text-foreground truncate"
-                  title={`${selectedItem.subject_name} (${selectedItem.section?.class_name || "Class"} ${selectedItem.section?.name || ""})`}
-                >
-                  {selectedItem.subject_name}
-                </span>
-                <span className="text-[10px] font-medium text-foreground/80 bg-muted/70 border border-border/60 px-1 py-0.2 rounded shrink-0">
-                  {selectedItem.section?.class_name || "Class"} {selectedItem.section?.name || ""}
-                </span>
-              </div>
-            ) : (
-              <span className="text-xs text-muted-foreground italic truncate">
-                Pick an allocated subject below
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Search Filter Input */}
-        <div className="relative h-9">
-          <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search class or subject..."
-            className="w-full h-9 rounded-lg pl-8 pr-7 text-xs bg-card/60 border-border/70 text-foreground transition-colors"
-          />
-          {search ? (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-              title="Clear search"
-            >
-              <X className="size-3" />
-            </button>
-          ) : null}
-        </div>
-      </div>
+      <AssignmentTabs groupPanel={groupPanel} preferGroup={preferGroup} busy={groupBusy || isSubmitting}>
+      {currentEntry && <div className="px-5 py-2 flex flex-wrap items-center gap-2 text-sm">
+        <span>{[currentEntry.section?.class_name, currentEntry.section?.name, currentEntry.subject?.name].filter(Boolean).join(" · ")}</span>
+        {!currentAllocation && <a className="underline" href={`/manage-school?classId=${currentEntry.section?.class_id || ""}&sectionId=${currentSectionId}&subjectId=${currentSubjectId}&highlight=true`}>Manage School</a>}
+        <Button variant="ghost" size="xs" onPress={handleUnassignClick} isDisabled={isSubmitting}>
+          <Trash2 className="size-3" /> Unassign
+        </Button>
+      </div>}
 
       {/* 3. SCROLLABLE ALLOCATIONS AREA: Single common scroll for both Academic & Activity columns */}
-      <div className="flex-1 overflow-y-auto px-5 py-3.5 space-y-3 min-h-[340px] max-h-[460px] scrollbar-thin">
+      <div className="flex-1 overflow-y-auto px-5 py-3.5 space-y-3 min-h-0 max-h-[460px] scrollbar-thin">
+        <h3 className="text-xs font-semibold text-muted-foreground">Assigned subjects</h3>
         {filteredAllocations.length === 0 ? (
           <div className="py-12 text-center text-xs text-muted-foreground border border-dashed rounded-xl space-y-1.5 p-4">
             <p className="font-semibold text-foreground">
-              {search
-                ? "No matching allocated subjects found"
-                : "No subjects assigned to this teacher in Manage School"}
+              No subjects assigned to this teacher in Manage School
             </p>
             <p className="text-[11px] text-muted-foreground">
               Assign classes & subjects to this faculty member in{" "}
-              <strong>Manage School &gt; Subjects</strong> to see them here.
+              <a className="underline" href="/manage-school">Manage School &gt; Subjects</a> to see them here.
             </p>
           </div>
         ) : (
@@ -539,12 +453,13 @@ export function TeacherSlotAssignmentDialog({
         <div className="px-5 py-2 bg-destructive/10 border-t border-destructive/20 text-destructive text-xs flex items-center gap-2 shrink-0 animate-in fade-in-0 duration-150">
           <AlertTriangle className="size-4 shrink-0 text-destructive" />
           <span className="text-[11px] leading-tight font-medium truncate">
-            {collisionForSelected} Assigning will reassign that class's slot.
+            {collisionForSelected}
           </span>
         </div>
       )}
 
       {/* 5. FIXED FOOTER: Apply Scope + Action Buttons */}
+      <p className="px-5 text-xs">Room · {(selectedAllocationKey === `${currentSectionId}_${currentSubjectId}` ? currentEntry?.room_number : selectedItem?.room_number) || "Not assigned"}</p>
       <DialogFooter className="px-5 py-2.5 border-t border-border/60 bg-muted/15 shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
         {/* Left: Apply Scope Selector (Fixed at bottom) */}
         <div className="flex items-center gap-2 min-w-0">
@@ -612,7 +527,7 @@ export function TeacherSlotAssignmentDialog({
             type="button"
             onClick={handleSubmit}
             size="default"
-            disabled={isSubmitting || !selectedItem || !period || (selectedScope === "WEEKDAYS" && !weekdayDays.length)}
+            disabled={isSubmitting || !selectedItem || !period || Boolean(collisionForSelected) || (selectedScope === "WEEKDAYS" && !weekdayDays.length)}
             className={cn(
               "h-8 px-4 text-xs font-bold gap-1.5 shadow-xs cursor-pointer",
               !selectedItem && "opacity-50 cursor-not-allowed"
@@ -623,6 +538,7 @@ export function TeacherSlotAssignmentDialog({
           </Button>
         </div>
       </DialogFooter>
+      </AssignmentTabs>
     </Dialog>
   )
 }

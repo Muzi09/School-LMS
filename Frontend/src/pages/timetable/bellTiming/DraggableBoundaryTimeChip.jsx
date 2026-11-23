@@ -51,6 +51,7 @@ export function DraggableBoundaryTimeChip({
 
   useEffect(() => {
     if (!isDragging) return
+    let frameId = null
 
     const handlePointerMove = (e) => {
       const deltaX = e.clientX - startXRef.current
@@ -61,12 +62,22 @@ export function DraggableBoundaryTimeChip({
 
       if (clampedMins !== currentMinsRef.current) {
         currentMinsRef.current = clampedMins
-        setPreviewMinutes(clampedMins)
-        onDragUpdateRef.current?.(formatMinutes(clampedMins))
+        if (frameId === null) {
+          frameId = requestAnimationFrame(() => {
+            frameId = null
+            const minutes = currentMinsRef.current
+            setPreviewMinutes(minutes)
+            onDragUpdateRef.current?.(formatMinutes(minutes))
+          })
+        }
       }
     }
 
     const handlePointerUp = () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId)
+        frameId = null
+      }
       setIsDragging(false)
       const finalMins = currentMinsRef.current
       setPreviewMinutes(null)
@@ -82,6 +93,7 @@ export function DraggableBoundaryTimeChip({
     window.addEventListener("pointercancel", handlePointerUp)
 
     return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
       window.removeEventListener("pointermove", handlePointerMove)
       window.removeEventListener("pointerup", handlePointerUp)
       window.removeEventListener("pointercancel", handlePointerUp)

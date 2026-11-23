@@ -4,10 +4,12 @@ import {
   User,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { classLessonRoomLabel } from "../rooms"
 import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
 import { getShortSubjectName, buildRowGroups } from "../subjectShortName"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
+import { format12h } from "../bellTiming/timeUtils"
 import { formatPeriodShortLabel, isNonTeachingPeriod } from "../bellTiming/validators"
 import { cn } from "@/lib/utils"
 
@@ -28,6 +30,25 @@ function calculateDuration(startTime, endTime) {
   if (isNaN(h1) || isNaN(h2)) return ""
   const diff = h2 * 60 + (m2 || 0) - (h1 * 60 + (m1 || 0))
   return diff > 0 ? `${diff}m` : ""
+}
+
+/** @param {{ times: string[], atStart?: boolean }} props */
+function PeriodBoundary({ times, atStart = false }) {
+  const labels = [...new Set(times.filter(Boolean))]
+  if (!labels.length) return null
+
+  return (
+    <div className={cn(
+      "pointer-events-none absolute top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-0.5",
+      atStart ? "left-0 -translate-x-1/2" : "right-0 translate-x-1/2"
+    )}>
+      {labels.map(label => (
+        <span key={label} className="whitespace-nowrap rounded-full border border-border/80 bg-background px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground shadow-2xs">
+          {label}
+        </span>
+      ))}
+    </div>
+  )
 }
 
 /** @typedef {import("./ClassWiseCell").TimetableSection} TimetableSection */
@@ -65,6 +86,7 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
   selectedSlot = null,
   copiedSlot = null,
   onSelectSlot,
+  placements,
   onOpenAssignDialog,
   onMoveSlot,
   onClearSlot,
@@ -103,7 +125,17 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
   }, [entries])
 
   // Aggregate stats
-  const assignedSlotsCount = entries.filter((e) => Boolean(e.subject_id || e.subject)).length
+  const slotGroups = useMemo(() => {
+    const map = new Map()
+    for (const entry of entries) {
+      if (!entry.placement_id) continue
+      const key = entry.day_of_week + "_" + entry.period_id
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(entry)
+    }
+    return map
+  },[entries])
+  const assignedSlotsCount = entryLookup.size
   const completionPct = (totalSlotsCount > 0 && assignedSlotsCount > 0) ? Math.round((assignedSlotsCount / totalSlotsCount) * 100) : 0
 
   const isDraggingRef = useRef(false)
@@ -112,7 +144,7 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
   const handleDragStart = (e, slotData) => {
     if (!isAssignMode || !slotData.entry) return
     isDraggingRef.current = true
-    dragStartTimeRef.current = Date.now()
+    dragStartTimeRef.current = e.timeStamp
     e.dataTransfer.setData("application/json", JSON.stringify(slotData))
     e.dataTransfer.effectAllowed = e.altKey ? "copy" : "move"
   }
@@ -147,9 +179,9 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
     }
   }
 
-  const handleCellClick = (slotKey, slotData) => {
+  const handleCellClick = (event, slotKey, slotData) => {
     if (!isAssignMode) return
-    if (isDraggingRef.current || (dragStartTimeRef.current && Date.now() - dragStartTimeRef.current < 250)) {
+    if (isDraggingRef.current || (dragStartTimeRef.current && event.timeStamp - dragStartTimeRef.current < 250)) {
       return
     }
     // Always put focus on the cell (green outline)
@@ -233,7 +265,7 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
         {isAssignMode && <button type="button" className="underline" onClick={() => onQuickUnassign?.(e, section)}>Remove lesson</button>}
       </div>)}
       {/* CARD HEADER: Compact 3-Zone x 2-Line Architecture (~48px height) */}
-      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px] max-h-[52px]">
+      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px]">
         {/* Left Zone: Identity Stack (Class & Section on Line 1, CT on Line 2) */}
         <div className="flex flex-col justify-center min-w-[150px] max-w-[240px] shrink-0 leading-tight gap-0.5">
           {/* Line 1: Class Name & Section Badge */}
@@ -247,16 +279,21 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
             >
               {section.name}
             </Badge>
+            {section.room_number && (
+              <span className="min-w-0 truncate text-[11px] font-medium text-muted-foreground" title={`Room ${section.room_number}`}>
+                Room {section.room_number}
+              </span>
+            )}
           </div>
 
-          {/* Line 2: Class Teacher Name (Compact CT: <Name>, hovering gives full Class Teacher) */}
+          {/* Class teacher assignment */}
           <div
-            className="flex items-center gap-1 text-[11px] text-muted-foreground truncate font-medium cursor-default"
+            className="flex items-start gap-1 text-xs text-muted-foreground"
             title={classTeacherName ? `Class Teacher: ${classTeacherName}` : "Class Teacher: Not assigned"}
           >
-            <User className="size-3 text-primary/70 shrink-0" />
-            <span className="truncate">
-              <span className="text-muted-foreground/75 font-normal">CT: </span>
+            <User className="mt-0.5 size-3 text-primary/70 shrink-0" />
+            <span className="min-w-0 break-words">
+              <span>Class teacher: </span>
               <strong className={cn("font-medium", classTeacherName ? "text-foreground/90 font-semibold" : "text-muted-foreground/60 font-normal italic")}>
                 {classTeacherName || "Not assigned"}
               </strong>
@@ -469,8 +506,10 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
 
                     const isNonTeaching = isNonTeachingPeriod(period)
                     const duration = calculateDuration(period.start_time, period.end_time)
-                    // Keep short label in header as requested: "(not the headers only body cells)"
                     const periodHeaderLabel = formatPeriodShortLabel(period, group.periods)
+                    const startTime = format12h(period.start_time)
+                    const endTime = format12h(period.end_time)
+                    const nextStartTime = format12h(group.periods[index + 1]?.start_time)
 
                     return (
                       <div
@@ -482,10 +521,12 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
                             : "bg-primary/5 dark:bg-primary/10"
                         )}
                       >
-                        <div className="text-center text-xs leading-tight" title={duration}>
-                          <strong>{periodHeaderLabel}</strong>
-                          <div className="text-muted-foreground">{period.start_time}–{period.end_time}</div>
+                        <div className="w-full min-w-0 px-7 text-center text-xs leading-tight">
+                          <strong className="block truncate" title={periodHeaderLabel}>{periodHeaderLabel}</strong>
+                          {duration && <div className="text-[10px] text-muted-foreground">{duration}</div>}
                         </div>
+                        {index === 0 && <PeriodBoundary atStart times={[startTime]} />}
+                        <PeriodBoundary times={[endTime, nextStartTime]} />
                       </div>
                     )
                   })}
@@ -540,6 +581,18 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
                           entryLookup.get(`${day}_${period.id}`) ||
                           null
 
+                        const grouped = slotGroups.get(day + "_" + period.id)
+                        if (grouped) {
+                          const expected = placements?.[entry.placement_id]?.expected.filter(r => r.section_ids.includes(section.id)).length || grouped.length
+                          const openGroup = () => onOpenAssignDialog?.({section,day,period,currentEntry:entry})
+                          return <div key={period.id} data-slot-key={section.id + "_" + day + "_" + period.id} className="relative border-b border-r bg-card p-1.5 text-xs">
+                            <button disabled={!isAssignMode} onClick={openGroup} className="w-full pr-3 text-left">
+                              {grouped.map(e => <span key={e.id} className="block"><strong>{e.subject?.name}</strong> · {e.teacher?.name}{classLessonRoomLabel(e, section) && <span className="block text-[11px] text-muted-foreground">{classLessonRoomLabel(e, section)}</span>}</span>)}
+                              {grouped.length < expected && <span className="text-primary">{grouped.length} of {expected} options scheduled</span>}
+                            </button>
+                            {isAssignMode && <button className="absolute right-1 top-1" aria-label="Unassign group" onClick={() => onQuickUnassign?.(entry,section,{day,period})}>×</button>}
+                          </div>
+                        }
                         const isBreak = Boolean(period.is_break)
                         const conflictInfo = entry ? (conflictMap[entry.id] || conflictMap[String(entry.id)]) : null
                         const slotKey = `${section.id}_${day}_${period.id || period.period_number}`
@@ -599,8 +652,8 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
                               isDimmed={isDimmed}
                               density={density}
                               isCurrentPeriod={isCurrentPeriod}
-                              onClick={() => {
-                                handleCellClick(slotKey, {
+                              onClick={event => {
+                                handleCellClick(event, slotKey, {
                                   section,
                                   day,
                                   period,

@@ -88,6 +88,27 @@ def test_save_across_weekday_and_saturday_and_remove_exact_lesson(school_bells):
     assert len(rows) == 3
 
 
+def test_export_mixed_bells_preserves_weekday_specific_times_and_free_stretches(school_bells):
+    from openpyxl import load_workbook
+    from app.services.timetable_export_service import TimetableExportService
+
+    f = school_bells
+    profile = f.db.query(StaffProfile).filter_by(user_id=f.actor).one()
+    profile.working_shifts = [{"start_time": "07:30", "end_time": "11:00"}]
+    assign(f, 0, "MONDAY", f.periods[0][0], apply_days=["MONDAY", "SATURDAY"])
+    assign(f, 1, "SATURDAY", f.periods[1][1])
+    workbook = load_workbook(TimetableExportService(f.db).export_timetable_excel(f.school, f.tt))
+    section_rows = list(workbook.worksheets[0].values)
+    assert any("P1\n09:00–09:30" in row for row in section_rows)
+    assert any("P1\n10:00–10:20" in row for row in section_rows)
+    teacher_rows = list(workbook.worksheets[1].values)
+    saturday = next(row for row in teacher_rows if row[0] == "Saturday")
+    assert any("09:00–09:30" in str(cell) and "Maths" in str(cell) for cell in saturday)
+    assert any("10:00–10:20" in str(cell) and "Senior" in str(cell) for cell in saturday)
+    assert any("09:30–10:00" in str(cell) and "F2" in str(cell) for cell in saturday)
+    assert any("Assigned 3" in str(row[0]) for row in teacher_rows)
+
+
 def test_teacher_overlap_reports_the_booked_class_bell_in_preview_and_save(school_bells):
     f = school_bells
     requested, booked = (f.db.get(TimetablePeriod, ids[0]) for ids in f.periods)

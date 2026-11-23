@@ -68,6 +68,8 @@ export function ExportTimetableModal({
     return sections.filter((s) => wingClassIds.has(s.class_id))
   }, [sections, wings, selectedWingId])
 
+  const chosenSections = filteredSectionsByWing.filter(s => selectedSectionIds.has(s.id))
+
   // Filter sections by search text
   const displayedSections = useMemo(() => {
     if (!classSearch.trim()) return filteredSectionsByWing
@@ -146,7 +148,7 @@ export function ExportTimetableModal({
       return
     }
 
-    const exportSectionIds = scope === "teacherwise" ? null : Array.from(selectedSectionIds)
+    const exportSectionIds = scope === "teacherwise" ? null : chosenSections.map(s => s.id)
     const exportTeacherIds = scope === "classwise" ? null : Array.from(selectedTeacherIds)
 
     if (scope !== "teacherwise" && exportSectionIds && exportSectionIds.length === 0) {
@@ -328,7 +330,7 @@ export function ExportTimetableModal({
                   <GraduationCap className="size-4 text-primary" />
                   <span className="text-xs font-bold text-foreground">Select Classes / Sections</span>
                   <Badge variant="outline" className="text-[10px] ml-1 font-semibold">
-                    {selectedSectionIds.size} / {filteredSectionsByWing.length} selected
+                    {chosenSections.length} / {filteredSectionsByWing.length} selected
                   </Badge>
                 </div>
                 <div className="flex items-center gap-2">

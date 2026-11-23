@@ -132,6 +132,15 @@ def complete_school_setup(
     # 1. Validate Token & User
     token_record, principal = _find_and_verify_token(payload.token, db)
 
+    # Match the same normalized names used to create class and wing records.
+    class_names = [item.name.strip().lower() for item in payload.classes]
+    wing_names = [wing.name.strip().lower() for wing in payload.wings]
+    assigned_names = [name.strip().lower() for wing in payload.wings for name in wing.classes]
+    if (not wing_names or "" in wing_names or len(wing_names) != len(set(wing_names))
+            or "" in class_names or len(class_names) != len(set(class_names))
+            or sorted(assigned_names) != sorted(class_names)):
+        raise HTTPException(400, "Every class must belong to exactly one academic wing with a unique name.")
+
     # 2. Validate Credentials Match
     if payload.password != payload.confirm_password:
         raise HTTPException(
@@ -206,7 +215,7 @@ def complete_school_setup(
             # Create Sections for this class
             seen_sections = set()
             sections_list = class_item.sections if class_item.sections else ["A"]
-            for s_name in sections_list:
+            for order_index, s_name in enumerate(sections_list):
                 sec_raw = s_name.strip()
                 if not sec_raw or sec_raw.lower() in seen_sections:
                     continue
@@ -216,6 +225,8 @@ def complete_school_setup(
                     school_id=school.id,
                     class_id=school_class.id,
                     name=sec_raw,
+                    order_index=order_index,
+                    single_room=True,
                     created_by=principal.id,
                 )
                 db.add(section)

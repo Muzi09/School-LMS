@@ -1,6 +1,7 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
 import { Check, ChevronsUpDown, X } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
 /**
@@ -22,6 +23,7 @@ export function Combobox({
   placeholder = "Select an option...",
   emptyText = "No results found.",
   searchable = true,
+  searchPlaceholder = undefined,
   clearable = false,
   disabled = false,
   showDescriptionInTrigger = true,
@@ -435,11 +437,15 @@ export function Combobox({
         createPortal(
           <div
             ref={popoverRef}
-            role="listbox"
             tabIndex={-1}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
-            onKeyDown={handleKeyDown}
+            onKeyDown={(event) => {
+              event.stopPropagation()
+              if (event.target.tagName !== "INPUT" || ["Escape", "Tab", "ArrowDown", "ArrowUp", "Enter"].includes(event.key)) {
+                handleKeyDown(event)
+              }
+            }}
             style={{
               position: "fixed",
               top: coords.top !== undefined ? `${coords.top}px` : undefined,
@@ -454,8 +460,22 @@ export function Combobox({
               popoverClassName
             )}
           >
+            {searchable && searchPlaceholder && (
+              <div className="shrink-0 border-b border-border p-1.5">
+                <Input
+                  autoFocus
+                  aria-label={searchPlaceholder}
+                  placeholder={searchPlaceholder}
+                  value={searchQuery}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value)
+                    setHighlightedIndex(0)
+                  }}
+                />
+              </div>
+            )}
             {/* Options list */}
-            <div ref={listRef} className="overflow-y-auto p-1 space-y-0.5 flex-1">
+            <div role="listbox" ref={listRef} className="overflow-y-auto p-1 space-y-0.5 flex-1">
               {clearable && selectedOption && (
                 <button
                   type="button"

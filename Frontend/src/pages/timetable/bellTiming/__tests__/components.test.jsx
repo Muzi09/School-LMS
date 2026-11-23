@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, fireEvent, cleanup } from "@testing-library/react"
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { BellTimeline } from "../BellTimeline"
@@ -10,6 +10,8 @@ import { DaySplitModal } from "../DaySplitModal"
 import { DayMergeModal } from "../DayMergeModal"
 import { MoveScheduleModal } from "../MoveScheduleModal"
 import { PERIOD_TYPES } from "../validators"
+
+vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }))
 import { ClassWiseCell } from "../../components/ClassWiseCell"
 import { SlotAssignmentDialog } from "../../components/SlotAssignmentDialog"
 
@@ -102,6 +104,24 @@ describe("Bell Timing Components Integration", () => {
   })
 
   describe("BellTimeline", () => {
+    it("shows both times at the divider when periods have a gap", () => {
+      render(
+        <BellTimeline
+          schedule={{
+            ...sampleSchedule,
+            periods: [
+              { ...sampleSchedule.periods[0], start_time: "11:20", end_time: "12:10" },
+              { ...sampleSchedule.periods[0], id: "after-gap", start_time: "12:55", end_time: "13:45" },
+            ],
+          }}
+        />
+      )
+
+      const nextStart = screen.getByText("12:55 PM")
+      expect(nextStart.parentElement.textContent).toContain("12:10 PM")
+      expect(screen.getByText("1:45 PM")).toBeDefined()
+    })
+
     it("renders periods, recess block, and boundary time pills", () => {
       render(
         <BellTimeline
@@ -114,7 +134,8 @@ describe("Bell Timing Components Integration", () => {
 
       // Period labels
       expect(screen.getAllByText("P1").length).toBeGreaterThan(0)
-      expect(screen.getAllByText("Recess").length).toBeGreaterThan(0)
+      expect(screen.getByRole("button", { name: "Edit Recess" })).toBeDefined()
+      expect(screen.queryByText("Periods Timeline")).toBeNull()
       // Boundary times (8:30 AM, 9:15 AM)
       expect(screen.getAllByText("8:30 AM").length).toBeGreaterThan(0)
       expect(screen.getAllByText("9:15 AM").length).toBeGreaterThan(0)
@@ -143,7 +164,7 @@ describe("Bell Timing Components Integration", () => {
       expect(onEditBoundary).toHaveBeenCalled()
     })
 
-    it("shifts subsequent periods and updates boundary times in real time during drag", () => {
+    it("shifts subsequent periods to the latest pointer position on the next frame", async () => {
       const onEditBoundary = vi.fn()
       render(
         <BellTimeline
@@ -163,11 +184,12 @@ describe("Bell Timing Components Integration", () => {
       // Start drag at clientX = 100
       fireEvent.pointerDown(boundarySlider, { button: 0, clientX: 100 })
 
-      // Drag right by 20px (+10 minutes: from 09:15 to 09:25)
+      // Two pointer updates on the same frame, ending 10 minutes ahead.
+      fireEvent.pointerMove(window, { clientX: 110 })
       fireEvent.pointerMove(window, { clientX: 120 })
 
       // P1 end time should now preview 9:25 AM
-      expect(screen.getAllByText("9:25 AM").length).toBeGreaterThan(0)
+      await waitFor(() => expect(screen.getAllByText("9:25 AM").length).toBeGreaterThan(0))
 
       // P2 (which was 9:15 - 10:00, 45m) must shift ahead to 9:25 - 10:10 AM
       expect(screen.getAllByText("10:10 AM").length).toBeGreaterThan(0)
@@ -179,7 +201,7 @@ describe("Bell Timing Components Integration", () => {
       expect(onEditBoundary).toHaveBeenCalledWith(1, "09:25", false)
     })
 
-    it("enforces minimum 15-minute duration when dragging period boundaries", () => {
+    it("enforces minimum 15-minute duration when dragging period boundaries", async () => {
       const onEditBoundary = vi.fn()
       render(
         <BellTimeline
@@ -202,7 +224,7 @@ describe("Bell Timing Components Integration", () => {
       fireEvent.pointerMove(window, { clientX: 100 })
 
       // P1 end time must be clamped to minimum 15 min duration (08:30 + 15m = 08:45)
-      expect(screen.getAllByText("8:45 AM").length).toBeGreaterThan(0)
+      await waitFor(() => expect(screen.getAllByText("8:45 AM").length).toBeGreaterThan(0))
 
       // Finish drag
       fireEvent.pointerUp(window)

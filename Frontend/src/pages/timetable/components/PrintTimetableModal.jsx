@@ -30,6 +30,7 @@ export function PrintTimetableModal({
   teachers = [],
   setups = [],
   entries = [],
+  placements,
 }) {
   const [activeTab, setActiveTab] = useState("configure") // "configure" | "preview"
   const [scope, setScope] = useState("both") // "classwise" | "teacherwise" | "both"
@@ -99,8 +100,8 @@ export function PrintTimetableModal({
   // Sections actually selected to print
   const printableSections = useMemo(() => {
     if (scope === "teacherwise") return []
-    return sections.filter((s) => selectedSectionIds.has(s.id))
-  }, [sections, selectedSectionIds, scope])
+    return filteredSectionsByWing.filter((s) => selectedSectionIds.has(s.id))
+  }, [filteredSectionsByWing, selectedSectionIds, scope])
 
   // Teachers actually selected to print
   const printableTeachers = useMemo(() => {
@@ -143,8 +144,10 @@ export function PrintTimetableModal({
     setSelectedTeacherIds(new Set())
   }
 
-  // Robust isolated iframe printing
-  const handlePrint = () => {
+  const printFrameRef = useRef(null)
+  useEffect(() => () => printFrameRef.current?.remove(), [])
+
+  const handlePrint = async () => {
     if (printableSections.length === 0 && printableTeachers.length === 0) {
       toast.error("Please select at least one class or teacher to print.")
       return
@@ -163,6 +166,9 @@ export function PrintTimetableModal({
     iframe.style.width = "0"
     iframe.style.height = "0"
     iframe.style.border = "0"
+    printFrameRef.current?.remove()
+    printFrameRef.current = iframe
+    iframe.title = "Printable timetable"
     document.body.appendChild(iframe)
 
     const doc = iframe.contentWindow?.document
@@ -173,8 +179,16 @@ export function PrintTimetableModal({
     }
 
     doc.title = `${timetable?.name || "Timetable"} - Print`
+    const stylesReady = []
     for (const styleSheet of document.querySelectorAll("style, link[rel='stylesheet']")) {
-      doc.head.append(doc.importNode(styleSheet, true))
+      const copy = doc.importNode(styleSheet, true)
+      if (copy.tagName === "LINK" && !copy.disabled) {
+        stylesReady.push(new Promise(resolve => {
+          copy.addEventListener("load", resolve, { once: true })
+          copy.addEventListener("error", resolve, { once: true })
+        }))
+      }
+      doc.head.append(copy)
     }
     const printStyles = doc.createElement("style")
     printStyles.textContent = `
@@ -213,18 +227,18 @@ export function PrintTimetableModal({
     content.append(...Array.from(printElement.childNodes, node => doc.importNode(node, true)))
     doc.body.replaceChildren(content)
 
-    iframe.contentWindow?.focus()
-    setTimeout(() => {
-      try {
-        iframe.contentWindow?.print()
-      } catch (e) {
-        console.error("Print error:", e)
-      } finally {
-        setTimeout(() => {
-          document.body.removeChild(iframe)
-        }, 1000)
-      }
-    }, 400)
+    try {
+      await Promise.all(stylesReady)
+      await doc.fonts?.ready
+      if (!iframe.isConnected) return
+      const printWindow = iframe.contentWindow
+      printWindow.addEventListener("afterprint", () => iframe.remove(), { once: true })
+      printWindow.focus()
+      printWindow.print()
+    } catch {
+      iframe.remove()
+      toast.error("Could not open the print dialog. Please try again.")
+    }
   }
 
   if (!isOpen) return null
@@ -422,7 +436,7 @@ export function PrintTimetableModal({
                       <GraduationCap className="size-4 text-primary" />
                       <span className="text-xs font-bold text-foreground">Select Classes to Print</span>
                       <Badge variant="outline" className="text-[10px] ml-1 font-semibold">
-                        {selectedSectionIds.size} / {filteredSectionsByWing.length} selected
+                        {printableSections.length} / {filteredSectionsByWing.length} selected
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2">
@@ -616,33 +630,19 @@ export function PrintTimetableModal({
                 </Button>
               </div>
 
-              <div className="p-4 border rounded-xl bg-slate-50 overflow-auto max-h-[50vh] shadow-inner">
-                <TimetablePrintView
-                  schoolName={schoolName}
-                  timetableTitle={timetable?.name || "Timetable"}
-                  academicYear={timetable?.academic_year || "2026-2027"}
-                  printScope={scope}
-                  selectedSections={printableSections}
-                  selectedTeachers={printableTeachers}
-                  setups={setups}
-                  entries={entries}
-                  pageBreak={pageBreak}
-                  colorMode={colorMode}
-                  includeHeader={includeHeader}
-                />
-              </div>
             </div>
           )}
 
-          {/* Hidden printable target container (always rendered for printing) */}
-          <div className="hidden">
+          <div className={activeTab === "preview" ? "p-4 border rounded-xl bg-slate-50 overflow-auto max-h-[50vh] shadow-inner" : "hidden"}>
             <TimetablePrintView
               ref={printAreaRef}
               schoolName={schoolName}
               timetableTitle={timetable?.name || "Timetable"}
-              academicYear={timetable?.academic_year || "2026-2027"}
+              academicYear={timetable?.academic_year}
               printScope={scope}
               selectedSections={printableSections}
+              allSections={sections}
+              placements={placements}
               selectedTeachers={printableTeachers}
               setups={setups}
               entries={entries}
@@ -673,7 +673,7 @@ export function PrintTimetableModal({
               type="button"
               variant="default"
               size="default"
-              onClick={handlePrint}
+              onPress={handlePrint}
               className="h-9 px-5 text-xs font-bold gap-2 cursor-pointer shadow-xs bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               <Printer className="size-4" />

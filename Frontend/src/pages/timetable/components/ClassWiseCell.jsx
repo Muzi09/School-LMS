@@ -1,6 +1,7 @@
 import { memo } from "react"
 import { AlertTriangle, Plus, CircleDashed, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { classLessonRoomLabel } from "../rooms"
 import { format12h } from "../bellTiming/timeUtils"
 import { getTimetablePeriodLabel, isNonTeachingPeriod } from "../bellTiming/validators"
 import { showTimetableTooltip, hideTimetableTooltip } from "./timetableTooltipState"
@@ -8,11 +9,11 @@ import { showTimetableTooltip, hideTimetableTooltip } from "./timetableTooltipSt
 /** @typedef {{ id?: string, name?: string, first_name?: string, last_name?: string, email?: string, tag?: string, designation?: string, department?: string }} TimetableTeacher */
 /** @typedef {{ id?: string, name: string, code?: string }} TimetableSubject */
 /** @typedef {{ id?: string, subject_id: string, name: string, assigned: number, target: number, teacher?: TimetableTeacher }} TimetableSubjectStat */
-/** @typedef {{ id: string, class_name?: string, name?: string, class_teacher_name?: string, class_teacher?: TimetableTeacher, subject_stats?: TimetableSubjectStat[], school_class?: { name: string } }} TimetableSection */
+/** @typedef {{ id: string, class_name?: string, name?: string, room_number?: string | null, class_teacher_name?: string, class_teacher?: TimetableTeacher, subject_stats?: TimetableSubjectStat[], school_class?: { name: string } }} TimetableSection */
 /** @typedef {{ id?: string, label?: string, period_number: number, type?: string, period_type?: string, name?: string, start_time?: string, end_time?: string, is_break?: boolean }} TimetablePeriod */
 /** @typedef {{ id: string, days?: string[], periods?: TimetablePeriod[] }} TimetableSchedule */
 /** @typedef {{ assigned_section_ids?: string[] | string, applicable_days?: string[] | string, schedules?: TimetableSchedule[], schedules_json?: string, periods?: TimetablePeriod[] }} TimetableSetup */
-/** @typedef {{ id: string, class_name?: string, section_name?: string, section_id?: string, section?: TimetableSection, subject_id?: string, subject?: TimetableSubject, teacher_user_id?: string, teacher?: TimetableTeacher, period_id?: string, period_number?: number, period?: TimetablePeriod, day_of_week: string }} TimetableEntry */
+/** @typedef {{ id: string, class_name?: string, section_name?: string, section_id?: string, section?: TimetableSection, subject_id?: string, subject?: TimetableSubject, teacher_user_id?: string, teacher?: TimetableTeacher, period_id?: string, period_number?: number, period?: TimetablePeriod, room_number?: string | null, day_of_week: string }} TimetableEntry */
 /** @typedef {{ section: TimetableSection, period: TimetablePeriod, day: string, entry?: TimetableEntry | null, scheduleDays?: string[] }} TimetableSlot */
 
 /**
@@ -172,16 +173,17 @@ export const ClassWiseCell = memo(function ClassWiseCell(/** @type {ClassWiseCel
       ? section.subject_stats.find((s) => s.subject_id === entry.subject.id || s.id === entry.subject.id)?.teacher?.name
       : null
     const teacherName = entry?.teacher?.name || fallbackTeacherName || "Unassigned"
+    const roomLabel = classLessonRoomLabel(entry, section)
     const hasTeacher = Boolean(entry?.teacher?.name || fallbackTeacherName)
 
     const repeatInfo = sameDayRepeatCount >= 2 ? ` • Scheduled ${sameDayRepeatCount}x` : ""
-    const tooltipText = `${subjectName}${subjectCode ? ` (${subjectCode})` : ""} • ${teacherName} • ${day} ${periodLabel}${timePart}${repeatInfo}${conflictInfo ? ` • ${conflictInfo}` : ""}${isAssignMode ? " • Click to edit" : ""}`
+    const tooltipText = `${subjectName}${subjectCode ? ` (${subjectCode})` : ""} • ${teacherName}${roomLabel ? " • " + roomLabel : ""} • ${day} ${periodLabel}${timePart}${repeatInfo}${conflictInfo ? ` • ${conflictInfo}` : ""}${isAssignMode ? " • Click to edit" : ""}`
 
     return (
       <div
         role={isAssignMode ? "button" : undefined}
         tabIndex={isAssignMode ? 0 : undefined}
-        aria-label={isAssignMode ? `${subjectName}, ${teacherName}, ${day}, ${periodLabel}. Edit assignment.` : tooltipText}
+        aria-label={isAssignMode ? `${subjectName}, ${teacherName}, ${roomLabel ? roomLabel + ", " : ""}${day}, ${periodLabel}. Edit assignment.` : tooltipText}
         onKeyDown={isAssignMode ? (event) => activateAssignmentCell(event, onDoubleClick) : undefined}
         onClick={(e) => {
           hideTimetableTooltip()
@@ -249,6 +251,9 @@ export const ClassWiseCell = memo(function ClassWiseCell(/** @type {ClassWiseCel
           <span className={cn("text-muted-foreground font-normal truncate w-full mt-0.5", !hasTeacher && "italic opacity-60")}>
             {teacherName}
           </span>
+          {roomLabel && (
+            <span className="mt-0.5 max-w-full break-words text-[11px] text-muted-foreground">{roomLabel}</span>
+          )}
         </div>
 
         {/* Quick Unassign 'X' button on hover (in Edit/Assign mode) */}

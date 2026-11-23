@@ -5,7 +5,7 @@ from datetime import datetime, time, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import UUID
 
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, tuple_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.exceptions import (
@@ -23,7 +23,9 @@ from app.services.bell_timing_validator import (
 from app.models.enums import UserRole
 from app.models.school import School
 from app.models.school_class import SchoolClass
+from app.services.school_order import class_order, section_order
 from app.models.section import Section
+from app.services.section_rooms import effective_room
 from app.models.staff import StaffProfile
 from app.models.subject import ClassSubject, Subject
 from app.models.timetable import (
@@ -244,7 +246,7 @@ class TimetableService:
             entry_count = precomputed_entry_count
         else:
             entry_count = (
-                self.db.query(TimetableEntry)
+                self.db.query(TimetableEntry.section_id, TimetableEntry.day_of_week, TimetableEntry.period_id).distinct()
                 .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
                 .filter(
                     TimetableEntry.timetable_id == timetable_id,
@@ -335,7 +337,7 @@ class TimetableService:
 
         tt_ids = [tt.id for tt in tts]
         entry_counts = dict(
-            self.db.query(TimetableEntry.timetable_id, func.count(TimetableEntry.id))
+            self.db.query(TimetableEntry.timetable_id, func.count(func.distinct(tuple_(TimetableEntry.section_id, TimetableEntry.day_of_week, TimetableEntry.period_id))))
             .join(TimetablePeriod, TimetablePeriod.id == TimetableEntry.period_id)
             .filter(
                 TimetableEntry.timetable_id.in_(tt_ids),
@@ -388,7 +390,7 @@ class TimetableService:
         start_opt = data.start_option
         copying = start_opt in ("duplicate", "copy_bell") and source_tt_id is not None
         if copying:
-            self._lock_timetable(school_id, source_tt_id)
+            source_timetable = self._lock_timetable(school_id, source_tt_id)
 
         if data.is_active:
             self.db.query(Timetable).filter(
@@ -499,6 +501,7 @@ class TimetableService:
                     )
                     .all()
                 )
+                new_tt.lecture_plan = source_timetable.lecture_plan
                 for e in src_entries:
                     new_pid = period_id_map.get(e.period_id)
                     if new_pid:
@@ -508,7 +511,7 @@ class TimetableService:
                             section_id=e.section_id,
                             subject_id=e.subject_id,
                             teacher_user_id=e.teacher_user_id,
-                            period_id=new_pid,
+                            period_id=new_pid, placement_id=e.placement_id, option_id=e.option_id, room_number=e.room_number,
                             day_of_week=e.day_of_week,
                             created_by=user_id,
                             updated_by=user_id,
@@ -572,6 +575,12 @@ class TimetableService:
 
         schedules = self._section_schedules(school_id, timetable_id) if entries else {}
         invalid = []
+        group_times = {}
+        for entry in entries:
+            if entry.placement_id and entry.period:
+                group_times.setdefault(entry.placement_id, set()).add((entry.period.start_time, entry.period.end_time))
+        if any(len(times) > 1 for times in group_times.values()):
+            invalid.append("A grouped lecture spans different bell times. Select a common period for every section.")
         teacher_day_map: Dict[Tuple[UUID, str], List[TimetableEntry]] = {}
         for e in entries:
             allowed = self._day_periods(schedules, e.section_id, e.day_of_week)
@@ -598,6 +607,8 @@ class TimetableService:
                 for j in range(i + 1, len(t_entries)):
                     e1 = t_entries[i]
                     e2 = t_entries[j]
+                    if e1.placement_id and e1.placement_id == e2.placement_id:
+                        continue
                     p1 = e1.period
                     p2 = e2.period
                     if p1 and p2 and p1.start_time and p1.end_time and p2.start_time and p2.end_time:
@@ -950,6 +961,17 @@ class TimetableService:
 
     def list_setups(self, school_id: UUID, timetable_id: UUID) -> List[Dict[str, Any]]:
         self.get_timetable_by_id(school_id, timetable_id)
+        return self._list_setups(school_id, timetable_id)
+
+    def get_bell_editor_snapshot(self, school_id: UUID, timetable_id: UUID) -> Dict[str, Any]:
+        # Read the setup versions and the timetable version under the same lock used by writers.
+        timetable = self._lock_timetable(school_id, timetable_id)
+        return {
+            "timetable_version": timetable.version or 1,
+            "setups": self._list_setups(school_id, timetable_id),
+        }
+
+    def _list_setups(self, school_id: UUID, timetable_id: UUID) -> List[Dict[str, Any]]:
         setups = (
             self.db.query(TimetableSetup)
             .filter(
@@ -1363,6 +1385,8 @@ class TimetableService:
         entry = query.populate_existing().first()
         if entry is None:
             raise NotFoundException("Timetable entry not found.")
+        if entry.placement_id:
+            raise ConflictException("Open the grouped lecture to edit it.")
         entry.timetable_id = timetable_id
         return entry
 
@@ -2055,6 +2079,8 @@ class TimetableService:
         school_id: UUID,
         timetable_id: Optional[UUID] = None,
         wing_id: Optional[UUID] = None,
+        *,
+        include_timetable_list: bool = True,
     ) -> Dict[str, Any]:
         """
         Master Class-wise perspective view data:
@@ -2066,7 +2092,7 @@ class TimetableService:
         - Conflict warnings
         - Eligible teachers
         """
-        all_timetables = self.list_timetables(school_id)
+        all_timetables = self.list_timetables(school_id) if include_timetable_list else []
         if timetable_id:
             current_tt = next((tt for tt in all_timetables if tt.id == timetable_id), None)
             if not current_tt:
@@ -2102,7 +2128,7 @@ class TimetableService:
         all_classes = (
             self.db.query(SchoolClass)
             .filter(SchoolClass.school_id == school_id, SchoolClass.deleted_at.is_(None))
-            .order_by(SchoolClass.order_index.asc(), SchoolClass.name.asc())
+            .order_by(*class_order())
             .all()
         )
         class_map = {c.id: c for c in all_classes}
@@ -2111,7 +2137,7 @@ class TimetableService:
             self.db.query(Section)
             .options(joinedload(Section.class_teacher).joinedload(User.staff_profile))
             .filter(Section.school_id == school_id, Section.deleted_at.is_(None))
-            .order_by(Section.name.asc())
+            .order_by(*section_order())
             .all()
         )
         class_to_sections: Dict[UUID, List[Section]] = {}
@@ -2157,6 +2183,8 @@ class TimetableService:
             .filter(ClassSubject.school_id == school_id, ClassSubject.deleted_at.is_(None))
             .all()
         )
+        room_overrides = {(cs.section_id, cs.subject_id): cs.room_override for cs in class_subjects
+                          if cs.section_id and cs.room_override}
         cs_by_class_and_sec: Dict[Tuple[UUID, Optional[UUID]], List[ClassSubject]] = {}
         for cs in class_subjects:
             cs_by_class_and_sec.setdefault((cs.class_id, cs.section_id), []).append(cs)
@@ -2176,7 +2204,7 @@ class TimetableService:
         wings_summary = []
         total_classes_count = 0
         total_sections_count = 0
-        total_assigned_slots = len(entries)
+        total_assigned_slots = len({(e.section_id, e.day_of_week, e.period_id) for e in entries})
         total_unassigned_slots = 0
 
         for w in wings:
@@ -2216,7 +2244,12 @@ class TimetableService:
                     cs_list = cs_by_class_and_sec.get((c.id, s.id), []) + cs_by_class_and_sec.get((c.id, None), [])
                     subject_stats = self._section_subject_stats(s.id, sec_entries, cs_list, sec_sub_teacher_map)
 
-                    unassigned_count = max(0, total_expected_slots - len(sec_entries))
+                    occupied = len({(e.day_of_week, e.period_id) for e in sec_entries})
+                    for stat in subject_stats:
+                        stat["room_number"] = effective_room(s, stat["subject_id"], room_overrides)
+                        stat["room_review"] = not s.single_room and str(stat["subject_id"]) in (s.room_reviews or {})
+                        stat["parallel"] = str(stat["subject_id"]) in (s.parallel_subject_ids or [])
+                    unassigned_count = max(0, total_expected_slots - occupied)
                     total_unassigned_slots += unassigned_count
 
                     ct_user = getattr(s, "class_teacher", None)
@@ -2237,7 +2270,8 @@ class TimetableService:
                             "email": ct_user.email,
                         } if ct_user else None,
                         "setup_id": setup_obj["id"] if setup_obj else None,
-                        "assigned_slots": len(sec_entries),
+                        "room_number": s.room_number,
+                        "assigned_slots": occupied,
                         "total_slots": total_expected_slots,
                         "unassigned_slots": unassigned_count,
                         "subject_stats": subject_stats,
@@ -2278,6 +2312,8 @@ class TimetableService:
                 "period_number": e.period.period_number if e.period else 0,
                 "day_of_week": e.day_of_week,
                 "subject_id": e.subject_id,
+                "placement_id": e.placement_id, "option_id": e.option_id,
+                "room_number": effective_room(e.section, e.subject_id, room_overrides, e.room_number),
                 "teacher_user_id": t.id if t else None,
                 "period": {
                     "id": e.period.id,
@@ -2368,6 +2404,7 @@ class TimetableService:
             "wings": wings_summary,
             "setups": setups_data,
             "entries": entries_read,
+            "lecture_plan": current_tt.lecture_plan or {},
             "eligible_teachers": enriched_eligible_teachers,
             "stats": {
                 "total_classes": total_classes_count,
@@ -2394,6 +2431,7 @@ class TimetableService:
     @staticmethod
     def _section_subject_stats(section_id, entries, class_subjects, teachers) -> list[dict]:
         subjects = {cs.subject.id: cs.subject for cs in class_subjects if cs.subject is not None}
+        allocated_ids = set(subjects)
         counts = {}
         fallback_teachers = {}
         for entry in entries:
@@ -2413,6 +2451,7 @@ class TimetableService:
             staff = teacher.staff_profile if teacher else None
             stats.append({
                 "subject_id": subject_id, "name": subject.name, "code": subject.code,
+                "allocated": subject_id in allocated_ids,
                 "category": subject.category, "is_academic": subject.is_academic,
                 "assigned": assigned, "target": target,
                 "status": "normal" if assigned == target else ("under" if assigned < target else "over"),
@@ -2429,10 +2468,16 @@ class TimetableService:
     @staticmethod
     def _count_teacher_conflict_groups(entries, teachers) -> int:
         intervals_by_teacher_day = {}
+        seen = set()
         for entry in entries:
             teacher = entry.teacher or teachers.get((entry.section_id, entry.subject_id))
             period = entry.period
             if teacher and teacher.deleted_at is None and period and period.start_time < period.end_time:
+                if placement := getattr(entry, "placement_id", None):
+                    key = (placement, teacher.id, entry.day_of_week, period.start_time, period.end_time)
+                    if key in seen:
+                        continue
+                    seen.add(key)
                 intervals_by_teacher_day.setdefault((teacher.id, entry.day_of_week), []).append(
                     (period.start_time, period.end_time)
                 )
@@ -2611,6 +2656,8 @@ class TimetableService:
         target = entries.filter(TimetableEntry.section_id == data.section_id,
                                 TimetableEntry.day_of_week == data.day_of_week.value,
                                 TimetableEntry.period_id == data.period_id).first()
+        if source.placement_id or (target and target.placement_id):
+            raise ConflictException("Open the grouped lecture to move it.")
         if (target.id if target else None) != data.expected_target_id:
             raise ConflictException("The destination lesson changed. Refresh the timetable.")
         schedules = self._section_schedules(school_id, data.timetable_id)
@@ -2725,6 +2772,8 @@ class TimetableService:
             TimetableEntry.period_id.in_(set(targets.values())),
             TimetableEntry.deleted_at.is_(None),
         ).all()
+        if any(e.placement_id and targets.get((e.section_id, e.day_of_week)) == e.period_id for e in existing_entries):
+            raise ConflictException("Open the grouped lecture to edit it.")
         existing_map = {(e.section_id, e.day_of_week, e.period_id): e for e in existing_entries}
         updated_count = cleared_count = 0
 
@@ -2770,6 +2819,8 @@ class TimetableService:
                 existing = TimetableEntry(school_id=school_id, timetable_id=data.timetable_id, section_id=section_id,
                                           period_id=period_id, day_of_week=day, created_by=user_id)
                 self.db.add(existing)
+            if existing.subject_id != data.subject_id:
+                existing.room_number = None
             existing.subject_id = data.subject_id
             existing.teacher_user_id = teacher_id
             existing.updated_at, existing.updated_by = now, user_id
@@ -3138,6 +3189,7 @@ class TimetableService:
             )
             .all()
         )
+        room_overrides = {(cs.section_id, cs.subject_id): cs.room_override for cs in class_subjects if cs.room_override}
         subject_teacher_map = {}
         for cs in class_subjects:
             if cs.section_id == section.id and cs.teacher:
@@ -3173,6 +3225,7 @@ class TimetableService:
             t = e.teacher or subject_teacher_map.get(e.subject_id)
             sp = t.staff_profile if t else None
             entries_data.append({
+                "room_number": effective_room(section, e.subject_id, room_overrides, e.room_number),
                 "id": e.id,
                 "school_id": e.school_id,
                 "section_id": e.section_id,
@@ -3501,6 +3554,8 @@ class TimetableService:
             .first()
         )
 
+        if existing_slot and existing_slot.placement_id:
+            raise ConflictException("Open the grouped lecture to edit it.")
         if existing_slot and getattr(data, "overwrite", False):
             # Validate excluding the current slot to allow overwrite
             self._validate_and_check_conflicts(
@@ -3602,6 +3657,8 @@ class TimetableService:
             exclude_entry_id=entry.id, timetable_id=tt_id,
         )
 
+        if entry.subject_id != target_subject_id:
+            entry.room_number = None
         entry.subject_id = target_subject_id
         entry.teacher_user_id = target_teacher_id
         entry.period_id = target_period_id
@@ -3884,7 +3941,7 @@ class TimetableService:
                 Section.deleted_at.is_(None),
                 SchoolClass.deleted_at.is_(None),
             )
-            .order_by(SchoolClass.order_index.asc(), SchoolClass.name.asc(), Section.name.asc())
+            .order_by(*class_order(), *section_order())
             .all()
         )
 
@@ -3988,7 +4045,7 @@ class TimetableService:
                 Section.deleted_at.is_(None),
                 SchoolClass.deleted_at.is_(None),
             )
-            .order_by(SchoolClass.order_index.asc(), SchoolClass.name.asc(), Section.name.asc())
+            .order_by(*class_order(), *section_order())
             .all()
         )
         teachers = self.list_eligible_teachers(school_id)

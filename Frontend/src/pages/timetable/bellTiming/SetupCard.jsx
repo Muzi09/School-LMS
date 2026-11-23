@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   CheckCircle2,
   Copy,
@@ -15,6 +15,54 @@ import { BellTimeline } from "./BellTimeline"
 import { WingCard } from "./WingCard"
 import { sortSchedules } from "./validators"
 import { cn } from "@/lib/utils"
+
+function DeferredTimeline({ children, periodCount, readOnly }) {
+  const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined")
+  const containerRef = useRef(null)
+  const focusTimeline = useRef(false)
+  const showAndFocus = () => {
+    focusTimeline.current = true
+    setVisible(true)
+  }
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (visible) {
+      if (focusTimeline.current) {
+        focusTimeline.current = false
+        container?.querySelector("button:not([disabled]), [tabindex='0']")?.focus()
+      }
+      return
+    }
+    if (!container) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setVisible(true)
+    }, { root: container.closest("[data-bell-editor-scroll]"), rootMargin: "240px 0px" })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [visible])
+
+  return (
+    <div ref={containerRef}>
+      {visible ? children : (
+        <>
+          <div aria-hidden="true" className="md:hidden" style={{ height: Math.max(80, 40 + periodCount * 57) }} />
+          <div aria-hidden="true" className="hidden h-[88px] md:block" />
+          {!readOnly && (
+            <button
+              type="button"
+              className="sr-only"
+              onFocus={showAndFocus}
+              onClick={showAndFocus}
+            >
+              Show period controls
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
 export function SetupCard({
   setup,
@@ -63,7 +111,8 @@ export function SetupCard({
   return (
     <div
       className={cn(
-        "rounded-2xl border bg-card shadow-sm transition-all duration-150 overflow-hidden",
+        "rounded-2xl border bg-card shadow-sm transition-colors duration-150 overflow-hidden",
+        "[content-visibility:auto] [contain-intrinsic-block-size:auto_2300px] md:[contain-intrinsic-block-size:auto_700px]",
         assignedCount === 0 ? "border-border/80 bg-muted/5" : "border-border/80"
       )}
     >
@@ -197,19 +246,21 @@ export function SetupCard({
                   onOpenMergeModal={(sch, day) => onOpenMergeModal(setup.id, sch, day)}
                 />
 
-                <BellTimeline
-                  schedule={schedule}
-                  readOnly={readOnly}
-                  onOpenPeriodModal={(period, idx) => onOpenPeriodModal(setup.id, schedule.id, period, idx)}
-                  onInsertPeriodAtBoundary={(insertAfterIdx) =>
-                    onInsertPeriodAtBoundary(setup.id, schedule.id, insertAfterIdx)
-                  }
-                  onEditBoundaryTime={(idx, newTime, isFirst) =>
-                    onEditBoundaryTime(setup.id, schedule.id, idx, newTime, isFirst)
-                  }
-                  onApplyTemplate={(tmpl) => onApplyTemplate(setup.id, schedule.id, tmpl)}
-                  otherSetups={otherSetups}
-                />
+                <DeferredTimeline periodCount={schedule.periods?.length ?? 0} readOnly={readOnly}>
+                  <BellTimeline
+                    schedule={schedule}
+                    readOnly={readOnly}
+                    onOpenPeriodModal={(period, idx) => onOpenPeriodModal(setup.id, schedule.id, period, idx)}
+                    onInsertPeriodAtBoundary={(insertAfterIdx) =>
+                      onInsertPeriodAtBoundary(setup.id, schedule.id, insertAfterIdx)
+                    }
+                    onEditBoundaryTime={(idx, newTime, isFirst) =>
+                      onEditBoundaryTime(setup.id, schedule.id, idx, newTime, isFirst)
+                    }
+                    onApplyTemplate={(tmpl) => onApplyTemplate(setup.id, schedule.id, tmpl)}
+                    otherSetups={otherSetups}
+                  />
+                </DeferredTimeline>
               </div>
             )
           })}

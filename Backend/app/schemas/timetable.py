@@ -299,6 +299,11 @@ class TimetableSetupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BellEditorSnapshotResponse(BaseModel):
+    timetable_version: int
+    setups: List[TimetableSetupRead]
+
+
 class SetupAssignmentTarget(BaseModel):
     setup_id: str | UUID
     target_type: Literal["WING", "CLASS", "SECTION"]
@@ -375,6 +380,9 @@ class TimetableEntryUpdate(BaseModel):
 
 
 class TimetableEntryRead(BaseModel):
+    placement_id: UUID | None = None
+    option_id: UUID | None = None
+    room_number: str | None = None
     id: UUID
     school_id: UUID
     timetable_id: Optional[UUID] = None
@@ -438,10 +446,13 @@ class ConflictCheckResponse(BaseModel):
 
 
 class SectionSummary(BaseModel):
+    room_number: str | None = None
     id: UUID
     name: str
     class_id: UUID
     class_name: str
+    class_teacher_id: UUID | None = None
+    class_teacher_name: str | None = None
     setup_id: Optional[UUID] = None
     assigned_slots: int = 0
     total_slots: int = 0
@@ -466,13 +477,26 @@ class WingSummary(BaseModel):
     total_sections: int = 0
 
 
+class ClassTeacherAssignmentRead(BaseModel):
+    section_id: UUID
+    section_name: str
+    class_id: UUID
+    class_name: str
+    label: str
+
+
+class ClassWiseTeacherRead(TimetableTeacherRead):
+    class_teacher_of: list[ClassTeacherAssignmentRead] = Field(default_factory=list)
+
+
 class ClassWiseTimetableResponse(BaseModel):
+    lecture_plan: dict = Field(default_factory=dict)
     timetable: TimetableRead
     timetables: List[TimetableRead] = Field(default_factory=list)
     wings: List[WingSummary] = Field(default_factory=list)
     setups: List[TimetableSetupRead] = Field(default_factory=list)
     entries: List[TimetableEntryRead] = Field(default_factory=list)
-    eligible_teachers: List[TimetableTeacherRead] = Field(default_factory=list)
+    eligible_teachers: List[ClassWiseTeacherRead] = Field(default_factory=list)
     stats: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(from_attributes=True)
@@ -673,7 +697,7 @@ class TimetableInsightsResponse(BaseModel):
 
 
 class TimetableExportRequest(BaseModel):
-    scope: str = Field(default="both", description="'classwise', 'teacherwise', or 'both'")
+    scope: Literal["classwise", "teacherwise", "both"] = "both"
     wing_ids: Optional[List[UUID]] = None
     class_ids: Optional[List[UUID]] = None
     section_ids: Optional[List[UUID]] = None

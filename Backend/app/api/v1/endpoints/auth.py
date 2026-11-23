@@ -20,6 +20,7 @@ from app.models.enums import UserRole
 from app.models.school import School
 from app.models.user import User
 from app.schemas.auth import AuthUserResponse, LoginRequest, TokenResponse
+from app.services.emblem_service import available_emblem_url
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -39,7 +40,7 @@ def _profile(user: User, db: Session) -> AuthUserResponse:
         school_id=school_id,
         school_name=school.name if school else None,
         school_primary_color=school.primary_color if school else None,
-        school_emblem_url=school.emblem_url if school else None,
+        school_emblem_url=available_emblem_url(school.emblem_url) if school else None,
     )
 
 

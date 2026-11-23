@@ -1,3 +1,4 @@
+import { lessonRoomLabel } from "../rooms"
 import { memo } from "react"
 import { AlertTriangle, Plus, X, Coffee } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -15,19 +16,6 @@ function formatTime12h(timeStr) {
   return m === 0 ? `${hour12} ${ampm}` : `${hour12}:${String(m || 0).padStart(2, "0")} ${ampm}`
 }
 
-function getRoomNumber(entry) {
-  if (!entry) return ""
-  if (entry.room_number) return `Room ${entry.room_number}`
-  if (entry.room) return `Room ${entry.room}`
-  if (entry.section?.room_number) return `Room ${entry.section.room_number}`
-  if (entry.section?.room) return `Room ${entry.section.room}`
-  const secName = entry.section?.name || ""
-  const clsName = entry.section?.school_class?.name || entry.section?.class_name || ""
-  const clsNum = clsName.replace(/[^0-9]/g, "")
-  if (clsNum && secName) return `Rm ${clsNum}-${secName}`
-  if (secName) return `Rm ${secName}`
-  return "Room --"
-}
 
 export const TeacherWiseCell = memo(function TeacherWiseCell(
   /** @type {{
@@ -52,6 +40,12 @@ export const TeacherWiseCell = memo(function TeacherWiseCell(
   onDoubleClick,
   onQuickUnassign,
 }) {
+  const activateFromKeyboard = event => {
+    if (isAssignMode && event.target === event.currentTarget && ["Enter", " "].includes(event.key)) {
+      event.preventDefault()
+      onClick?.(event)
+    }
+  }
   const isBreak = Boolean(period?.is_break)
   const isConflict = Array.isArray(slotEntries) && slotEntries.length > 1
   const activeEntry = entry || (Array.isArray(slotEntries) && slotEntries.length === 1 ? slotEntries[0] : null)
@@ -99,6 +93,7 @@ export const TeacherWiseCell = memo(function TeacherWiseCell(
       <div
         role={isAssignMode ? "button" : undefined}
         tabIndex={isAssignMode ? 0 : undefined}
+        onKeyDown={activateFromKeyboard}
         onClick={(e) => {
           hideTimetableTooltip()
           if (isAssignMode) onClick?.(e)
@@ -133,9 +128,9 @@ export const TeacherWiseCell = memo(function TeacherWiseCell(
     const sec = activeEntry.section
     const clsName = sec?.school_class?.name || sec?.class_name || activeEntry.class_name || ""
     const secName = sec?.name || activeEntry.section_name || ""
-    const classSectionLabel = `${clsName} ${secName}`.trim() || "Class"
-    const subjectName = activeEntry.subject?.name || "Subject"
-    const roomLabel = getRoomNumber(activeEntry)
+    const classSectionLabel = activeEntry.sectionLabel || `${clsName} ${secName}`.trim() || "Class"
+    const subjectName = activeEntry.subjectLabel || activeEntry.subject?.name || "Subject"
+    const roomLabel = lessonRoomLabel(activeEntry)
     const theme = getSubjectTheme(subjectName)
 
     const tooltipText = `${classSectionLabel} • ${subjectName} • ${roomLabel} • ${day} ${periodLabel}${timePart}${isAssignMode ? " • Click to edit" : ""}`
@@ -144,6 +139,7 @@ export const TeacherWiseCell = memo(function TeacherWiseCell(
       <div
         role={isAssignMode ? "button" : undefined}
         tabIndex={isAssignMode ? 0 : undefined}
+        onKeyDown={activateFromKeyboard}
         onClick={(e) => {
           hideTimetableTooltip()
           if (isAssignMode) onClick?.(e)
@@ -177,8 +173,10 @@ export const TeacherWiseCell = memo(function TeacherWiseCell(
             </span>
           </div>
 
+          {activeEntry.periodLabels?.includes("/") && <span className="text-xs">{activeEntry.periodLabels}</span>}
+          {activeEntry.coverage && <span className="text-xs text-primary">{activeEntry.coverage}</span>}
           {/* Room Number */}
-          <span className="text-[9.5px] font-mono text-muted-foreground/75 truncate mt-0.5">
+          <span className="mt-0.5 max-w-full break-words text-[11px] font-medium text-muted-foreground">
             {roomLabel}
           </span>
         </div>
@@ -209,6 +207,7 @@ export const TeacherWiseCell = memo(function TeacherWiseCell(
     <div
       role={isAssignMode ? "button" : undefined}
       tabIndex={isAssignMode ? 0 : undefined}
+        onKeyDown={activateFromKeyboard}
       onClick={(e) => {
         hideTimetableTooltip()
         if (isAssignMode) onClick?.(e)

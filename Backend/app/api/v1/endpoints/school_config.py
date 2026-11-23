@@ -6,15 +6,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.dialects.postgresql import insert
 
 from app.api.deps import get_current_user, require_manage_school
 from app.core.database import get_db
-from app.services.emblem_service import save_emblem
+from app.services.emblem_service import available_emblem_url, save_emblem
 from app.services.timetable_service import TimetableService
 from app.models.enums import UserRole
 from app.models.house import House
 from app.models.school import School
 from app.models.school_class import SchoolClass
+from app.services.school_order import class_order, section_order
 from app.models.section import Section
 from app.models.staff import StaffProfile
 from app.models.student import StudentProfile
@@ -41,6 +43,9 @@ from app.schemas.school_config import (
     SchoolConfigSubject,
     SchoolConfigWing,
     SchoolCustomizationUpdateRequest,
+    RoomUpdateRequest,
+    SectionRoomModeRequest,
+    StructureReorderRequest,
     SectionClassTeacherAssignRequest,
     SectionCreateRequest,
     SectionOptionResponse,
@@ -95,7 +100,7 @@ def _natural_section_key(section: Section):
         else:
             chunks.append((1, part.lower()))
     created = section.created_at.timestamp() if hasattr(section, "created_at") and section.created_at else 0
-    return (chunks, created, str(section.id))
+    return (section.order_index, chunks, created, str(section.id))
 
 
 def _format_subject_response(
@@ -166,7 +171,7 @@ def get_school_classes(
             SchoolClass.school_id == current_user.school_id,
             SchoolClass.deleted_at.is_(None),
         )
-        .order_by(SchoolClass.order_index.asc(), SchoolClass.name.asc())
+        .order_by(*class_order())
         .all()
     )
 
@@ -368,12 +373,12 @@ def get_school_sections(
         return []
 
     sections = (
-        db.query(Section)
+        db.query(Section).join(SchoolClass)
         .filter(
             Section.school_id == current_user.school_id,
             Section.deleted_at.is_(None),
         )
-        .order_by(Section.name.asc())
+        .order_by(*class_order(), *section_order())
         .all()
     )
 
@@ -457,7 +462,7 @@ def get_school_full_config(
             SchoolClass.school_id == current_user.school_id,
             SchoolClass.deleted_at.is_(None),
         )
-        .order_by(SchoolClass.order_index.asc(), SchoolClass.name.asc())
+        .order_by(*class_order())
         .all()
     )
 
@@ -565,6 +570,12 @@ def get_school_full_config(
             )
             sec_response_list.append(
                 SchoolConfigClassSection(
+                    single_room=s.single_room,
+                    room_number=s.room_number,
+                    room_reviews={} if s.single_room else s.room_reviews or {},
+                    room_overrides={cs.subject_id: cs.room_override for cs in active_class_subjects
+                                    if cs.section_id == s.id and cs.room_override and not s.single_room},
+                    parallel_subject_ids=s.parallel_subject_ids or [],
                     id=s.id,
                     class_id=s.class_id,
                     name=s.name,
@@ -602,6 +613,7 @@ def get_school_full_config(
             wc for wc in w.wing_classes
             if wc.deleted_at is None and wc.school_class and wc.school_class.deleted_at is None
         ]
+        active_wcs.sort(key=lambda wc: (wc.school_class.order_index, wc.school_class.name, wc.class_id))
         class_ids = [wc.school_class.id for wc in active_wcs]
         class_names = [wc.school_class.name for wc in active_wcs]
         wings_response.append(
@@ -671,7 +683,7 @@ def get_school_full_config(
         houses=houses_response,
         customization=SchoolConfigCustomization(
             primary_color=school.primary_color,
-            emblem_url=school.emblem_url,
+            emblem_url=available_emblem_url(school.emblem_url),
         ),
     )
 
@@ -680,13 +692,72 @@ def get_school_full_config(
 # Classes Endpoints
 # -------------------------------------------------------------
 
+def _next_class_order(db: Session, wing_id: UUID) -> int:
+    highest = db.query(func.max(SchoolClass.order_index)).join(
+        WingClass, WingClass.class_id == SchoolClass.id,
+    ).filter(WingClass.wing_id == wing_id, WingClass.deleted_at.is_(None),
+             SchoolClass.deleted_at.is_(None)).scalar()
+    return highest + 1 if highest is not None else 0
+
+
+def _save_structure_order(db, current_user, query, ids):
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
+    records = {record.id: record for record in query.all()}
+    if len(ids) != len(records) or set(ids) != records.keys():
+        raise HTTPException(409, "The list changed. Refresh before reordering.")
+    for order_index, record_id in enumerate(ids):
+        records[record_id].order_index = order_index
+        records[record_id].updated_by = current_user.id
+    db.commit()
+    return {"success": True}
+
+
+@router.put("/wings/reorder")
+def reorder_wings(
+    payload: StructureReorderRequest,
+    current_user: Annotated[User, Depends(require_manage_school)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    query = db.query(Wing).filter_by(school_id=current_user.school_id, deleted_at=None)
+    return _save_structure_order(db, current_user, query, payload.ids)
+
+
+@router.put("/wings/{wing_id}/classes/reorder")
+def reorder_wing_classes(
+    wing_id: UUID,
+    payload: StructureReorderRequest,
+    current_user: Annotated[User, Depends(require_manage_school)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    query = db.query(SchoolClass).join(WingClass).join(Wing).filter(
+        SchoolClass.school_id == current_user.school_id, SchoolClass.deleted_at.is_(None),
+        WingClass.school_id == current_user.school_id, WingClass.deleted_at.is_(None),
+        Wing.id == wing_id, Wing.school_id == current_user.school_id, Wing.deleted_at.is_(None),
+    )
+    return _save_structure_order(db, current_user, query, payload.ids)
+
+
+@router.put("/classes/{class_id}/sections/reorder")
+def reorder_class_sections(
+    class_id: UUID,
+    payload: StructureReorderRequest,
+    current_user: Annotated[User, Depends(require_manage_school)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    query = db.query(Section).filter_by(
+        school_id=current_user.school_id, class_id=class_id, deleted_at=None,
+    )
+    return _save_structure_order(db, current_user, query, payload.ids)
+
+
 @router.post("/classes", status_code=status.HTTP_201_CREATED)
 def create_class(
     payload: ClassCreateRequest,
     current_user: Annotated[User, Depends(require_manage_school)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """Create a new class for the current school with initial sections and optional wing."""
+    """Create a new class for the current school with initial sections and a required wing."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     name_clean = payload.name.strip()
     if not name_clean:
         raise HTTPException(
@@ -706,11 +777,17 @@ def create_class(
             detail=f"Class '{name_clean}' already exists.",
         )
 
+    wing = db.query(Wing).filter_by(
+        id=payload.wing_id, school_id=current_user.school_id, deleted_at=None,
+    ).first()
+    if not wing:
+        raise HTTPException(400, "Select a valid academic wing.")
+
     # Create class
     new_class = SchoolClass(
         school_id=current_user.school_id,
         name=name_clean,
-        order_index=payload.order_index,
+        order_index=_next_class_order(db, wing.id),
         same_for_all_sections=payload.same_for_all_sections,
         created_by=current_user.id,
     )
@@ -720,7 +797,7 @@ def create_class(
     # Create initial sections
     sections = payload.initial_sections if payload.initial_sections else ["A"]
     seen = set()
-    for s_name in sections:
+    for order_index, s_name in enumerate(sections):
         s_clean = s_name.strip()
         if s_clean and s_clean.lower() not in seen:
             seen.add(s_clean.lower())
@@ -728,25 +805,15 @@ def create_class(
                 school_id=current_user.school_id,
                 class_id=new_class.id,
                 name=s_clean,
+                order_index=order_index,
                 created_by=current_user.id,
             )
             db.add(sec)
 
-    # Assign wing if provided
-    if payload.wing_id:
-        wing = db.query(Wing).filter(
-            Wing.id == payload.wing_id,
-            Wing.school_id == current_user.school_id,
-            Wing.deleted_at.is_(None),
-        ).first()
-        if wing:
-            wc = WingClass(
-                school_id=current_user.school_id,
-                wing_id=wing.id,
-                class_id=new_class.id,
-                created_by=current_user.id,
-            )
-            db.add(wc)
+    db.add(WingClass(
+        school_id=current_user.school_id, wing_id=wing.id,
+        class_id=new_class.id, created_by=current_user.id,
+    ))
 
     db.commit()
     db.refresh(new_class)
@@ -808,7 +875,14 @@ def update_class(
         school_class.order_index = payload.order_index
 
     # Wing assignment update
-    if payload.update_wing:
+    if payload.update_wing or "wing_id" in payload.model_fields_set:
+        if not payload.wing_id:
+            raise HTTPException(400, "Select an academic wing.")
+        existing_wing = db.query(WingClass.wing_id).filter_by(
+            school_id=current_user.school_id, class_id=class_id, deleted_at=None,
+        ).limit(1).scalar()
+        if existing_wing != payload.wing_id:
+            school_class.order_index = _next_class_order(db, payload.wing_id)
         # Remove any existing wing assignment
         db.query(WingClass).filter(
             WingClass.class_id == school_class.id,
@@ -834,11 +908,15 @@ def update_class(
             )
             db.add(wc)
 
-    if payload.same_for_all_sections is not None:
-        school_class.same_for_all_sections = payload.same_for_all_sections
-
     school_class.updated_by = current_user.id
-    db.commit()
+    if (payload.same_for_all_sections is not None
+            and payload.same_for_all_sections != school_class.same_for_all_sections):
+        toggle_class_shared_subjects(
+            class_id, ClassToggleSharedRequest(same_for_all_sections=payload.same_for_all_sections),
+            current_user, db,
+        )
+    else:
+        db.commit()
     return {"success": True, "id": str(school_class.id), "name": school_class.name}
 
 
@@ -849,6 +927,7 @@ def reorder_classes(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Batch reorder classes by updating their order_index."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     for item in payload.classes:
         db.query(SchoolClass).filter(
             SchoolClass.id == item.class_id,
@@ -947,6 +1026,7 @@ def create_section(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Add a new section to an existing class."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     school_class = db.query(SchoolClass).filter(
         SchoolClass.id == class_id,
         SchoolClass.school_id == current_user.school_id,
@@ -958,6 +1038,15 @@ def create_section(
             detail="Parent class not found.",
         )
 
+    if not db.query(WingClass.id).join(Wing).filter(
+        WingClass.class_id == class_id, WingClass.school_id == current_user.school_id,
+        WingClass.deleted_at.is_(None), Wing.deleted_at.is_(None),
+    ).first():
+        raise HTTPException(409, "Assign this class to a wing before adding sections.")
+
+    siblings = db.query(Section).filter_by(
+        class_id=class_id, school_id=current_user.school_id, deleted_at=None,
+    ).all()
     name_clean = payload.name.strip()
     if not name_clean:
         raise HTTPException(
@@ -982,6 +1071,9 @@ def create_section(
         school_id=current_user.school_id,
         class_id=class_id,
         name=name_clean,
+        order_index=max((s.order_index for s in siblings), default=-1) + 1,
+        parallel_subject_ids=list(siblings[0].parallel_subject_ids or [])
+        if school_class.same_for_all_sections and siblings else [],
         created_by=current_user.id,
     )
     db.add(sec)
@@ -1125,6 +1217,7 @@ def toggle_class_shared_subjects(
     - When switching to TRUE (shared across all sections):
       Unifies subjects across all sections using source_section_id or merge_all.
     """
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     school_class = (
         db.query(SchoolClass)
         .options(
@@ -1151,6 +1244,9 @@ def toggle_class_shared_subjects(
     ]
 
     target_shared = payload.same_for_all_sections
+
+    if target_shared == school_class.same_for_all_sections:
+        return {"success": True, "class_id": str(class_id), "same_for_all_sections": target_shared}
 
     if not target_shared:
         # Switching from Shared -> Section-Specific (False)
@@ -1189,6 +1285,10 @@ def toggle_class_shared_subjects(
     else:
         # Switching from Section-Specific -> Shared (True)
         # Determine the canonical set of subjects to share
+        active_sections.sort(key=_natural_section_key)
+        source = next((sec for sec in active_sections if sec.id == payload.source_section_id), None)
+        if payload.source_section_id and not source:
+            raise HTTPException(400, "Select a section from this class.")
         canonical_subject_ids = []
         if payload.source_section_id:
             sec_cs = [
@@ -1227,23 +1327,31 @@ def toggle_class_shared_subjects(
                 db.add(new_cs)
 
         # Delete any class-level shared subjects not in canonical list
-        if canonical_subject_ids:
-            db.query(ClassSubject).filter(
-                ClassSubject.class_id == school_class.id,
-                ClassSubject.section_id.is_(None),
-                ClassSubject.subject_id.notin_(canonical_subject_ids),
-                ClassSubject.school_id == current_user.school_id,
-            ).delete(synchronize_session=False)
+        db.query(ClassSubject).filter(
+            ClassSubject.class_id == school_class.id,
+            ClassSubject.section_id.is_(None),
+            ClassSubject.subject_id.notin_(canonical_subject_ids),
+            ClassSubject.school_id == current_user.school_id,
+        ).delete(synchronize_session=False)
 
         # 2. For each section, remove section-specific ClassSubject records for subjects not in canonical list
-        if canonical_subject_ids:
-            db.query(ClassSubject).filter(
-                ClassSubject.class_id == school_class.id,
-                ClassSubject.section_id.isnot(None),
-                ClassSubject.subject_id.notin_(canonical_subject_ids),
-                ClassSubject.school_id == current_user.school_id,
-            ).delete(synchronize_session=False)
+        db.query(ClassSubject).filter(
+            ClassSubject.class_id == school_class.id,
+            ClassSubject.section_id.isnot(None),
+            ClassSubject.subject_id.notin_(canonical_subject_ids),
+            ClassSubject.school_id == current_user.school_id,
+        ).delete(synchronize_session=False)
 
+        if payload.merge_all:
+            sources = active_sections
+        else:
+            sources = [source or active_sections[0]] if active_sections else []
+        canonical_ids = {str(subject_id) for subject_id in canonical_subject_ids}
+        parallel_ids = sorted({
+            pid for sec in sources for pid in (sec.parallel_subject_ids or []) if pid in canonical_ids
+        })
+        for sec in active_sections:
+            sec.parallel_subject_ids = parallel_ids
         school_class.same_for_all_sections = True
 
     school_class.updated_by = current_user.id
@@ -1271,6 +1379,7 @@ def assign_class_subjects(
     """
     Explicitly assign shared subjects for a class across all its sections.
     """
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     school_class = db.query(SchoolClass).filter(
         SchoolClass.id == class_id,
         SchoolClass.school_id == current_user.school_id,
@@ -1290,7 +1399,7 @@ def assign_class_subjects(
     ).delete(synchronize_session=False)
 
     # Add new class-level mappings (class-level shared subjects have no teacher; teachers are per section)
-    all_assigned_ids = list(payload.subject_ids)
+    all_assigned_ids = []
     for sub_id in payload.subject_ids:
         sub = (
             db.query(Subject)
@@ -1303,6 +1412,7 @@ def assign_class_subjects(
             .first()
         )
         if sub:
+            all_assigned_ids.append(sub.id)
             cs = ClassSubject(
                 school_id=current_user.school_id,
                 class_id=class_id,
@@ -1327,13 +1437,18 @@ def assign_class_subjects(
                         db.add(child_cs)
 
     # Clean up section-specific records for subjects no longer in payload
-    if all_assigned_ids:
-        db.query(ClassSubject).filter(
-            ClassSubject.class_id == class_id,
-            ClassSubject.section_id.isnot(None),
-            ClassSubject.subject_id.notin_(all_assigned_ids),
-            ClassSubject.school_id == current_user.school_id,
-        ).delete(synchronize_session=False)
+    db.query(ClassSubject).filter(
+        ClassSubject.class_id == class_id,
+        ClassSubject.section_id.isnot(None),
+        ClassSubject.subject_id.notin_(all_assigned_ids),
+        ClassSubject.school_id == current_user.school_id,
+    ).delete(synchronize_session=False)
+
+    assigned_ids = {str(subject_id) for subject_id in all_assigned_ids}
+    for sec in db.query(Section).filter_by(
+        school_id=current_user.school_id, class_id=class_id, deleted_at=None,
+    ):
+        sec.parallel_subject_ids = [pid for pid in (sec.parallel_subject_ids or []) if pid in assigned_ids]
 
     school_class.updated_by = current_user.id
     db.commit()
@@ -1358,6 +1473,7 @@ def assign_section_subjects(
     If 'same_for_all_sections' is enabled for this class, updates class-level shared
     subjects across all sections. Otherwise, updates only this section's subjects.
     """
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     school_class = db.query(SchoolClass).filter(
         SchoolClass.id == class_id,
         SchoolClass.school_id == current_user.school_id,
@@ -1374,111 +1490,39 @@ def assign_section_subjects(
         Section.class_id == class_id,
         Section.school_id == current_user.school_id,
         Section.deleted_at.is_(None),
-    ).first()
+    ).with_for_update().first()
     if not sec:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Section not found in specified class.",
         )
 
-    # If class is in shared mode, apply to entire class
-    if getattr(school_class, "same_for_all_sections", True):
-        db.query(ClassSubject).filter(
-            ClassSubject.class_id == class_id,
-            ClassSubject.section_id.is_(None),
-            ClassSubject.school_id == current_user.school_id,
-        ).delete(synchronize_session=False)
-
-        all_assigned_ids = list(payload.subject_ids)
-        for sub_id in payload.subject_ids:
-            sub = db.query(Subject).options(selectinload(Subject.child_subjects)).filter(
-                Subject.id == sub_id,
-                Subject.school_id == current_user.school_id,
-                Subject.deleted_at.is_(None),
-            ).first()
-            if sub:
-                cs = ClassSubject(
-                    school_id=current_user.school_id,
-                    class_id=class_id,
-                    section_id=None,
-                    subject_id=sub.id,
-                    teacher_id=None,
-                    created_by=current_user.id,
-                )
-                db.add(cs)
-                if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
-                    for child in sub.child_subjects:
-                        if child.deleted_at is None:
-                            all_assigned_ids.append(child.id)
-                            child_cs = ClassSubject(
-                                school_id=current_user.school_id,
-                                class_id=class_id,
-                                section_id=None,
-                                subject_id=child.id,
-                                teacher_id=None,
-                                created_by=current_user.id,
-                            )
-                            db.add(child_cs)
-
-        if all_assigned_ids:
-            db.query(ClassSubject).filter(
-                ClassSubject.class_id == class_id,
-                ClassSubject.section_id.isnot(None),
-                ClassSubject.subject_id.notin_(all_assigned_ids),
-                ClassSubject.school_id == current_user.school_id,
-            ).delete(synchronize_session=False)
-
-        db.commit()
-        return {
-            "success": True,
-            "message": f"Updated subjects for all sections of {school_class.name}.",
-            "count": len(payload.subject_ids),
-        }
-
-    # Section-specific mode
-    existing_cs = (
-        db.query(ClassSubject)
-        .filter(
-            ClassSubject.section_id == section_id,
-            ClassSubject.school_id == current_user.school_id,
+    if school_class.same_for_all_sections:
+        return assign_class_subjects(
+            class_id, ClassSubjectsAssignRequest(subject_ids=payload.subject_ids), current_user, db,
         )
-        .all()
-    )
-    teacher_map = {cs.subject_id: cs.teacher_id for cs in existing_cs if cs.teacher_id}
 
-    db.query(ClassSubject).filter(
-        ClassSubject.section_id == section_id,
-        ClassSubject.school_id == current_user.school_id,
-    ).delete(synchronize_session=False)
-
-    for sub_id in payload.subject_ids:
-        sub = db.query(Subject).options(selectinload(Subject.child_subjects)).filter(
-            Subject.id == sub_id,
-            Subject.school_id == current_user.school_id,
-            Subject.deleted_at.is_(None),
-        ).first()
-        if sub:
-            cs = ClassSubject(
-                school_id=current_user.school_id,
-                class_id=class_id,
-                section_id=section_id,
-                subject_id=sub.id,
-                teacher_id=teacher_map.get(sub.id),
-                created_by=current_user.id,
-            )
-            db.add(cs)
-            if getattr(sub, "is_split", False) and getattr(sub, "child_subjects", None):
-                for child in sub.child_subjects:
-                    if child.deleted_at is None:
-                        child_cs = ClassSubject(
-                            school_id=current_user.school_id,
-                            class_id=class_id,
-                            section_id=section_id,
-                            subject_id=child.id,
-                            teacher_id=teacher_map.get(child.id),
-                            created_by=current_user.id,
-                        )
-                        db.add(child_cs)
+    # Keep retained allocations (including the teacher and room) when editing the list.
+    subjects = db.query(Subject).options(selectinload(Subject.child_subjects)).filter(
+        Subject.school_id == current_user.school_id, Subject.id.in_(payload.subject_ids),
+        Subject.deleted_at.is_(None),
+    ).all()
+    wanted = {sub.id for sub in subjects}
+    wanted.update(child.id for sub in subjects if sub.is_split for child in sub.child_subjects
+                  if child.deleted_at is None and child.school_id == current_user.school_id)
+    assigned_ids = {str(subject_id) for subject_id in wanted}
+    sec.parallel_subject_ids = [pid for pid in (sec.parallel_subject_ids or []) if pid in assigned_ids]
+    existing = db.query(ClassSubject).filter_by(
+        class_id=class_id, section_id=sec.id, school_id=current_user.school_id, deleted_at=None,
+    ).with_for_update().all()
+    for row in existing:
+        if row.subject_id in wanted:
+            wanted.remove(row.subject_id)
+        else:
+            db.delete(row)
+    for subject_id in wanted:
+        db.add(ClassSubject(school_id=current_user.school_id, class_id=class_id, section_id=sec.id,
+                            subject_id=subject_id, created_by=current_user.id))
 
     db.commit()
     return {
@@ -1639,6 +1683,7 @@ def assign_section_subject_teacher(
             Section.school_id == current_user.school_id,
             Section.deleted_at.is_(None),
         )
+        .with_for_update()
         .first()
     )
     if not sec or (class_id is not None and sec.class_id != class_id):
@@ -1670,6 +1715,8 @@ def assign_section_subject_teacher(
             .options(joinedload(User.staff_profile))
             .filter(
                 User.id == payload.teacher_id,
+                User.role == UserRole.STAFF,
+                StaffProfile.is_academic.is_(True),
                 StaffProfile.school_id == current_user.school_id,
                 User.is_active.is_(True),
                 User.deleted_at.is_(None),
@@ -1679,8 +1726,22 @@ def assign_section_subject_teacher(
         if not teacher_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Selected staff member not found or is not active.",
+                detail="Select an active academic staff member.",
             )
+
+        school_wings = db.query(Wing).filter_by(school_id=current_user.school_id, deleted_at=None)
+        if school_wings.first() is not None:
+            class_wing_id = (
+                school_wings.with_entities(Wing.id)
+                .join(WingClass, WingClass.wing_id == Wing.id)
+                .filter(WingClass.class_id == sec.class_id, WingClass.deleted_at.is_(None))
+                .scalar()
+            )
+            if class_wing_id not in teacher_user.staff_profile.assigned_wing_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Select a teacher assigned to this class's wing.",
+                )
 
     # Find existing section-specific ClassSubject
     cs = (
@@ -1752,6 +1813,7 @@ def assign_section_subject_teacher(
             TimetableEntry.school_id == current_user.school_id,
             TimetableEntry.section_id == sec.id,
             TimetableEntry.subject_id.in_(sub_ids_to_sync),
+            TimetableEntry.placement_id.is_(None),
             TimetableEntry.deleted_at.is_(None),
         )
         .all()
@@ -1947,13 +2009,22 @@ def update_subject(
 
     # Update assignments if passed
     if payload.assigned_class_ids is not None or payload.assigned_section_ids is not None:
-        # Remove existing mappings
-        db.query(ClassSubject).filter(
-            ClassSubject.subject_id == sub.id,
-            ClassSubject.school_id == current_user.school_id,
-        ).delete(synchronize_session=False)
-
-        c_ids = payload.assigned_class_ids or []
+        c_ids = set(payload.assigned_class_ids or [])
+        s_ids = set(payload.assigned_section_ids or [])
+        existing = db.query(ClassSubject).filter_by(
+            subject_id=sub.id, school_id=current_user.school_id, deleted_at=None,
+        ).with_for_update().all()
+        keep_classes, keep_sections = set(), set()
+        for row in existing:
+            if row.section_id is None and row.class_id in c_ids:
+                keep_classes.add(row.class_id)
+            elif row.section_id and (row.section_id in s_ids or
+                    (row.class_id in c_ids and (row.room_override or row.teacher_id))):
+                keep_sections.add(row.section_id)
+            else:
+                db.delete(row)
+        c_ids -= keep_classes
+        s_ids -= keep_sections
         for cid in c_ids:
             c_rec = db.query(SchoolClass).filter(
                 SchoolClass.id == cid,
@@ -1970,7 +2041,6 @@ def update_subject(
                 )
                 db.add(cs)
 
-        s_ids = payload.assigned_section_ids or []
         for sid in s_ids:
             s_rec = db.query(Section).filter(
                 Section.id == sid,
@@ -2280,6 +2350,7 @@ def create_wing(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Create a new academic wing and assign classes to it."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     name_clean = payload.name.strip()
     if not name_clean:
         raise HTTPException(
@@ -2301,19 +2372,22 @@ def create_wing(
     wing = Wing(
         school_id=current_user.school_id,
         name=name_clean,
-        order_index=payload.order_index,
+        order_index=(db.query(func.max(Wing.order_index)).filter_by(
+            school_id=current_user.school_id, deleted_at=None,
+        ).scalar() or 0) + 1,
         created_by=current_user.id,
     )
     db.add(wing)
     db.flush()
 
-    for cid in payload.class_ids:
+    for order_index, cid in enumerate(dict.fromkeys(payload.class_ids)):
         c_rec = db.query(SchoolClass).filter(
             SchoolClass.id == cid,
             SchoolClass.school_id == current_user.school_id,
             SchoolClass.deleted_at.is_(None),
         ).first()
         if c_rec:
+            c_rec.order_index = order_index
             # Unassign from any prior wing
             db.query(WingClass).filter(
                 WingClass.class_id == c_rec.id,
@@ -2341,6 +2415,7 @@ def update_wing(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Rename a wing, change its order, or reassign classes."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     wing = db.query(Wing).filter(
         Wing.id == wing_id,
         Wing.school_id == current_user.school_id,
@@ -2376,19 +2451,29 @@ def update_wing(
         wing.order_index = payload.order_index
 
     if payload.class_ids is not None:
-        # Clear existing mappings for this wing
+        assigned = {row.class_id for row in db.query(WingClass).filter_by(
+            school_id=current_user.school_id, wing_id=wing.id, deleted_at=None,
+        )}
+        if assigned.difference(payload.class_ids):
+            raise HTTPException(409, "Move classes to another wing to remove them from this wing.")
+        next_order = _next_class_order(db, wing.id)
+
+        # Replace mappings atomically.
         db.query(WingClass).filter(
             WingClass.wing_id == wing.id,
             WingClass.school_id == current_user.school_id,
         ).delete(synchronize_session=False)
 
-        for cid in payload.class_ids:
+        for cid in dict.fromkeys(payload.class_ids):
             c_rec = db.query(SchoolClass).filter(
                 SchoolClass.id == cid,
                 SchoolClass.school_id == current_user.school_id,
                 SchoolClass.deleted_at.is_(None),
             ).first()
             if c_rec:
+                if cid not in assigned:
+                    c_rec.order_index = next_order
+                    next_order += 1
                 # Remove from previous wing
                 db.query(WingClass).filter(
                     WingClass.class_id == c_rec.id,
@@ -2414,10 +2499,8 @@ def delete_wing(
     current_user: Annotated[User, Depends(require_manage_school)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """
-    Delete a wing. Classes in this wing are safely unassigned and become 'Unassigned'.
-    Underlying classes are NOT deleted.
-    """
+    """Delete a wing after its classes have been moved."""
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
     wing = db.query(Wing).filter(
         Wing.id == wing_id,
         Wing.school_id == current_user.school_id,
@@ -2429,17 +2512,17 @@ def delete_wing(
             detail="Wing not found.",
         )
 
-    # Safely remove wing_classes mappings (classes become Unassigned)
-    db.query(WingClass).filter(
-        WingClass.wing_id == wing.id,
-        WingClass.school_id == current_user.school_id,
-    ).delete(synchronize_session=False)
+    if db.query(WingClass.id).join(SchoolClass).filter(
+        WingClass.wing_id == wing.id, WingClass.school_id == current_user.school_id,
+        WingClass.deleted_at.is_(None), SchoolClass.deleted_at.is_(None),
+    ).first():
+        raise HTTPException(409, "Move this wing’s classes before deleting it.")
 
     now = datetime.now(timezone.utc)
     wing.deleted_at = now
     wing.deleted_by = current_user.id
     db.commit()
-    return {"success": True, "message": f"Wing '{wing.name}' deleted. Classes are now unassigned."}
+    return {"success": True, "message": f"Wing '{wing.name}' deleted."}
 
 
 # -------------------------------------------------------------
@@ -2657,3 +2740,99 @@ async def upload_school_customization_emblem(
         filename=unique_filename,
     )
 
+
+@router.put("/sections/{section_id}/room-mode")
+def set_section_room_mode(
+    section_id: UUID, payload: SectionRoomModeRequest,
+    current_user: Annotated[User, Depends(require_manage_school)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    section = db.query(Section).filter_by(
+        id=section_id, school_id=current_user.school_id, deleted_at=None,
+    ).with_for_update().first()
+    if not section:
+        raise HTTPException(404, "Section not found.")
+    section.single_room = payload.single_room
+    section.updated_by = current_user.id
+    db.commit()
+    return {"single_room": section.single_room}
+
+
+@router.put("/sections/{section_id}/room")
+@router.put("/sections/{section_id}/subjects/{subject_id}/room")
+def set_section_room(
+    section_id: UUID, payload: RoomUpdateRequest,
+    current_user: Annotated[User, Depends(require_manage_school)],
+    db: Annotated[Session, Depends(get_db)], subject_id: UUID | None = None,
+):
+    school = current_user.school_id
+    section = db.query(Section).filter_by(id=section_id, school_id=school, deleted_at=None).with_for_update().first()
+    if not section:
+        raise HTTPException(404, "Section not found.")
+    label = payload.room_number or None
+    if subject_id is None:
+        section.room_number = label
+    else:
+        if section.single_room:
+            raise HTTPException(409, "Turn off the shared room setting to edit subject rooms.")
+        reviews = dict(section.room_reviews or {})
+        allocation = db.query(ClassSubject).join(Subject).filter(
+            ClassSubject.school_id == school, ClassSubject.class_id == section.class_id,
+            ClassSubject.subject_id == subject_id, ClassSubject.deleted_at.is_(None),
+            Subject.school_id == school, Subject.deleted_at.is_(None),
+        )
+        row = allocation.filter(ClassSubject.section_id == section.id).with_for_update(of=ClassSubject).first()
+        if row:
+            row.room_override = label
+            row.updated_by = current_user.id
+        elif allocation.filter(ClassSubject.section_id.is_(None)).first():
+            if label:
+                statement = insert(ClassSubject).values(
+                    school_id=school, class_id=section.class_id, section_id=section.id,
+                    subject_id=subject_id, room_override=label, created_by=current_user.id,
+                )
+                db.execute(statement.on_conflict_do_update(
+                    index_elements=[ClassSubject.class_id, ClassSubject.section_id, ClassSubject.subject_id],
+                    index_where=ClassSubject.deleted_at.is_(None),
+                    set_={"room_override": label, "updated_by": current_user.id, "updated_at": func.now()},
+                ))
+        elif label or str(subject_id) not in reviews:
+            raise HTTPException(404, "Assign this subject to the section first.")
+        if reviews.pop(str(subject_id), None) is not None:
+            section.room_reviews = reviews
+    section.updated_by = current_user.id
+    db.commit()
+    return {"success": True}
+
+
+@router.put("/sections/{section_id}/parallel/{subject_id}")
+def set_parallel_subject(section_id: UUID, subject_id: UUID, enabled: bool,
+                         current_user: Annotated[User, Depends(require_manage_school)],
+                         db: Annotated[Session, Depends(get_db)]):
+    school = current_user.school_id
+    db.query(School.id).filter(School.id == current_user.school_id).with_for_update().first()
+    TimetableService(db).lock_school_timetables(school)
+    section = db.query(Section).filter_by(id=section_id, school_id=school, deleted_at=None).with_for_update().first()
+    if not section or not db.query(Subject.id).filter_by(id=subject_id, school_id=school, deleted_at=None).first():
+        raise HTTPException(404, "Section or subject not found.")
+    if enabled:
+        allocation = db.query(ClassSubject.id).filter_by(school_id=school, class_id=section.class_id,
+            subject_id=subject_id, deleted_at=None).filter(or_(ClassSubject.section_id == section_id,
+            ClassSubject.section_id.is_(None))).first()
+        if not allocation:
+            raise HTTPException(400, "Assign this subject to the section first.")
+    school_class = db.query(SchoolClass).filter_by(id=section.class_id, school_id=school).first()
+    sections = [section]
+    if school_class.same_for_all_sections:
+        sections = db.query(Section).filter_by(
+            school_id=school, class_id=section.class_id, deleted_at=None,
+        ).all()
+    for target in sections:
+        ids = set(target.parallel_subject_ids or [])
+        if enabled:
+            ids.add(str(subject_id))
+        else:
+            ids.discard(str(subject_id))
+        target.parallel_subject_ids = sorted(ids)
+    db.commit()
+    return {"enabled": enabled}

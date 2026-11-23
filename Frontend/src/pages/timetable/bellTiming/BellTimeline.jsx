@@ -16,6 +16,7 @@ import {
 } from "./timeUtils"
 import { PERIOD_TYPES, formatPeriodShortLabel, MIN_PERIOD_DURATION_MINUTES } from "./validators"
 import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 const EMPTY_PERIODS = []
 
@@ -31,14 +32,19 @@ export function BellTimeline({
   onCopyFromOtherSetup = undefined,
 }) {
   const periods = schedule?.periods ?? EMPTY_PERIODS
+  const isMobile = useIsMobile()
   const [liveDrag, setLiveDrag] = useState(null)
+  const periodWidths = useMemo(
+    () => periods.map(period => 95 + calculateDuration(period.start_time, period.end_time)),
+    [periods]
+  )
 
   // Compute live display periods during dragging: shifts all subsequent periods ahead and extends school end time
   const displayPeriods = useMemo(() => {
     if (!liveDrag || periods.length === 0) return periods
 
     const { boundaryIndex, isFirst, newTime } = liveDrag
-    const cloned = periods.map((p) => ({ ...p }))
+    const cloned = periods.slice()
 
     if (isFirst || boundaryIndex === 0) {
       if (cloned[0]) {
@@ -46,7 +52,7 @@ export function BellTimeline({
         let newStartM = toMinutes(newTime)
         if (endM - newStartM < MIN_PERIOD_DURATION_MINUTES) newStartM = endM - MIN_PERIOD_DURATION_MINUTES
         else if (endM - newStartM > 180) newStartM = endM - 180
-        cloned[0].start_time = formatMinutes(Math.max(0, newStartM))
+        cloned[0] = { ...cloned[0], start_time: formatMinutes(Math.max(0, newStartM)) }
       }
     } else {
       const idx = boundaryIndex > 0 ? boundaryIndex - 1 : 0
@@ -55,8 +61,7 @@ export function BellTimeline({
         let newEndM = toMinutes(newTime)
         if (newEndM - startM < MIN_PERIOD_DURATION_MINUTES) newEndM = startM + MIN_PERIOD_DURATION_MINUTES
         else if (newEndM - startM > 180) newEndM = startM + 180
-        const clampedNewTime = formatMinutes(newEndM)
-        cloned[idx].end_time = clampedNewTime
+        cloned[idx] = { ...cloned[idx], end_time: formatMinutes(newEndM) }
 
         // Shift all subsequent periods ahead, preserving their durations and moving school end time ahead
         let lastEnd = newEndM
@@ -176,7 +181,7 @@ export function BellTimeline({
       )}
 
       {/* Desktop / Tablet Single-Row Unified Timeline Strip (just like timetable header) */}
-      <div className="hidden md:block relative w-full">
+      {!isMobile && <div className="relative w-full">
         <div className="overflow-x-auto scrollbar-thin py-3 px-1">
           <div className="min-w-max flex items-stretch h-14 rounded-xl border border-border/70 bg-primary/5 dark:bg-primary/10 select-none">
             {/* 1. START EMPTY SPACE: Ensures first start time chip and "+" button are 100% visible, not hidden */}
@@ -211,19 +216,20 @@ export function BellTimeline({
             {/* 2. PERIOD CELLS: One row just like timetable header, time chips sit on the divider */}
             {displayPeriods.map((period, idx) => {
               const duration = calculateDuration(period.start_time, period.end_time)
+              const nextPeriod = displayPeriods[idx + 1]
+              const hasGap = nextPeriod && toMinutes(nextPeriod.start_time) > toMinutes(period.end_time)
               const pType = period.type || (period.is_break ? PERIOD_TYPES.RECESS : PERIOD_TYPES.CLASS)
               const isRecess = pType === PERIOD_TYPES.RECESS
               const isRunning = period.id === currentRunningPeriodId
-              // Compact width per minute (1px/min) reduces timeline footprint significantly,
-              // while base 95px ensures 15m period (110px) displays "P1 15m" fully without clipping
-              const cellWidth = 95 + duration * 1
+              // Keep the row geometry stable during previews. Update widths once after the edit.
+              const cellWidth = periodWidths[idx]
 
               return (
                 <div
                   key={period.id || idx}
                   className={cn(
                     "relative flex items-center justify-center border-r border-border/70",
-                    liveDrag ? "transition-none" : "transition-[width,background-color] duration-150",
+                    "transition-colors duration-150",
                     isRecess
                       ? "bg-primary/10 dark:bg-primary/15"
                       : "bg-primary/5 dark:bg-primary/10 hover:bg-primary/10"
@@ -271,6 +277,12 @@ export function BellTimeline({
                         onEditBoundaryTime?.(idx + 1, newTime, false)
                       }}
                     />
+                    {hasGap && (
+                      <span className="rounded-full border border-border/80 bg-background px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap text-muted-foreground shadow-2xs">
+                        <span className="sr-only">Next period starts at </span>
+                        {format12h(nextPeriod.start_time)}
+                      </span>
+                    )}
                     {!readOnly && (
                       <button
                         type="button"
@@ -291,10 +303,10 @@ export function BellTimeline({
             <div className="w-12 shrink-0 bg-primary/5 dark:bg-primary/10" />
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Mobile Vertical Timeline List */}
-      <div className="md:hidden space-y-2">
+      {isMobile && <div className="space-y-2">
         <div className="flex items-center justify-between pb-1 border-b border-border/60">
           <span className="text-xs font-semibold text-muted-foreground">Periods Timeline</span>
           <Button
@@ -360,7 +372,7 @@ export function BellTimeline({
             )
           })}
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

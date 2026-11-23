@@ -19,6 +19,7 @@ export function PageHeader({
   onCreate = undefined,
   createLabel = undefined,
   createIcon: CreateIcon = undefined,
+  beforeCreateActions = undefined,
   actions = undefined,
   children = undefined,
   className = undefined,
@@ -84,6 +85,8 @@ export function PageHeader({
             <span>Refresh</span>
           </Button>
         )}
+
+        {beforeCreateActions}
 
         {onCreate && (
           <Button

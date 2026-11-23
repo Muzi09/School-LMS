@@ -23,7 +23,9 @@ import { TeacherWiseGridView } from "./components/TeacherWiseGridView"
 import { ExportTimetableModal } from "./components/ExportTimetableModal"
 import { PrintTimetableModal } from "./components/PrintTimetableModal"
 import { PublishTimetableModal } from "./components/PublishTimetableModal"
+import { LecturePlannerDialog } from "./components/LecturePlannerDialog"
 import { BellScheduleSetupModal } from "./components/BellScheduleSetupModal"
+import { getBellEditorSnapshotApi } from "@/api/timetableService"
 import { CreateTimetableModal } from "./components/CreateTimetableModal"
 import { toast } from "sonner"
 
@@ -166,7 +168,9 @@ export function TimeTable() {
   }
 
   // 7. Modals
-  const [isBellSetupOpen, setIsBellSetupOpen] = useState(false)
+  const [groupManager, setGroupManager] = useState(null)
+  const [bellSetupSnapshot, setBellSetupSnapshot] = useState(null)
+  const [isOpeningBellSetup, setIsOpeningBellSetup] = useState(false)
   const [isCreateTimetableOpen, setIsCreateTimetableOpen] = useState(false)
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false)
   const [isExportOpen, setIsExportOpen] = useState(false)
@@ -184,6 +188,19 @@ export function TimeTable() {
   })
 
   const wingsData = useMemo(() => timetableData?.wings || [], [timetableData?.wings])
+
+  const handleOpenBellSetup = async () => {
+    if (!selectedTimetableId || timetableData?.timetable?.id !== selectedTimetableId || isOpeningBellSetup) return
+    setIsOpeningBellSetup(true)
+    try {
+      const snapshot = await getBellEditorSnapshotApi(selectedTimetableId)
+      setBellSetupSnapshot({ ...snapshot, timetableId: selectedTimetableId, wings: wingsData })
+    } catch {
+      toast.error("Could not load the latest bell schedule. Please try again.")
+    } finally {
+      setIsOpeningBellSetup(false)
+    }
+  }
 
   // Flatten sections from wingsData for export and print
   const allSections = useMemo(() => {
@@ -269,11 +286,13 @@ export function TimeTable() {
               onChange={handlePerspectiveChange}
             />
 
+            {canManage && timetableData?.timetable?.id === selectedTimetableId && selectedTimetableId && <Button variant="outline" onPress={() => setGroupManager(selectedTimetableId)}>Subject groups</Button>}
             {canManage && (
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsBellSetupOpen(true)}
+                onClick={handleOpenBellSetup}
+                disabled={!selectedTimetableId || timetableData?.timetable?.id !== selectedTimetableId || isOpeningBellSetup}
                 className="h-9 px-3.5 rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
                 title="Configure period frames and bell schedules"
               >
@@ -358,11 +377,12 @@ export function TimeTable() {
           isAssignMode={isAssignMode}
           onAssignBarPropsChange={setAssignBarProps}
           zoom={zoomLevel}
-          onOpenBellSetup={() => setIsBellSetupOpen(true)}
+          onOpenBellSetup={handleOpenBellSetup}
           onCreateNewTimetable={() => setIsCreateTimetableOpen(true)}
         />
       )}
 
+      {canManage && groupManager && groupManager === timetableData?.timetable?.id && <LecturePlannerDialog data={timetableData} onClose={() => setGroupManager(null)} />}
       {/* 5. Modals */}
       {/* Publish Timetable Modal */}
       {isPublishModalOpen && currentTimetable && (
@@ -404,20 +424,20 @@ export function TimeTable() {
           teachers={timetableData?.eligible_teachers || []}
           setups={timetableData?.setups || []}
           entries={timetableData?.entries || []}
+          placements={timetableData?.lecture_plan?.placements}
         />
       )}
 
       {/* Bell Schedule Setup Modal */}
-      {isBellSetupOpen && selectedTimetableId && (
+      {bellSetupSnapshot && bellSetupSnapshot.timetableId === selectedTimetableId && (
         <BellScheduleSetupModal
-          isOpen={isBellSetupOpen}
-          onClose={() => setIsBellSetupOpen(false)}
+          isOpen
+          onClose={() => setBellSetupSnapshot(null)}
           timetableId={selectedTimetableId}
-          timetableVersion={timetableData?.timetable?.version ?? currentTimetable?.version}
-          wings={wingsData}
-          initialSetups={timetableData?.setups}
+          timetableVersion={bellSetupSnapshot.timetable_version}
+          wings={bellSetupSnapshot.wings}
+          initialSetups={bellSetupSnapshot.setups}
           onSaved={() => {
-            refetchClassWise()
             toast.success("Bell schedule setups saved successfully.")
           }}
         />

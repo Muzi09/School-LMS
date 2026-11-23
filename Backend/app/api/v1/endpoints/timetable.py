@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.common import MessageResponse
 from app.schemas.timetable import (
     BatchSetupAssignmentsRequest,
+    BellEditorSnapshotResponse,
     BulkSlotAssignRequest,
     MoveLessonRequest,
     ClassWiseTimetableResponse,
@@ -49,6 +50,8 @@ from app.schemas.timetable import (
 )
 from app.services.timetable_service import TimetableService
 from app.services.timetable_export_service import TimetableExportService
+
+from app.services.lecture_planner import GroupDefinition, LecturePlanner, PlaceLessons
 
 router = APIRouter(prefix="/timetable", tags=["Time Table Management"])
 
@@ -609,6 +612,17 @@ def list_setups(
     return service.list_setups(school_id=school_id, timetable_id=timetable_id)
 
 
+@router.get("/setups/editor", response_model=BellEditorSnapshotResponse)
+def get_bell_editor_snapshot(
+    timetable_id: UUID,
+    service: Annotated[TimetableService, Depends(get_timetable_service)],
+    current_user: Annotated[User, Depends(require_manage_timetable)],
+):
+    if not current_user.school_id:
+        raise BadRequestException("User does not belong to a school.")
+    return service.get_bell_editor_snapshot(current_user.school_id, timetable_id)
+
+
 @router.post(
     "/setups",
     response_model=TimetableSetupRead,
@@ -871,3 +885,23 @@ def export_timetable_excel(
 
 
 
+
+@router.post("/timetables/{timetable_id}/lecture-groups")
+def save_lecture_group(timetable_id: UUID, data: GroupDefinition,
+                       service: Annotated[TimetableService, Depends(get_timetable_service)],
+                       user: Annotated[User, Depends(require_manage_timetable)]):
+    return LecturePlanner(service, user.school_id, timetable_id, user.id, data.version).save_group(data)
+
+
+@router.delete("/timetables/{timetable_id}/lecture-groups/{group_id}")
+def delete_lecture_group(timetable_id: UUID, group_id: UUID, version: int,
+                         service: Annotated[TimetableService, Depends(get_timetable_service)],
+                         user: Annotated[User, Depends(require_manage_timetable)]):
+    return LecturePlanner(service, user.school_id, timetable_id, user.id, version).delete_group(group_id)
+
+
+@router.post("/timetables/{timetable_id}/placements")
+def place_lectures(timetable_id: UUID, data: PlaceLessons,
+                   service: Annotated[TimetableService, Depends(get_timetable_service)],
+                   user: Annotated[User, Depends(require_manage_timetable)]):
+    return LecturePlanner(service, user.school_id, timetable_id, user.id, data.version).place(data)

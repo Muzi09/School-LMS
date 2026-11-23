@@ -117,6 +117,12 @@ class WingClass(Base, AuditMixin):
     def __table_args__(cls):
         return (
             Index(
+                "uq_wing_classes_active_class",
+                cls.class_id,
+                unique=True,
+                postgresql_where=cls.deleted_at.is_(None),
+            ),
+            Index(
                 "uq_wing_classes_wing_class",
                 cls.wing_id,
                 cls.class_id,

@@ -1,0 +1,1 @@
+var e=`/assets/ideal-school-logo-DcRC8TS5.png`;export{e as t};

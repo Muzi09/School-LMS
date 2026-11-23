@@ -1,6 +1,6 @@
-from typing import List
+from typing import Annotated, List
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class TeacherSimpleRead(BaseModel):
@@ -85,7 +85,20 @@ class SchoolConfigCustomization(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RoomUpdateRequest(BaseModel):
+    room_number: Annotated[str, StringConstraints(strip_whitespace=True, max_length=16)] | None
+
+
+class SectionRoomModeRequest(BaseModel):
+    single_room: bool
+
+
 class SchoolConfigClassSection(BaseModel):
+    single_room: bool = False
+    room_number: str | None = None
+    room_overrides: dict[UUID, str] = Field(default_factory=dict)
+    room_reviews: dict = Field(default_factory=dict)
+    parallel_subject_ids: list[UUID] = Field(default_factory=list)
     id: UUID
     class_id: UUID
     name: str
@@ -160,7 +173,7 @@ class SchoolConfigResponse(BaseModel):
 class ClassCreateRequest(BaseModel):
     name: str
     order_index: int = 0
-    wing_id: UUID | None = None
+    wing_id: UUID
     initial_sections: List[str] = ["A"]
     same_for_all_sections: bool = True
 
@@ -190,6 +203,10 @@ class ClassReorderItem(BaseModel):
 
 class ClassReorderRequest(BaseModel):
     classes: List[ClassReorderItem]
+
+
+class StructureReorderRequest(BaseModel):
+    ids: List[UUID]
 
 
 class SectionCreateRequest(BaseModel):

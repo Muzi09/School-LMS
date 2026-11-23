@@ -58,7 +58,7 @@ class SchoolClass(Base, AuditMixin):
         "Section",
         back_populates="school_class",
         cascade="all, delete-orphan",
-        order_by="Section.name.asc()",
+        order_by="(Section.order_index, Section.name, Section.id)",
     )
 
     class_subjects: Mapped[List["ClassSubject"]] = relationship(

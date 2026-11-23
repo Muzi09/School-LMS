@@ -40,6 +40,7 @@ export function useCreateStaff() {
   return useMutation({
     mutationFn: createStaffApi,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["schoolTeachers"] })
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
     },
   })
@@ -52,6 +53,7 @@ export function useUpdateStaff() {
     mutationFn: (/** @type {{ staffId: string, data: Record<string, unknown> }} */ { staffId, data }) => updateStaffApi(staffId, data),
     onSuccess: (updated, { staffId }) => {
       queryClient.invalidateQueries({ queryKey: staffKeys.detail(staffId) })
+      queryClient.invalidateQueries({ queryKey: ["schoolTeachers"] })
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
     },
   })
@@ -82,6 +84,7 @@ export function useUpdateStaffStatus() {
       }
     },
     onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["schoolTeachers"] })
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
     },
   })
@@ -93,6 +96,7 @@ export function useDeleteStaff() {
   return useMutation({
     mutationFn: deleteStaffApi,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["schoolTeachers"] })
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
     },
   })
@@ -110,6 +114,7 @@ export function useCreateBulkStaff() {
   return useMutation({
     mutationFn: createBulkStaffImportApi,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["schoolTeachers"] })
       queryClient.invalidateQueries({ queryKey: staffKeys.lists() })
     },
   })

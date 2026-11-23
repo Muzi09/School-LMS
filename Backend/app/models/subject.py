@@ -130,6 +130,8 @@ class Subject(Base, AuditMixin):
 class ClassSubject(Base, AuditMixin):
     __tablename__ = "class_subjects"
 
+    room_override: Mapped[str | None] = mapped_column(String(80))
+
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,

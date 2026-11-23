@@ -14,6 +14,17 @@ FORMAT_BY_SUFFIX = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WE
 EMBLEM_DIRECTORY = Path("uploads") / "emblems"
 
 
+def available_emblem_url(url: str | None) -> str | None:
+    local_prefix = "/uploads/emblems/"
+    if not url or not url.startswith(local_prefix):
+        return url
+
+    filename = url.removeprefix(local_prefix)
+    if not filename or Path(filename).name != filename:
+        return None
+    return url if (EMBLEM_DIRECTORY / filename).is_file() else None
+
+
 def _store_emblem(contents: bytes, suffix: str) -> str:
     try:
         with Image.open(BytesIO(contents), formats=list(set(FORMAT_BY_SUFFIX.values()))) as image:

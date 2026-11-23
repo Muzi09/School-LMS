@@ -60,12 +60,21 @@ export function WingsBar({
         <span>Academic Wings</span>
       </div>
 
-      {/* Horizontal Scrollable Row of Wing Cards */}
-      <div className="flex items-stretch gap-3 overflow-x-auto pb-2 scrollbar-thin">
+      {/* Wrap wing filters so the page keeps the only scrollbar. */}
+      <div className="flex flex-wrap items-stretch gap-2">
         {/* All Classes Card - No chips, same fixed height as other cards */}
         <div
+          role="button"
+          tabIndex={0}
+          aria-pressed={selectedWingId === "all"}
           onClick={() => onSelectWing("all")}
-          className={`shrink-0 min-w-[170px] max-w-[240px] p-3.5 rounded-2xl border cursor-pointer transition-all duration-150 flex flex-col justify-between h-[100px] ${
+          onKeyDown={(event) => {
+            if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+              event.preventDefault()
+              onSelectWing("all")
+            }
+          }}
+          className={`min-w-[145px] p-3 rounded-lg border cursor-pointer transition-colors flex flex-col justify-between gap-1 ${
             selectedWingId === "all"
               ? "bg-card border-primary ring-1 ring-primary/40 shadow-xs"
               : "bg-card border-border hover:border-primary/40 hover:bg-accent/30 shadow-xs"
@@ -98,8 +107,17 @@ export function WingsBar({
           return (
             <div
               key={w.id}
+              role="button"
+              tabIndex={0}
+              aria-pressed={isSelected}
               onClick={() => onSelectWing(w.id)}
-              className={`group shrink-0 min-w-[180px] max-w-[260px] p-3.5 rounded-2xl border cursor-pointer transition-all duration-150 flex flex-col justify-between h-[100px] ${
+              onKeyDown={(event) => {
+                if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                  event.preventDefault()
+                  onSelectWing(w.id)
+                }
+              }}
+              className={`group min-w-[165px] p-3 rounded-lg border cursor-pointer transition-colors flex flex-col justify-between gap-1 ${
                 isSelected
                   ? "bg-card border-primary ring-1 ring-primary/40 shadow-xs"
                   : "bg-card border-border hover:border-primary/40 hover:bg-accent/30 shadow-xs"
@@ -129,7 +147,7 @@ export function WingsBar({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -166,13 +184,14 @@ export function WingsBar({
               </div>
 
               {/* Class chips inside: with quick unassign & click to move */}
-              <div className="flex flex-wrap gap-1 items-start content-start overflow-y-auto scrollbar-none w-full max-h-[46px]">
+              <div className="flex flex-wrap gap-1 items-start content-start w-full">
                 {wingClasses.length === 0 ? (
                   <span className="text-[11px] text-muted-foreground italic">No classes</span>
                 ) : (
                   wingClasses.map((cls) => (
-                    <span
+                    <button
                       key={cls.id}
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation()
                         onOpenChangeWing?.(cls)
@@ -181,7 +200,7 @@ export function WingsBar({
                       title={`Click to reassign ${cls.name} or unassign from wing`}
                     >
                       <span className="truncate max-w-[80px]">{cls.name}</span>
-                    </span>
+                    </button>
                   ))
                 )}
               </div>
@@ -189,10 +208,19 @@ export function WingsBar({
           )
         })}
 
-        {/* Unassigned Card - Same fixed height */}
+        {unassignedClasses.length > 0 && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-pressed={selectedWingId === "unassigned"}
           onClick={() => onSelectWing("unassigned")}
-          className={`shrink-0 min-w-[170px] max-w-[240px] p-3.5 rounded-2xl border cursor-pointer transition-all duration-150 flex flex-col justify-between h-[100px] ${
+          onKeyDown={(event) => {
+            if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+              event.preventDefault()
+              onSelectWing("unassigned")
+            }
+          }}
+          className={`min-w-[170px] p-3 rounded-lg border cursor-pointer transition-colors flex flex-col justify-between gap-1 ${
             selectedWingId === "unassigned"
               ? "bg-card border-primary ring-1 ring-primary/40 shadow-xs"
               : "bg-card border-border hover:border-primary/40 hover:bg-accent/30 shadow-xs"
@@ -201,7 +229,7 @@ export function WingsBar({
           <div className="flex items-center justify-between gap-2 w-full">
             <div className="flex items-center gap-1.5">
               <span className="size-2 rounded-full bg-muted-foreground shrink-0" />
-              <span className="text-xs font-bold text-foreground">Unassigned</span>
+              <span className="text-xs font-bold text-foreground">Wing assignment needed</span>
             </div>
             <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono text-muted-foreground bg-muted font-bold">
               {unassignedClasses.length}
@@ -209,13 +237,14 @@ export function WingsBar({
           </div>
 
           {/* Click unassigned class to assign to a wing */}
-          <div className="flex flex-wrap gap-1 items-start content-start overflow-y-auto scrollbar-none w-full max-h-[46px]">
+          <div className="flex flex-wrap gap-1 items-start content-start w-full">
             {unassignedClasses.length === 0 ? (
               <span className="text-[11px] text-muted-foreground italic">No classes</span>
             ) : (
               unassignedClasses.map((cls) => (
-                <span
+                <button
                   key={cls.id}
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation()
                     onOpenChangeWing?.(cls)
@@ -224,17 +253,18 @@ export function WingsBar({
                   title={`Click to assign ${cls.name} to an academic wing`}
                 >
                   <span className="truncate max-w-[70px]">{cls.name}</span>
-                </span>
+                </button>
               ))
             )}
           </div>
         </div>
+        )}
 
         {/* Add Wing Button - Same fixed height */}
         <button
           type="button"
           onClick={onAddWing}
-          className="shrink-0 min-w-[130px] p-3.5 rounded-2xl border border-dashed border-border hover:border-primary/50 bg-card/60 hover:bg-card text-muted-foreground hover:text-foreground flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer group shadow-2xs h-[100px]"
+          className="min-w-[130px] p-3 rounded-lg border border-dashed border-border hover:border-primary/50 bg-card/60 hover:bg-card text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 transition-colors cursor-pointer group"
         >
           <div className="size-6 rounded-full border border-dashed border-border group-hover:border-primary flex items-center justify-center">
             <Plus className="size-3.5 group-hover:scale-110 transition-transform" />

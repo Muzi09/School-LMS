@@ -612,6 +612,7 @@ export function StaffFormModal({ isOpen, onClose, staff = null }) {
 
                 {wings && wings.length > 0 ? (
                   <>
+                    <p className="text-xs text-muted-foreground">This teacher can be assigned subjects only in the selected wings.</p>
                     <div className="flex flex-wrap gap-2 pt-1">
                       {wings.map((w) => {
                         const isSelected = formik.values.assigned_wing_ids.includes(w.id)

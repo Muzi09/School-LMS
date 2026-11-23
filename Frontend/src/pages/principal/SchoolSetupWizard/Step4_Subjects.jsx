@@ -611,7 +611,7 @@ export function Step4Subjects({
 
                   {/* Right: Section Checkbox & Class Actions Next to Each Other in One Row */}
                   <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 flex-nowrap" onClick={(e) => e.stopPropagation()}>
-                    {/* Same for All Sections Checkbox */}
+                    {/* Same Subjects in All Sections Checkbox */}
                     <label
                       className="flex items-center gap-2 cursor-pointer select-none group text-xs font-semibold text-foreground hover:text-primary transition-colors shrink-0"
                       title="Toggle between shared subjects for all sections or section-specific subjects"
@@ -623,7 +623,7 @@ export function Step4Subjects({
                         className="size-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
                       />
                       <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors whitespace-nowrap">
-                        Same for all sections
+                        Same subjects in all sections
                       </span>
                     </label>
 

@@ -1,6 +1,12 @@
 import apiClient from "./client"
 
 export const schoolConfigService = {
+  reorderStructure: ({ wing, schoolClass, ids }) => {
+    let path = "/school/wings/reorder"
+    if (wing) path = `/school/wings/${wing.id}/classes/reorder`
+    if (schoolClass) path = `/school/classes/${schoolClass.id}/sections/reorder`
+    return apiClient.put(path, { ids })
+  },
   getClasses: async () => {
     return await apiClient.get("/school/classes")
   },

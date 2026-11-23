@@ -126,13 +126,18 @@ export const validateSubjectsStep = (
  * @param {Array<Object>} wingsList
  * @returns {string | null} Error message or null if valid
  */
-export const validateWingsStep = (wingsList = []) => {
+export const validateWingsStep = (wingsList = [], classesList = []) => {
   if (wingsList.length === 0) {
     return "Please configure at least one academic wing."
   }
   const emptyWing = wingsList.find((w) => !w.name || !w.name.trim())
   if (emptyWing) {
     return "All wings must have a valid name."
+  }
+  const assignments = wingsList.flatMap(wing => wing.classes || [])
+  if (assignments.length !== classesList.length ||
+      classesList.some(name => assignments.filter(assigned => assigned === name).length !== 1)) {
+    return "Assign each class to exactly one wing."
   }
   return null
 }
@@ -222,17 +227,17 @@ export const validateSetupWizardStep = (step, state) => {
         addressPincode: state.addressPincode,
       })
     case 2:
-      return validateClassesStep(state.classesList)
+      return validateWingsStep(state.wingsList, state.classesList)
     case 3:
-      return validateSectionsStep(state.classesList, state.classSectionMap)
+      return validateClassesStep(state.classesList)
     case 4:
+      return validateSectionsStep(state.classesList, state.classSectionMap)
+    case 5:
       return validateSubjectsStep(
         state.classesList,
         state.classSubjectConfig,
         state.classSectionMap
       )
-    case 5:
-      return validateWingsStep(state.wingsList)
     case 6:
       return validateHousesStep(
         state.housesList,

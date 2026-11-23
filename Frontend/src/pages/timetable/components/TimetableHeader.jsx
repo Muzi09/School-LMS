@@ -58,9 +58,9 @@ export function TimetableHeader({
         className
       )}
     >
-      <div className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 flex-wrap lg:flex-nowrap">
-        {/* Left Section: Timetable Selector, Status Pill, Wing, Search Bar */}
-        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap flex-1 min-w-0">
+      <div className="flex flex-wrap items-center gap-2.5 px-3 py-3 sm:px-4">
+        {/* Filters can wrap independently of the viewport width when the sidebar is open. */}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
           {/* Timetable Selector */}
           <TimetableSelector
             timetables={timetables}
@@ -98,16 +98,16 @@ export function TimetableHeader({
             onSelectWingIds={onSelectWingIds}
           />
 
-          {/* Search Bar with reduced width */}
+          {/* Search fills the remaining row, or starts a new row when needed. */}
           <SearchFilterBar
             searchQuery={searchQuery}
             onSearchChange={onSearchChange}
-            className="w-48 sm:w-60 shrink-0"
+            className="min-w-[12rem] flex-[1_1_12rem]"
           />
         </div>
 
-        {/* Right Section: Autosave Status, Publish, Assign Button, Zoom Controls */}
-        <div className="flex items-center gap-2.5 shrink-0 ml-auto">
+        {/* Actions have their own row so they never cover the search field. */}
+        <div className="flex w-full flex-wrap items-center justify-end gap-2.5 border-t border-border/60 pt-2.5">
           {/* Autosave Status Pill */}
           {isAssignMode && (
             <div

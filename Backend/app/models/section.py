@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, List
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import JSON, ForeignKey, Index, String, Integer, Boolean, true
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
@@ -16,6 +16,12 @@ if TYPE_CHECKING:
 
 class Section(Base, AuditMixin):
     __tablename__ = "sections"
+
+    order_index: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    single_room: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
+    room_number: Mapped[str | None] = mapped_column(String(80))
+    room_reviews: Mapped[dict | None] = mapped_column(JSON)
+    parallel_subject_ids: Mapped[list | None] = mapped_column(JSON)
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

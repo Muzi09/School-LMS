@@ -41,6 +41,39 @@ def _client(db):
     return TestClient(app, base_url=ORIGIN)
 
 
+def test_class_teacher_assignment_is_returned_to_both_timetable_views(db, school, school_actor):
+    from app.models import Section
+
+    section = db.query(Section).filter_by(school_id=school.id).one()
+    teacher = _user(db, UserRole.STAFF, school.id, "Class teacher")
+    teacher.staff_profile.is_academic = True
+    db.flush()
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': str(school_actor.id)})}"}
+
+    try:
+        with _client(db) as client:
+            wing = client.post("/api/v1/school/wings", headers=headers, json={
+                "name": "Middle", "class_ids": [str(section.class_id)],
+            })
+            assert wing.status_code == 201
+            assignment = client.put(f"/api/v1/school/sections/{section.id}/class-teacher",
+                                    headers=headers, json={"class_teacher_id": str(teacher.id)})
+            assert assignment.status_code == 200
+            response = client.get("/api/v1/timetable/class-wise", headers=headers)
+            assert response.status_code == 200
+            data = response.json()
+            summary = next(s for wing in data["wings"] for grade in wing["classes"]
+                           for s in grade["sections"] if s["id"] == str(section.id))
+            assert summary["class_teacher_id"] == str(teacher.id)
+            assert summary["class_teacher_name"] == "Class teacher Example"
+            teacher_summary = next(t for t in data["eligible_teachers"] if t["id"] == str(teacher.id))
+            assert [(row["section_id"], row["label"]) for row in teacher_summary["class_teacher_of"]] == [
+                (str(section.id), "Grade 6 A"),
+            ]
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
 def test_school_rosters_and_mutations_are_scoped(db, school):
     other = School(name="Second school", code=f"OTHER-{uuid4().hex[:8]}", setup_completed=True)
     db.add(other)
@@ -87,6 +120,46 @@ def test_school_rosters_and_mutations_are_scoped(db, school):
         assert exported.json()["id"] == str(own_student.id)
         events = db.query(StudentRecordEvent).filter_by(school_id=school.id, student_id=own_student.id).all()
         assert {event.action for event in events} >= {"detail_viewed", "exported"}
+    finally:
+        app.dependency_overrides.clear()
+        client.close()
+
+
+def test_bell_schedule_save_accepts_new_setup_and_rejects_stale_version(db, school, school_actor):
+    from app.models import Section
+    from app.services.timetable_service import TimetableService
+
+    timetable = TimetableService(db).get_active_timetable(school.id)
+    section = db.query(Section).filter_by(school_id=school.id).one()
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': str(school_actor.id)})}"}
+    client = _client(db)
+    try:
+        snapshot = client.get(
+            "/api/v1/timetable/setups/editor", params={"timetable_id": str(timetable.id)}, headers=headers
+        ).json()
+        original = snapshot["setups"][0]
+        draft_id = f"draft-{uuid4()}"
+        schedule = {
+            "id": "regular",
+            "days": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"],
+            "periods": [{"period_number": 1, "start_time": "08:30", "end_time": "09:15", "type": "CLASS"}],
+        }
+        payload = {
+            "timetable_id": str(timetable.id),
+            "timetable_version": snapshot["timetable_version"],
+            "setups": [
+                {**original, "schedules": [schedule]},
+                {"id": draft_id, "name": "New bell", "version": 1, "schedules": [schedule]},
+            ],
+            "assignments": [{"setup_id": draft_id, "target_type": "SECTION", "target_id": str(section.id)}],
+        }
+        saved = client.post("/api/v1/timetable/setups/batch-save", json=payload, headers=headers)
+        assert saved.status_code == 200, saved.text
+        new_setup = next(setup for setup in saved.json() if setup["name"] == "New bell")
+        assert new_setup["id"] != draft_id
+        assert new_setup["assigned_section_ids"] == [str(section.id)]
+        stale = client.post("/api/v1/timetable/setups/batch-save", json=payload, headers=headers)
+        assert stale.status_code == 409
     finally:
         app.dependency_overrides.clear()
         client.close()

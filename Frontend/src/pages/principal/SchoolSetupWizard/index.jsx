@@ -1,3 +1,4 @@
+import { moveItem } from "@/components/common/OrderButtons"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams, useNavigate, Link } from "react-router-dom"
 import {
@@ -198,15 +199,15 @@ function SchoolSetupForm({ token }) {
   const [dragOverCategory, setDragOverCategory] = useState(null) // { className, sectionName, category, index }
 
   // Step 5: Wings
-  const [useWings, setUseWings] = useState(typeof draft.useWings === "boolean" ? draft.useWings : true)
   const [wingsList, setWingsList] = useState(() => {
     if (!Array.isArray(draft.wingsList) || !draft.wingsList.length) return getInitialWingsForClasses(classesList)
     return draft.wingsList.map((wing, index) => ({
       id: wing.id || `wing-${index}`,
       name: wing.name,
       classes: Array.isArray(wing.classes) ? wing.classes.filter((name) => classesList.includes(name)) : [],
-    })).filter((wing) => wing.classes.length > 0)
+    }))
   })
+  const [newClassWingId, setNewClassWingId] = useState("")
   const [editingWingIdx, setEditingWingIdx] = useState(null)
   const [editingWingNameVal, setEditingWingNameVal] = useState("")
   const [isAddingCustomWing, setIsAddingCustomWing] = useState(false)
@@ -236,7 +237,7 @@ function SchoolSetupForm({ token }) {
     setWingsList(wingsList.map((wing) => ({
       ...wing,
       classes: (wing.classes || []).filter((name) => classesList.includes(name)),
-    })).filter((wing) => wing.classes.length > 0))
+    })))
   }
 
   const [previousPlacement, setPreviousPlacement] = useState({ classesList, classSectionMap })
@@ -349,7 +350,6 @@ function SchoolSetupForm({ token }) {
           classesList,
           classSectionMap,
           classSubjectConfig,
-          useWings,
           wingsList,
           useHouses,
           housesList,
@@ -375,7 +375,6 @@ function SchoolSetupForm({ token }) {
     classesList,
     classSectionMap,
     classSubjectConfig,
-    useWings,
     wingsList,
     useHouses,
     housesList,
@@ -479,6 +478,15 @@ function SchoolSetupForm({ token }) {
       setSubmitError(`Class "${trimmed}" already exists.`)
       return
     }
+
+    const wing = wingsList.find(item => item.id === newClassWingId)
+    if (!wing) {
+      setSubmitError("Select a wing for this class.")
+      return
+    }
+    setWingsList(previous => previous.map(item => item.id === wing.id
+      ? { ...item, classes: [...item.classes, trimmed] }
+      : item))
 
     let updated = [...classesList]
     if (newClassPosition === "start") {
@@ -634,8 +642,22 @@ function SchoolSetupForm({ token }) {
     // Reset subject mappings for default classes
     setClassSubjectConfig(getInitialClassSubjectConfig(INITIAL_DEFAULT_CLASSES, resetSecMap))
 
-    // Reset wing mappings to default classes
-    setWingsList(getInitialWingsForClasses(INITIAL_DEFAULT_CLASSES))
+    // Keep configured wings when restoring the default class list.
+    setWingsList(previous => {
+      const defaults = getInitialWingsForClasses(INITIAL_DEFAULT_CLASSES)
+      if (!previous.length) return defaults
+      const restored = previous.map(wing => ({
+        ...wing,
+        classes: wing.classes.filter(name => INITIAL_DEFAULT_CLASSES.includes(name)),
+      }))
+      for (const name of INITIAL_DEFAULT_CLASSES) {
+        if (restored.some(wing => wing.classes.includes(name))) continue
+        const suggested = defaults.find(wing => wing.classes.includes(name))
+        const target = restored.find(wing => wing.name === suggested?.name) || restored[0]
+        target.classes.push(name)
+      }
+      return restored
+    })
 
     // Cancel any active drag
     const resetDrag = {
@@ -1660,6 +1682,10 @@ function SchoolSetupForm({ token }) {
   }
 
   const handleDeleteWing = (index) => {
+    if (wingsList[index].classes.length) {
+      setSubmitError("Move this wing’s classes before deleting it.")
+      return
+    }
     const updated = wingsList.filter((_, idx) => idx !== index)
     setWingsList(updated)
     if (editingWingIdx === index) {
@@ -1689,15 +1715,6 @@ function SchoolSetupForm({ token }) {
     setWingsList(getInitialWingsForClasses(classesList))
     setEditingWingIdx(null)
     setSubmitError(null)
-  }
-
-  const handleRemoveClassFromWing = (wingIdx, className) => {
-    const updated = [...wingsList]
-    updated[wingIdx] = {
-      ...updated[wingIdx],
-      classes: (updated[wingIdx].classes || []).filter((c) => c !== className),
-    }
-    setWingsList(updated)
   }
 
   const handleAddClassToWing = (targetWingIdx, className) => {
@@ -1746,17 +1763,9 @@ function SchoolSetupForm({ token }) {
     }
 
     if (!data || !data.className) return
-    const { sourceWingIdx, className } = data
+    const { className } = data
 
-    if (targetWingIdx === null) {
-      // Dropped onto Unassigned area
-      if (sourceWingIdx !== null) {
-        handleRemoveClassFromWing(sourceWingIdx, className)
-      }
-    } else {
-      // Dropped onto a specific wing
-      handleAddClassToWing(targetWingIdx, className)
-    }
+    if (targetWingIdx !== null) handleAddClassToWing(targetWingIdx, className)
 
     setDraggedClassData(null)
   }
@@ -1957,6 +1966,12 @@ function SchoolSetupForm({ token }) {
   // ==========================================
   const handleCompleteSetup = async () => {
     setSubmitError(null)
+    const wingError = validateSetupWizardStep(2, { wingsList, classesList })
+    if (wingError) {
+      setCurrentStep(2)
+      setSubmitError(wingError)
+      return
+    }
     setIsSubmitting(true)
     try {
       const finalAddress = getFullFormattedAddress()
@@ -2010,15 +2025,11 @@ function SchoolSetupForm({ token }) {
       })
 
       // 3. Wings payload
-      const wingsPayload = useWings
-        ? wingsList
-          .filter((w) => w.name && w.name.trim())
-          .map((w, i) => ({
-            name: w.name.trim(),
-            order_index: i + 1,
-            classes: (w.classes || []).filter((c) => classesList.includes(c)),
-          }))
-        : []
+      const wingsPayload = wingsList.map((wing, index) => ({
+        name: wing.name.trim(),
+        order_index: index + 1,
+        classes: classesList.filter(name => wing.classes.includes(name)),
+      }))
 
       // 4. Houses payload
       const housesPayload = useHouses
@@ -2144,10 +2155,10 @@ function SchoolSetupForm({ token }) {
   // 8 Redesigned Steps
   const steps = [
     { num: 1, label: "School Profile", icon: Building2 },
-    { num: 2, label: "Classes", icon: BookOpen },
-    { num: 3, label: "Sections", icon: Layers },
-    { num: 4, label: "Subjects", icon: Bookmark },
-    { num: 5, label: "Wings", icon: Compass },
+    { num: 2, label: "Wings", icon: Compass },
+    { num: 3, label: "Classes", icon: BookOpen },
+    { num: 4, label: "Sections", icon: Layers },
+    { num: 5, label: "Subjects", icon: Bookmark },
     { num: 6, label: "Houses", icon: Shield },
     { num: 7, label: "Security", icon: KeyRound },
     { num: 8, label: "Review", icon: CheckCircle2 },
@@ -2269,8 +2280,12 @@ function SchoolSetupForm({ token }) {
           {/* ========================================== */}
           {/* STEP 2: CLASSES (SMART DEFAULTS) */}
           {/* ========================================== */}
-          {currentStep === 2 && (
+          {currentStep === 3 && (
             <Step2Classes
+              wings={wingsList}
+              newClassWingId={newClassWingId}
+              setNewClassWingId={setNewClassWingId}
+              onAssignClass={handleAddClassToWing}
               classesList={classesList}
               editingClassIdx={editingClassIdx}
               setEditingClassIdx={setEditingClassIdx}
@@ -2297,7 +2312,7 @@ function SchoolSetupForm({ token }) {
           {/* ========================================== */}
           {/* STEP 3: CLASS SECTIONS */}
           {/* ========================================== */}
-          {currentStep === 3 && (
+          {currentStep === 4 && (
             <Step3Sections
               classesList={classesList}
               classSectionMap={classSectionMap}
@@ -2322,7 +2337,7 @@ function SchoolSetupForm({ token }) {
           {/* ========================================== */}
           {/* STEP 4: SUBJECTS (CLASS-FIRST REDESIGN) */}
           {/* ========================================== */}
-          {currentStep === 4 && (
+          {currentStep === 5 && (
             <Step4Subjects
               classesList={classesList}
               classSectionMap={classSectionMap}
@@ -2366,7 +2381,7 @@ function SchoolSetupForm({ token }) {
           {/* ========================================== */}
           {/* STEP 5: ACADEMIC WINGS */}
           {/* ========================================== */}
-          {currentStep === 5 && (
+          {currentStep === 2 && (
             <Step5Wings
               wingsList={wingsList}
               unassignedClasses={unassignedClasses}
@@ -2385,7 +2400,11 @@ function SchoolSetupForm({ token }) {
               handleSaveEditWing={handleSaveEditWing}
               handleCancelEditWing={handleCancelEditWing}
               handleDeleteWing={handleDeleteWing}
-              handleRemoveClassFromWing={handleRemoveClassFromWing}
+              onAssignClass={handleAddClassToWing}
+              onMoveWing={(index, direction) => {
+                setEditingWingIdx(null)
+                setWingsList(previous => moveItem(previous, index, direction))
+              }}
               handleWingClassDragStart={handleWingClassDragStart}
               handleWingClassDragOver={handleWingClassDragOver}
               handleWingClassDrop={handleWingClassDrop}
@@ -2477,19 +2496,6 @@ function SchoolSetupForm({ token }) {
             {currentStep < 8 ? (
               <div className="flex items-center gap-2">
                 {/* Optional step skip shortcut */}
-                {currentStep === 5 && useWings && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setUseWings(false)
-                      handleNextStep()
-                    }}
-                    className="h-11 text-xs text-muted-foreground cursor-pointer"
-                  >
-                    Skip Wings
-                  </Button>
-                )}
                 {currentStep === 6 && useHouses && (
                   <Button
                     type="button"

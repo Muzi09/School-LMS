@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import apiClient from "@/api/client"
 import {
   Dialog,
   DialogHeader,
@@ -23,11 +25,13 @@ import {
   Edit2,
   Combine,
   Split,
+  DoorOpen,
 } from "lucide-react"
 import { toast } from "sonner"
 import { schoolConfigService } from "@/api/schoolConfigService"
 import { CURATED_HOUSE_PALETTE } from "@/constants"
 import { InlineEditInput } from "./InlineEditInput"
+import { RoomEditor } from "./RoomEditor"
 
 // ==============================================================
 // 1. Add Class Dialog
@@ -55,7 +59,6 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
 
   const wingOptions = useMemo(() => {
     return [
-      { value: "", label: "Unassigned (No Wing)" },
       ...wings.map((w) => ({
         value: String(w.id),
         label: w.name,
@@ -132,9 +135,14 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
       return
     }
 
+    if (!wingId) {
+      toast.error("Select an academic wing.")
+      return
+    }
+
     onAddClass({
       name: name.trim(),
-      wing_id: wingId || null,
+      wing_id: wingId,
       initial_sections: finalSections,
       same_for_all_sections: sameForAllSections,
     })
@@ -146,7 +154,7 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
       <div className="flex flex-col gap-1 pb-1">
         <h3 className="text-base font-bold text-foreground">Add New Class</h3>
         <p className="text-xs text-muted-foreground">
-          Create an academic class and optionally place it into an academic wing.
+          Create an academic class and assign it to an academic wing.
         </p>
       </div>
 
@@ -166,7 +174,7 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
 
         <div>
           <label htmlFor="class-wing-select" className="text-xs sm:text-sm font-medium text-foreground block mb-0.5">
-            Wing Assignment (Optional)
+            Academic Wing
           </label>
           <Combobox
             id="class-wing-select"
@@ -180,7 +188,7 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
           />
         </div>
 
-        {/* Same for All Sections Checkbox */}
+        {/* Same Subjects in All Sections Checkbox */}
         <label className="flex items-center gap-2 cursor-pointer select-none group py-0.5">
           <input
             type="checkbox"
@@ -189,7 +197,7 @@ function AddClassForm({ onClose, onAddClass, wings = [] }) {
             className="size-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
           />
           <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">
-            Same for all sections (sections share same subjects)
+            Same subjects in all sections (sections share same subjects)
           </span>
         </label>
 
@@ -620,6 +628,7 @@ function AddWingForm({ onClose, onAddWing, classes = [], wings = [] }) {
                   key={cls.id}
                   type="button"
                   onClick={() => toggleClass(cls.id)}
+                  disabled={isCurrentlyHere}
                   className={`flex items-center justify-between p-2 rounded-lg text-xs text-left cursor-pointer transition-colors ${
                     isChecked
                       ? "bg-primary/10 border border-primary/40 text-primary font-medium"
@@ -822,6 +831,7 @@ function SubjectForm({ onClose, subject, onSaveSubject, classes = [] }) {
                   key={cls.id}
                   type="button"
                   onClick={() => toggleClass(cls.id)}
+                  disabled={isCurrentlyHere}
                   className={`flex items-center gap-2 p-1.5 rounded-lg text-xs text-left cursor-pointer transition-colors ${
                     isChecked
                       ? "bg-primary/10 border border-primary/40 text-primary font-medium"
@@ -998,21 +1008,29 @@ function SectionSubjectsForm({
   const initialAssigned = useMemo(() => {
     if (!targetSection) return []
     const secSubs =
-      targetSection.subjects && targetSection.subjects.length > 0
-        ? targetSection.subjects
-        : targetClass?.subjects || []
+      targetSection.subjects ?? (targetClass?.same_for_all_sections !== false ? targetClass?.subjects : []) ?? []
 
-    return secSubs.map((s) => ({
-      id: s.id,
-      name: s.name,
-      code: s.code || null,
-      category: s.category || (s.is_academic ? "academic" : "non_academic"),
-      is_academic: s.is_academic !== undefined ? s.is_academic : s.category === "academic",
-      is_split: s.is_split || false,
-      parent_id: s.parent_id || null,
-      child_subjects: s.child_subjects || [],
-    }))
+    return secSubs.map((s) => {
+      const isSplit = Boolean(s.is_split || (s.child_subjects && s.child_subjects.length > 0))
+      const hasAcademicChild = s.child_subjects?.some((c) => c.is_academic)
+      const defaultIsAcademic = s.is_academic !== undefined ? s.is_academic : (isSplit ? true : s.category !== "non_academic")
+      const cat = s.category || (defaultIsAcademic || hasAcademicChild ? "academic" : "non_academic")
+      return {
+        id: s.id,
+        name: s.name,
+        code: s.code || null,
+        category: cat,
+        is_academic: cat === "academic",
+        is_split: isSplit,
+        parent_id: s.parent_id || null,
+        child_subjects: s.child_subjects || [],
+      }
+    })
   }, [targetSection, targetClass])
+
+  const assignedIds = useMemo(() => new Set(initialAssigned.flatMap(
+    sub => [sub.id, ...sub.child_subjects.map(part => part.id)]
+  )), [initialAssigned])
 
   const [subjectsList, setSubjectsList] = useState(() => initialAssigned)
   const [addingCategory, setAddingCategory] = useState(null) // "academic" | "non_academic" | null
@@ -1021,6 +1039,159 @@ function SectionSubjectsForm({
   const [editingSubjectName, setEditingSubjectName] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const [splitDialogSubject, setSplitDialogSubject] = useState(null)
+  const [roomEditor, setRoomEditor] = useState(null)
+
+  const queryClient = useQueryClient()
+  const [optimisticParallelIds, setOptimisticParallelIds] = useState(null)
+  const parallelSubjectIds = useMemo(() => {
+    return optimisticParallelIds ?? targetSection?.parallel_subject_ids ?? []
+  }, [optimisticParallelIds, targetSection?.parallel_subject_ids])
+
+  const roomModeMutation = useMutation({
+    mutationFn: (singleRoom) => apiClient.put(
+      `/school/sections/${targetSection.id}/room-mode`, { single_room: singleRoom },
+    ),
+    onSuccess: () => Promise.all(
+      ["schoolConfig", "timetable"].map(key => queryClient.invalidateQueries({ queryKey: [key] })),
+    ),
+    onError: (error) => toast.error(error.message || "Failed to update the room setting."),
+  })
+
+  const parallelMutation = useMutation({
+    mutationFn: ({ sectionId, subjectId, enabled }) =>
+      apiClient.put(`/school/sections/${sectionId}/parallel/${subjectId}?enabled=${enabled}`),
+    onMutate: async ({ subjectId, enabled }) => {
+      setOptimisticParallelIds((prev) => {
+        const base = prev ?? targetSection?.parallel_subject_ids ?? []
+        const next = new Set(base.map(String))
+        if (enabled) next.add(String(subjectId))
+        else next.delete(String(subjectId))
+        return Array.from(next)
+      })
+    },
+    onSuccess: async () => {
+      await Promise.all(["schoolConfig", "timetable"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })))
+      setOptimisticParallelIds(null)
+    },
+    onError: (e) => {
+      setOptimisticParallelIds(null)
+      toast.error(e.message || "Failed to update parallel setting")
+    },
+  })
+
+  const handleToggleCategory = (sub) => {
+    const isCurrentlyAcad = sub.category === "academic" || sub.is_academic === true
+    const newCategory = isCurrentlyAcad ? "non_academic" : "academic"
+    const newIsAcademic = !isCurrentlyAcad
+
+    setSubjectsList((prev) =>
+      prev.map((s) => {
+        const matches = s.id ? s.id === sub.id : s.tempId === sub.tempId
+        if (matches) {
+          return {
+            ...s,
+            category: newCategory,
+            is_academic: newIsAcademic,
+            _categoryChanged: true,
+          }
+        }
+        return s
+      })
+    )
+  }
+
+  function renderParallelCheckbox(subject) {
+    if (!assignedIds.has(subject?.id)) {
+      return (
+        <label
+          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/50 cursor-not-allowed select-none shrink-0"
+          title="Save subject first to enable parallel scheduling"
+        >
+          <input type="checkbox" disabled className="size-3.5 rounded border-border" />
+          <span>Parallel</span>
+        </label>
+      )
+    }
+
+    const isParallel = parallelSubjectIds.some((pid) => String(pid) === String(subject.id))
+
+    return (
+      <label
+        className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer select-none shrink-0"
+        title="Can run alongside other subjects"
+      >
+        <input
+          type="checkbox"
+          aria-label={`${subject.name} can run alongside other subjects`}
+          disabled={parallelMutation.isPending}
+          checked={isParallel}
+          onChange={(e) =>
+            parallelMutation.mutate({
+              sectionId: targetSection.id,
+              subjectId: subject.id,
+              enabled: e.target.checked,
+            })
+          }
+          className="size-3.5 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
+        />
+        <span>Parallel</span>
+      </label>
+    )
+  }
+
+  function renderSubjectRoomControl(subject) {
+    if (targetSection?.single_room) return null
+    if (!subject?.id) return null
+    const override = targetSection?.room_overrides?.[subject.id]
+    const review = targetSection?.room_reviews?.[subject.id]
+    const label = override || targetSection?.room_number || "Not assigned"
+    const source = override ? "Subject override" : "Section room"
+    const assigned = assignedIds.has(subject.id)
+
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer max-w-[110px] truncate shrink-0"
+        aria-label={`Edit room for ${targetClass?.name} ${targetSection?.name} ${subject.name}`}
+        isDisabled={!assigned}
+        title={assigned ? `${label} · ${source}` : "Save the subject assignment to set its room"}
+        onPress={() => setRoomEditor({ section: targetSection, subject, allocated: true })}
+      >
+        <span className="truncate">
+          {review ? "Review rooms" : label}
+        </span>
+      </Button>
+    )
+  }
+
+  function renderSplitParts(subject) {
+    if (!subject.is_split || !subject.child_subjects?.length) return null
+    return (
+      <div className="mt-1 pt-1.5 border-t border-border/50 space-y-1">
+        {subject.child_subjects.map((c) => (
+          <div
+            key={c.id || c.name}
+            className="flex items-center justify-between text-[11px] px-2 py-1 rounded-md bg-muted/40 border border-border/40 gap-1"
+          >
+            <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
+              <span className="text-muted-foreground/60 text-[10px] font-mono">└</span>
+              <span className="font-medium text-foreground truncate">{c.name}</span>
+              {c.code && <span className="text-[9px] font-mono text-muted-foreground">({c.code})</span>}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {renderParallelCheckbox(c)}
+              {renderSubjectRoomControl(c)}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const subjectAssignment = targetClass?.same_for_all_sections === false
+    ? { assigned_section_ids: [targetSection.id] }
+    : { assigned_class_ids: [targetClass.id] }
 
   // Open split dialog for academic subject
   const handleOpenSplitModal = async (sub) => {
@@ -1030,8 +1201,7 @@ function SectionSubjectsForm({
           name: sub.name,
           category: sub.category,
           is_academic: sub.is_academic,
-          assigned_class_ids: targetClass?.id ? [targetClass.id] : [],
-          assigned_section_ids: targetSection?.id ? [targetSection.id] : [],
+          ...subjectAssignment,
         })
         if (created?.id) {
           const updatedSub = { ...sub, ...created, _isNew: false }
@@ -1192,11 +1362,12 @@ function SectionSubjectsForm({
             name: sub.name,
             category: sub.category,
             is_academic: sub.is_academic,
-            assigned_class_ids: [targetClass.id],
-            assigned_section_ids: [targetSection.id],
+            ...subjectAssignment,
           })
           if (res?.id) {
             finalSubjectIds.push(res.id)
+            setSubjectsList(list => list.map(item => item.tempId === sub.tempId
+              ? { ...item, id: res.id, _isNew: false } : item))
           }
         } else {
           finalSubjectIds.push(sub.id)
@@ -1226,12 +1397,12 @@ function SectionSubjectsForm({
           <DialogTitle className="text-base font-bold flex items-center gap-2">
             <span>Manage Subjects</span>
             <span className="text-muted-foreground font-normal text-xs">
-              ({targetClass?.name} {targetClass?.same_for_all_sections !== false ? "– All Sections" : `– Section ${targetSection?.name}`})
+              ({targetClass?.name} · Section {targetSection?.name})
             </span>
           </DialogTitle>
           {targetClass?.same_for_all_sections !== false ? (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
-              Shared across all sections
+              Shared subject list
             </span>
           ) : (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
@@ -1241,10 +1412,72 @@ function SectionSubjectsForm({
         </div>
         <DialogDescription className="text-xs">
           {targetClass?.same_for_all_sections !== false
-            ? `Organize subjects for ${targetClass?.name}. Since 'Same for all sections' is active, updates will apply to all sections. Teacher assignments remain independent per section.`
+            ? `Subjects and Parallel settings apply to all sections of ${targetClass?.name}. Rooms are set for this section.`
             : `Organize subjects specifically for ${targetClass?.name} - Section ${targetSection?.name}.`}
         </DialogDescription>
       </DialogHeader>
+
+      <label className="flex items-center gap-2 text-xs font-medium">
+        <input
+          type="checkbox"
+          checked={Boolean(targetSection?.single_room)}
+          disabled={roomModeMutation.isPending}
+          onChange={(event) => roomModeMutation.mutate(event.target.checked)}
+        />
+        All subjects are taught in the same room
+      </label>
+
+      {/* Section Room Assignment */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border border-border/80 bg-muted/30">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <DoorOpen className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-foreground">Section Room:</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-background border border-border text-foreground">
+                {targetSection?.room_number || <span className="text-muted-foreground italic font-normal">Not assigned</span>}
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground truncate">
+              Default classroom assigned to {targetClass?.name} – Section {targetSection?.name}
+            </p>
+          </div>
+        </div>
+
+        <div className="shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="h-8 px-3 text-xs font-semibold gap-1.5 cursor-pointer"
+            aria-label={`Edit room for ${targetClass?.name} ${targetSection?.name}`}
+            onPress={() => setRoomEditor({ section: targetSection, subject: null, allocated: true })}
+          >
+            <Edit2 className="size-3" />
+            <span>{targetSection?.room_number ? "Change Room" : "Assign Room"}</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Pending Room Reviews for Section */}
+      {Object.entries(targetSection?.room_reviews || {}).filter(([id]) => !subjectsList.some(
+        (sub) => (!sub.is_split && String(sub.id) === String(id)) || sub.child_subjects?.some((child) => String(child.id) === String(id))
+      )).map(([id, pending]) => (
+        <div key={id} className="flex items-center justify-between p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
+          <span>Review room for {pending.name} ({pending.labels?.join(" / ")})</span>
+          <Button
+            variant="outline"
+            size="xs"
+            className="h-6 text-[11px] cursor-pointer"
+            aria-label={`Edit room for ${targetClass?.name} ${targetSection?.name} ${pending.name}`}
+            onPress={() => setRoomEditor({ section: targetSection, subject: { id, name: pending.name }, allocated: false })}
+          >
+            Review
+          </Button>
+        </div>
+      ))}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
         {/* 1. Academic Subjects Bucket */}
@@ -1320,7 +1553,7 @@ function SectionSubjectsForm({
                       key={key}
                       className="group flex flex-col p-2 rounded-xl border border-border/70 bg-card hover:border-border hover:shadow-xs hover:bg-muted/30 text-xs transition-all duration-150 gap-1"
                     >
-                      <div className="flex items-center justify-between w-full">
+                      <div className="flex flex-wrap items-center justify-between gap-1 w-full">
                         <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
                           <span className="font-semibold text-foreground truncate" title={sub.name}>
                             {sub.name}
@@ -1337,7 +1570,17 @@ function SectionSubjectsForm({
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0 transition-opacity">
+                        <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100 shrink-0 transition-opacity">
+                          {!sub.is_split && renderParallelCheckbox(sub)}
+                          {!sub.is_split && renderSubjectRoomControl(sub)}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCategory(sub)}
+                            className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer transition-colors"
+                            title="Move to Non-Academic"
+                          >
+                            <ArrowRightLeft className="size-3" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleStartEditSubject(sub)}
@@ -1369,19 +1612,7 @@ function SectionSubjectsForm({
                         </div>
                       </div>
 
-                      {/* If split, display child parts pills */}
-                      {sub.is_split && sub.child_subjects && sub.child_subjects.length > 0 && (
-                        <div className="mt-0.5 pt-1.5 border-t border-border/50 flex items-center gap-1.5 flex-wrap">
-                          {sub.child_subjects.map((c) => (
-                            <span
-                              key={c.id || c.name}
-                              className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-foreground border border-border/60"
-                            >
-                              {c.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {renderSplitParts(sub)}
                     </div>
                   )
                 })
@@ -1461,36 +1692,49 @@ function SectionSubjectsForm({
                   return (
                     <div
                       key={key}
-                      className="group flex items-center justify-between p-2 rounded-xl border border-border/70 bg-card hover:border-border hover:shadow-xs hover:bg-muted/30 text-xs transition-all duration-150"
+                      className="group flex flex-col gap-1 p-2 rounded-xl border border-border/70 bg-card hover:border-border hover:shadow-xs hover:bg-muted/30 text-xs transition-all duration-150"
                     >
-                      <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
-                        <span className="font-semibold text-foreground truncate" title={sub.name}>
-                          {sub.name}
-                        </span>
-                        {sub.code && (
-                          <span className="text-[10px] font-mono text-muted-foreground px-1 py-0.2 rounded bg-muted">
-                            {sub.code}
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
+                          <span className="font-semibold text-foreground truncate" title={sub.name}>
+                            {sub.name}
                           </span>
-                        )}
+                          {sub.code && (
+                            <span className="text-[10px] font-mono text-muted-foreground px-1 py-0.2 rounded bg-muted">
+                              {sub.code}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100 shrink-0 transition-opacity">
+                          {!sub.is_split && renderParallelCheckbox(sub)}
+                          {!sub.is_split && renderSubjectRoomControl(sub)}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCategory(sub)}
+                            className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer transition-colors"
+                            title="Move to Academic"
+                          >
+                            <ArrowRightLeft className="size-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditSubject(sub)}
+                            className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer transition-colors"
+                            title="Edit subject name"
+                          >
+                            <Edit2 className="size-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSubject(sub)}
+                            className="size-6 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
+                            title="Remove subject"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0 transition-opacity">
-                        <button
-                          type="button"
-                          onClick={() => handleStartEditSubject(sub)}
-                          className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer transition-colors"
-                          title="Edit subject name"
-                        >
-                          <Edit2 className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSubject(sub)}
-                          className="size-6 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
-                          title="Remove subject"
-                        >
-                          <Trash2 className="size-3" />
-                        </button>
-                      </div>
+                      {renderSplitParts(sub)}
                     </div>
                   )
                 })
@@ -1527,6 +1771,15 @@ function SectionSubjectsForm({
           onClose={() => setSplitDialogSubject(null)}
           subject={splitDialogSubject}
           onSplitSuccess={handleSplitSuccess}
+        />
+      )}
+
+      {/* Room Editor Dialog */}
+      {roomEditor && (
+        <RoomEditor
+          {...roomEditor}
+          classLabel={targetClass?.name}
+          onClose={() => setRoomEditor(null)}
         />
       )}
     </>
@@ -1745,7 +1998,7 @@ export function SectionSubjectsDialog({
     <Dialog
       isOpen={isOpen}
       onOpenChange={(open) => !open && onClose()}
-      className="sm:max-w-2xl"
+      className="sm:max-w-3xl"
     >
       {isOpen && targetClass && targetSection && (
         <SectionSubjectsForm
@@ -1821,16 +2074,9 @@ function ChangeClassWingForm({ onClose, targetClass, wings = [], onSaveWingAssig
   const [selectedWingId, setSelectedWingId] = useState(targetClass?.wing_id || "")
 
   const handleSave = () => {
-    onSaveWingAssignment(targetClass.id, selectedWingId ? selectedWingId : null)
+    onSaveWingAssignment(targetClass.id, selectedWingId)
     onClose()
   }
-
-  const handleQuickUnassign = () => {
-    onSaveWingAssignment(targetClass.id, null)
-    onClose()
-  }
-
-  const currentWing = wings.find((w) => w.id === targetClass?.wing_id)
 
   return (
     <>
@@ -1844,7 +2090,7 @@ function ChangeClassWingForm({ onClose, targetClass, wings = [], onSaveWingAssig
               Wing Assignment: {targetClass?.name}
             </DialogTitle>
             <DialogDescription className="text-xs truncate">
-              Move this class to another wing or unassign it completely.
+              Choose the wing for this class and all its sections.
             </DialogDescription>
           </div>
         </div>
@@ -1854,23 +2100,6 @@ function ChangeClassWingForm({ onClose, targetClass, wings = [], onSaveWingAssig
         <div className="space-y-1.5 min-w-0">
           <label className="text-xs font-semibold text-foreground">Select Academic Wing</label>
           <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-            {/* Unassigned Option */}
-            <button
-              type="button"
-              onClick={() => setSelectedWingId("")}
-              className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-xs text-left cursor-pointer transition-all ${
-                selectedWingId === ""
-                  ? "bg-primary/10 border-primary/40 text-foreground font-semibold shadow-xs"
-                  : "bg-card border-border text-muted-foreground hover:text-foreground hover:bg-muted/40"
-              }`}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="size-2 rounded-full bg-muted-foreground/60 shrink-0" />
-                <span className="truncate">Unassigned (No Wing)</span>
-              </div>
-              {selectedWingId === "" && <Check className="size-3.5 text-primary shrink-0" />}
-            </button>
-
             {/* Wing Options */}
             {wings.map((w) => {
               const isSelected = selectedWingId === w.id
@@ -1904,21 +2133,6 @@ function ChangeClassWingForm({ onClose, targetClass, wings = [], onSaveWingAssig
       </div>
 
       <DialogFooter className="pt-2 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5">
-        <div>
-          {currentWing ? (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleQuickUnassign}
-              className="h-9 px-3 text-xs sm:text-sm font-medium text-destructive hover:bg-destructive/10 rounded-xl cursor-pointer w-full sm:w-auto"
-            >
-              Unassign from Wing
-            </Button>
-          ) : (
-            <span className="hidden sm:inline-block" />
-          )}
-        </div>
-
         <div className="flex items-center justify-end gap-2.5 w-full sm:w-auto">
           <Button
             type="button"
@@ -1931,6 +2145,7 @@ function ChangeClassWingForm({ onClose, targetClass, wings = [], onSaveWingAssig
           <Button
             type="button"
             onClick={handleSave}
+            isDisabled={!selectedWingId}
             className="h-9 sm:h-10 px-5 text-xs sm:text-sm font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer flex-1 sm:flex-initial"
           >
             Save Assignment
@@ -1996,7 +2211,7 @@ function ManageWingClassesForm({
           Manage Classes: {targetWing?.name}
         </DialogTitle>
         <DialogDescription className="text-xs">
-          Select which classes belong to this wing. Selecting a class from another wing will move it here. Unselecting removes it.
+          Select which classes belong to this wing. Selecting a class from another wing will move it here. To move an assigned class out, use its wing assignment.
         </DialogDescription>
       </DialogHeader>
 
@@ -2022,6 +2237,7 @@ function ManageWingClassesForm({
                   key={cls.id}
                   type="button"
                   onClick={() => toggleClass(cls.id)}
+                  disabled={isCurrentlyHere}
                   className={`flex items-center justify-between p-2 rounded-lg text-xs text-left cursor-pointer transition-colors ${
                     isChecked
                       ? "bg-primary/10 border border-primary/40 text-primary font-medium"
@@ -2391,7 +2607,7 @@ export function UnifySubjectsDialog({
               Unify Subjects for {targetClass.name}
             </h3>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              Sections in this class currently have different subject assignments. Choose how you would like to synchronize them to a single shared configuration. Teacher assignments remain independent per section and will not be affected.
+              Choose which subjects and Parallel settings to apply to every section.
             </p>
           </div>
         </div>
@@ -2422,7 +2638,7 @@ export function UnifySubjectsDialog({
               </span>
             </div>
             <p className="text-[11px] text-muted-foreground pl-5.5 leading-relaxed">
-              Applies one section&apos;s subjects to all sections of {targetClass.name}.
+              Applies the selected section&apos;s subjects and Parallel settings.
             </p>
 
             {strategy === "use_section" && sections.length > 1 && (
@@ -2437,7 +2653,7 @@ export function UnifySubjectsDialog({
                 >
                   {sections.map((sec) => (
                     <option key={sec.id} value={sec.id}>
-                      Section {sec.name} ({sec.subjects?.length || 0} subjects)
+                      Section {sec.name} ({sec.subjects?.length || 0} subjects, {sec.parallel_subject_ids?.length || 0} Parallel)
                     </option>
                   ))}
                 </select>
@@ -2467,7 +2683,7 @@ export function UnifySubjectsDialog({
               </label>
             </div>
             <p className="text-[11px] text-muted-foreground pl-5.5 leading-relaxed">
-              Combines every unique subject configured across all sections into the shared list.
+              Combines subjects from every section and enables Parallel wherever it was enabled in any section.
             </p>
           </div>
         </div>

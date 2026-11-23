@@ -5,6 +5,10 @@ import { Input } from "@/components/ui/input"
 
 export function Step2Classes({
   classesList,
+  wings,
+  newClassWingId,
+  setNewClassWingId,
+  onAssignClass,
   editingClassIdx,
   setEditingClassIdx,
   editingClassName,
@@ -79,6 +83,13 @@ export function Step2Classes({
             className="h-8 text-xs flex-1 min-w-[160px]"
             autoFocus
           />
+
+          <select aria-label="Wing for new class" value={newClassWingId}
+            onChange={event => setNewClassWingId(event.target.value)}
+            className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs">
+            <option value="" disabled>Select a wing</option>
+            {wings.map(wing => <option key={wing.id} value={wing.id}>{wing.name}</option>)}
+          </select>
 
           <select
             value={newClassPosition}
@@ -249,6 +260,14 @@ export function Step2Classes({
                   </>
                 ) : (
                   <>
+                    <select aria-label={`Wing for ${clsName}`}
+                      className="max-w-28 rounded border border-input bg-background text-xs"
+                      value={wings.findIndex(wing => wing.classes.includes(clsName))}
+                      onChange={event => onAssignClass(Number(event.target.value), clsName)}>
+                      <option value={-1} disabled>Select a wing</option>
+                      {wings.map((wing, index) => <option key={wing.id} value={index}>{wing.name}</option>)}
+                    </select>
+
                     {/* Edit Icon Button */}
                     <button
                       type="button"

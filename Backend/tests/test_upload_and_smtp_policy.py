@@ -54,6 +54,9 @@ def test_emblem_is_resized_and_does_not_keep_metadata(tmp_path, monkeypatch):
         assert saved.format == "PNG"
         assert saved.size == (512, 384)
         assert "comment" not in saved.info
+    url = f"/uploads/emblems/{filename}"
+    assert emblem_service.available_emblem_url(url) == url
+    assert emblem_service.available_emblem_url("/uploads/emblems/missing.png") is None
 
 
 def test_emblem_rejects_bytes_without_image_content(tmp_path, monkeypatch):

@@ -379,6 +379,7 @@ function applyOptimisticBulkAssign(oldData, payload) {
           period_number: payload._optimisticPeriod?.period_number || payload.period?.period_number || 0,
           day_of_week: day,
           subject_id: payload.subject_id,
+          room_number: resolvedSection?.subject_stats?.find(s => String(s.subject_id || s.id) === String(payload.subject_id))?.room_number ?? resolvedSection?.room_number ?? null,
           teacher_user_id: allocatedTeacherId,
           subject: payload._optimisticSubject || payload.subject || null,
           teacher: allocatedTeacher,

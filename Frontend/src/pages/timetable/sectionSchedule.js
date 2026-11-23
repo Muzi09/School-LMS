@@ -1,3 +1,5 @@
+import { freeStretches, interval, minutes as timeMinutes, workingIntervals } from "./lessonTime"
+import { formatClassSection } from "./timetableUtils"
 import { DAY_ORDER, isNonTeachingPeriod } from "./bellTiming/validators"
 
 function list(value) {
@@ -53,7 +55,35 @@ export function isTeachingSlot(p) {
   return !isNonTeachingPeriod(p)
 }
 
-export function teacherWeek(allocations, entries, setups) {
+// Bell schedules can share a grid even when one has extra periods before or
+// after the other. Each distinct time interval must have its own column.
+function sharedPeriodHeaders(bells) {
+  if (!bells.length) return null
+  const byInterval = new Map()
+  for (const periods of bells) {
+    for (const period of periods) {
+      const key = interval(period)
+      const match = byInterval.get(key)
+      if (match) {
+        if (isTeachingSlot(match.period) !== isTeachingSlot(period)) return null
+        match.labels.add("P" + period.period_number)
+      } else {
+        byInterval.set(key, { period, labels: new Set(["P" + period.period_number]) })
+      }
+    }
+  }
+  const columns = [...byInterval.values()].sort((a, b) => a.period.start_time.localeCompare(b.period.start_time))
+  for (let i = 1; i < columns.length; i++) {
+    if (columns[i].period.start_time < columns[i - 1].period.end_time) return null
+  }
+  return columns.map(({ period, labels }) => labels.size > 1 && isTeachingSlot(period)
+    ? { ...period, label: [...labels].join(" / ") }
+    : period)
+}
+
+export function teacherWeek(allocations, entries, setups, shifts = []) {
+  const hours = workingIntervals(shifts)
+  const joined = new Map()
   const sections = new Map(allocations.map(a => [String(a.section.id), a.section]))
   const groupsBySection = new Map()
   const schedules = new Map()
@@ -67,10 +97,36 @@ export function teacherWeek(allocations, entries, setups) {
   for (const entry of entries) {
     const period = lessonPeriod(entry, groupsBySection.get(String(entry.section_id)) || [])
     if (!period || !isTeachingSlot(period)) review.push(entry)
-    else byDay.get(entry.day_of_week).push({ ...entry, period })
+    else {
+      const key = entry.placement_id && [entry.day_of_week, entry.placement_id, interval(period)].join("/")
+      const lesson = key && joined.get(key)
+      if (lesson) {
+        lesson.sectionLabel += " + " + formatClassSection(entry.section)
+        lesson.sectionRooms.push({section: formatClassSection(entry.section), room: entry.room_number})
+        lesson.subjectSections.push([entry.subject?.name, formatClassSection(entry.section)])
+        const label = "P" + period.period_number
+        if (!lesson.periodLabels.split(" / ").includes(label)) lesson.periodLabels += " / " + label
+      } else {
+        const item = { ...entry, period, sectionLabel: formatClassSection(entry.section), periodLabels: "P" + period.period_number }
+        if (key) {
+          item.sectionRooms = [{section: item.sectionLabel, room: entry.room_number}]
+          item.subjectSections = [[entry.subject?.name, item.sectionLabel]]
+          joined.set(key, item)
+        }
+        byDay.get(entry.day_of_week).push(item)
+      }
+    }
   }
   const days = []
+  for (const lesson of joined.values()) {
+    const subjects = [...new Set(lesson.subjectSections.map(([subject]) => subject))]
+    if (subjects.length > 1) {
+      lesson.subjectLabel = subjects.join(" / ")
+      lesson.sectionLabel = lesson.subjectSections.map(([subject, section]) => section + " · " + subject).join(" + ")
+    }
+  }
   const conflicts = new Set()
+  const headersBySchedule = new Map()
   let minutes = 0
   const minute = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5))
   for (const [day, lessons] of byDay) {
@@ -86,7 +142,22 @@ export function teacherWeek(allocations, entries, setups) {
         conflicts.add(next.id)
       }
     }
-    days.push({ day, lessons, periods: bells.length === 1 ? bells[0] : null })
+    const proposedHeaders = sharedPeriodHeaders(bells)
+    let headers = null
+    if (proposedHeaders) {
+      const key = proposedHeaders.map(p => [p.id, interval(p), p.label].join(":")).join("/")
+      headers = headersBySchedule.get(key)
+      if (!headers) {
+        headers = proposedHeaders
+        headersBySchedule.set(key, headers)
+      }
+    }
+    const free = freeStretches(lessons, hours)
+    const teachingMinutes = lessons.reduce((n,e) => n + minute(e.period.end_time) - minute(e.period.start_time), 0)
+    days.push({ day, lessons, free, teachingMinutes, periods: headers, bells: bells.flat() })
   }
-  return { days, review, conflicts, minutes, count: days.reduce((n, d) => n + d.lessons.length, 0) }
+  const capacity = days.length && days.every(d => d.periods) ? days.reduce((total, d) =>
+    total + d.periods.filter(p => isTeachingSlot(p) && (!hours.length || hours.some(([start,end]) =>
+      start <= timeMinutes(p.start_time) && timeMinutes(p.end_time) <= end))).length, 0) : null
+  return { days, review, conflicts, minutes, hours, capacity, count: days.reduce((n, d) => n + d.lessons.length, 0) }
 }
