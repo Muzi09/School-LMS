@@ -1,5 +1,5 @@
 import { scheduleGroups as groupsForSetup, lessonPeriod } from "../sectionSchedule"
-import React, { useMemo, useRef, memo, Fragment } from "react"
+import React, { useLayoutEffect, useMemo, useRef, useState, memo } from "react"
 import {
   User,
 } from "lucide-react"
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { classLessonRoomLabel } from "../rooms"
 import { ClassWiseCell } from "./ClassWiseCell"
 import { getSubjectTheme } from "../subjectTheme"
-import { getShortSubjectName, buildRowGroups } from "../subjectShortName"
+import { getShortSubjectName, isAcademicSubject } from "../subjectShortName"
 import { parseTimetableQuery, cellMatchesHighlight } from "../searchUtils"
 import { format12h } from "../bellTiming/timeUtils"
 import { formatPeriodShortLabel, isNonTeachingPeriod } from "../bellTiming/validators"
@@ -20,6 +20,99 @@ const DAY_LABELS = {
   THURSDAY: "THU",
   FRIDAY: "FRI",
   SATURDAY: "SAT",
+}
+
+function SubjectAllocations({ stats }) {
+  const { academic, nonAcademic } = useMemo(() => ({
+    academic: (stats || []).filter(isAcademicSubject),
+    nonAcademic: (stats || []).filter(item => !isAcademicSubject(item)),
+  }), [stats])
+  const allocationsRef = useRef(null)
+  const [firstRowCount, setFirstRowCount] = useState(Infinity)
+  const visibleCount = Math.min(firstRowCount, academic.length)
+
+  useLayoutEffect(() => {
+    const allocations = allocationsRef.current
+    if (!allocations || !academic.length) return
+
+    const firstRow = allocations.firstElementChild
+    const label = firstRow.firstElementChild
+    const tokens = allocations.querySelectorAll("[data-academic-allocation]")
+    const fitAcademicSubjects = () => {
+      const gap = parseFloat(getComputedStyle(firstRow).columnGap) || 0
+      let width = label.getBoundingClientRect().width
+      let count = 0
+      for (const token of tokens) {
+        width += gap + token.getBoundingClientRect().width
+        if (count > 0 && width > firstRow.clientWidth) break
+        count += 1
+      }
+      setFirstRowCount(count)
+    }
+
+    fitAcademicSubjects()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(fitAcademicSubjects)
+    observer.observe(allocations)
+    observer.observe(label)
+    tokens.forEach(token => observer.observe(token))
+    return () => observer.disconnect()
+  }, [academic, visibleCount])
+
+  const labelClass = "shrink-0 select-none text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70"
+  const rowClass = "flex min-h-3 items-center gap-3 overflow-x-auto scrollbar-none"
+
+  return (
+    <div ref={allocationsRef} className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-col gap-1 md:col-span-1 md:col-start-2 md:row-start-1 md:border-l md:border-border/50 md:pl-2">
+      {(academic.length > 0 || nonAcademic.length > 0) && (
+        <div className={rowClass}>
+          {academic.length > 0 && <span className={labelClass}>Acad :</span>}
+          {academic.slice(0, visibleCount).map(item => (
+            <AllocationToken key={item.subject_id} item={item} academic />
+          ))}
+        </div>
+      )}
+      {(visibleCount < academic.length || nonAcademic.length > 0) && (
+        <div className={rowClass}>
+          {academic.slice(visibleCount).map(item => (
+            <AllocationToken key={item.subject_id} item={item} academic />
+          ))}
+          {nonAcademic.length > 0 && (
+            <span className={cn(labelClass, visibleCount < academic.length && "ml-1 border-l border-border/50 pl-3")}>
+              Non Acad :
+            </span>
+          )}
+          {nonAcademic.map(item => (
+            <AllocationToken key={item.subject_id} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AllocationToken({ item, academic = false }) {
+  const isOver = item.assigned > item.target
+  const isMet = item.assigned === item.target
+
+  return (
+    <span
+      data-academic-allocation={academic || undefined}
+      className="inline-flex shrink-0 select-none items-center gap-1 whitespace-nowrap text-[11px] leading-none"
+    >
+      {academic ? (
+        <span className={cn("size-1.5 shrink-0 rounded-full", isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : getSubjectTheme(item.name).dot)} />
+      ) : (
+        <span className={cn("shrink-0 text-[9px] font-bold leading-none", isOver ? "text-amber-500" : isMet ? "text-emerald-500" : "text-amber-600/90 dark:text-amber-400/90")}>✦</span>
+      )}
+      <span className={cn("font-normal text-muted-foreground/90 transition-colors hover:text-foreground/90", isOver && "font-medium text-amber-700 dark:text-amber-300")}>
+        {getShortSubjectName(item.name, item.code)}
+      </span>
+      <span className={cn("font-mono text-[10px] text-muted-foreground/75", isOver && "font-semibold text-amber-700 dark:text-amber-300")}>
+        {item.assigned || 0}/{item.target || 0}
+      </span>
+    </span>
+  )
 }
 
 function calculateDuration(startTime, endTime) {
@@ -247,11 +340,6 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
     return null
   }, [section.class_teacher_name, section.class_teacher])
 
-  // 2-Row Micro-Tokens distribution with "Acad :" and "Non Acad :" headers
-  const { row1Groups, row2Groups } = useMemo(() => {
-    return buildRowGroups(section.subject_stats || [])
-  }, [section.subject_stats])
-
   return (
     <div
       id={`class-section-${section.id}`}
@@ -265,9 +353,9 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
         {isAssignMode && <button type="button" className="underline" onClick={() => onQuickUnassign?.(e, section)}>Remove lesson</button>}
       </div>)}
       {/* CARD HEADER: Compact 3-Zone x 2-Line Architecture (~48px height) */}
-      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px]">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 px-4 py-2 bg-muted/20 border-b border-border/60 min-h-[48px] md:grid-cols-[auto_minmax(0,1fr)_auto]">
         {/* Left Zone: Identity Stack (Class & Section on Line 1, CT on Line 2) */}
-        <div className="flex flex-col justify-center min-w-[150px] max-w-[240px] shrink-0 leading-tight gap-0.5">
+        <div className="flex flex-col justify-center min-w-0 md:min-w-[150px] max-w-[240px] leading-tight gap-0.5">
           {/* Line 1: Class Name & Section Badge */}
           <div className="flex items-center gap-1.5 truncate">
             <span className="text-sm sm:text-base font-bold text-foreground tracking-tight truncate">
@@ -301,147 +389,10 @@ export const ClassWiseCard = memo(function ClassWiseCard(/** @type {ClassWiseCar
           </div>
         </div>
 
-        {/* Center Zone: 2-Row Micro-Tokens Matrix (Acad : and Non Acad : headers, subtle subject names) */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1 px-3 border-x border-border/50 overflow-x-auto scrollbar-none">
-          {/* Row 1 */}
-          <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none">
-            {row1Groups.map((group, gIdx) => (
-              <Fragment key={`r1-group-${gIdx}`}>
-                {gIdx > 0 && (
-                  <span className="text-border/80 select-none text-xs font-light px-0.5">
-                    │
-                  </span>
-                )}
-                <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider shrink-0 select-none pr-0.5">
-                  {group.label}
-                </span>
-                {group.items.map((item, idx) => {
-                  const theme = getSubjectTheme(item.name)
-                  const shortName = getShortSubjectName(item.name, item.code)
-
-                  const isOver = item.assigned > item.target
-                  const isMet = item.assigned === item.target
-
-                  return (
-                    <span
-                      key={`r1-${item.subject_id || idx}`}
-                      className="inline-flex items-center gap-1 text-[11px] leading-none whitespace-nowrap shrink-0 select-none"
-                    >
-                      {group.isAcademic ? (
-                        <span
-                          className={cn(
-                            "size-1.5 rounded-full shrink-0",
-                            isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
-                          )}
-                        />
-                      ) : (
-                        <span
-                          className={cn(
-                            "text-[9px] leading-none shrink-0 font-bold",
-                            isOver
-                              ? "text-amber-500"
-                              : isMet
-                              ? "text-emerald-500"
-                              : "text-amber-600/90 dark:text-amber-400/90"
-                          )}
-                        >
-                          ✦
-                        </span>
-                      )}
-                      <span
-                        className={cn(
-                          "font-normal text-muted-foreground/90 hover:text-foreground/90 transition-colors",
-                          isOver && "text-amber-700 dark:text-amber-300 font-medium"
-                        )}
-                      >
-                        {shortName}
-                      </span>
-                      <span
-                        className={cn(
-                          "text-[10px] font-mono text-muted-foreground/75",
-                          isOver && "font-semibold text-amber-700 dark:text-amber-300"
-                        )}
-                      >
-                        {item.assigned || 0}/{item.target || 0}
-                      </span>
-                    </span>
-                  )
-                })}
-              </Fragment>
-            ))}
-          </div>
-
-          {/* Row 2 */}
-          <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none">
-            {row2Groups.map((group, gIdx) => (
-              <Fragment key={`r2-group-${gIdx}`}>
-                {gIdx > 0 && (
-                  <span className="text-border/80 select-none text-xs font-light px-0.5">
-                    │
-                  </span>
-                )}
-                <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider shrink-0 select-none pr-0.5">
-                  {group.label}
-                </span>
-                {group.items.map((item, idx) => {
-                  const theme = getSubjectTheme(item.name)
-                  const shortName = getShortSubjectName(item.name, item.code)
-
-                  const isOver = item.assigned > item.target
-                  const isMet = item.assigned === item.target
-
-                  return (
-                    <span
-                      key={`r2-${item.subject_id || idx}`}
-                      className="inline-flex items-center gap-1 text-[11px] leading-none whitespace-nowrap shrink-0 select-none"
-                    >
-                      {group.isAcademic ? (
-                        <span
-                          className={cn(
-                            "size-1.5 rounded-full shrink-0",
-                            isOver ? "bg-amber-500" : isMet ? "bg-emerald-500" : theme.dot
-                          )}
-                        />
-                      ) : (
-                        <span
-                          className={cn(
-                            "text-[9px] leading-none shrink-0 font-bold",
-                            isOver
-                              ? "text-amber-500"
-                              : isMet
-                              ? "text-emerald-500"
-                              : "text-amber-600/90 dark:text-amber-400/90"
-                          )}
-                        >
-                          ✦
-                        </span>
-                      )}
-                      <span
-                        className={cn(
-                          "font-normal text-muted-foreground/90 hover:text-foreground/90 transition-colors",
-                          isOver && "text-amber-700 dark:text-amber-300 font-medium"
-                        )}
-                      >
-                        {shortName}
-                      </span>
-                      <span
-                        className={cn(
-                          "text-[10px] font-mono text-muted-foreground/75",
-                          isOver && "font-semibold text-amber-700 dark:text-amber-300"
-                        )}
-                      >
-                        {item.assigned || 0}/{item.target || 0}
-                      </span>
-                    </span>
-                  )
-                })}
-              </Fragment>
-            ))}
-          </div>
-        </div>
+        <SubjectAllocations stats={section.subject_stats} />
 
         {/* Right Zone: Progress Stack (Assigned Count on Line 1, Progress Bar on Line 2) */}
-        <div className="flex flex-col items-end justify-center shrink-0 min-w-[125px] leading-tight gap-1 pl-1">
+        <div className="col-start-2 row-start-1 flex flex-col items-end justify-center leading-tight gap-1 border-l border-border/50 pl-2 md:col-start-3">
           {/* Line 1: Monospace Assigned Ratio */}
           <div className="text-[11px] font-mono text-muted-foreground font-medium">
             Assigned:{" "}

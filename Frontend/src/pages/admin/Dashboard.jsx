@@ -24,6 +24,7 @@ export function AdminDashboard() {
   const { data: principals, isLoading: isPrincipalsLoading } = useQuery({
     queryKey: ["adminPrincipals"],
     queryFn: adminService.getPrincipals,
+    select: (response) => response?.items ?? [],
   })
 
   const statCards = [
